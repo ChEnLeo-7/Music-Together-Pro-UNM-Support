@@ -1,0 +1,149 @@
+<p align="center">
+  <img alt="Music Together" src="public/logo.svg" width="80">
+</p>
+
+<h1 align="center">Music Together</h1>
+
+<p align="center">
+  在线多人同步听歌平台 -- 创建房间，邀请朋友，一起实时听同一首歌。
+</p>
+
+<p align="center">
+  <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/stargazers"><img src="https://img.shields.io/github/stars/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Stars"></a>
+  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/network/members"><img src="https://img.shields.io/github/forks/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Forks"></a>
+  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/issues"><img src="https://img.shields.io/github/issues/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Issues"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ChEnLeo-7/Music-Together-unm-support?style=flat" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React">
+  <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" alt="Vite">
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
+  <img src="https://img.shields.io/badge/Socket.IO-4-010101?logo=socketdotio&logoColor=white" alt="Socket.IO">
+  <img src="https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white" alt="Express">
+  <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker">
+</p>
+
+## 截图
+
+### 桌面端
+
+|            首页            |            搜索            |            播放            |            聊天            |
+| :------------------------: | :------------------------: | :------------------------: | :------------------------: |
+| ![首页](screenshots/1.png) | ![搜索](screenshots/2.png) | ![播放](screenshots/3.png) | ![聊天](screenshots/4.png) |
+
+### 移动端
+
+|             首页             |             搜索             |             播放             |             聊天             |
+| :--------------------------: | :--------------------------: | :--------------------------: | :--------------------------: |
+| ![首页](screenshots/1_m.png) | ![搜索](screenshots/2_m.png) | ![播放](screenshots/3_m.png) | ![聊天](screenshots/4_m.png) |
+
+### 歌词展示对比
+
+|            桌面端歌词            |         竖屏默认（封面）         |           竖屏歌词模式            |
+| :------------------------------: | :------------------------------: | :-------------------------------: |
+| ![桌面端歌词](screenshots/3.png) | ![竖屏默认](screenshots/3_m.png) | ![竖屏歌词](screenshots/3_m1.png) |
+
+## 功能特性
+
+- **实时同步播放** -- 基于 NTP 时钟同步 + 定时执行，延迟极低
+- **多平台音源** -- 支持网易云音乐、QQ 音乐、酷狗音乐搜索与播放
+- **Apple Music 风格歌词** -- 逐词高亮动画歌词，桌面端/移动端自适应
+- **VIP 歌曲支持** -- 平台账号登录贡献 Cookie，解锁 VIP 曲目（房间级作用域）
+- **权限管理 (RBAC)** -- 房主 > 管理员 > 普通成员，细粒度权限控制
+- **临时管理员转移** -- 非空房间始终保留至少一个具备管理能力的在线用户
+- **投票系统** -- 普通成员通过投票控制切歌、暂停等操作
+- **播放模式** -- 顺序播放、单曲循环、列表循环、随机播放
+- **实时聊天** -- 房间内文字聊天，支持系统消息
+- **移动端适配** -- 响应式设计，横竖屏自动切换布局
+
+## 快速开始
+
+### 环境要求
+
+- Node.js >= 22
+- pnpm >= 10
+
+### 安装与开发
+
+```bash
+git clone https://github.com/ChEnLeo-7/Music-Together-unm-support.git
+cd music-together
+pnpm install
+pnpm dev
+```
+
+前端: http://localhost:5173 | 后端: http://localhost:3001
+
+## 部署
+
+Docker 单镜像部署：
+
+```bash
+docker run -d --name music-together --restart unless-stopped \
+  -p 3001:3001 \
+  ghcr.io/yueby/music-together:latest
+```
+
+> 如果宿主机 `3001` 端口已被占用，修改 `-p 宿主机端口:容器端口` 左侧端口即可，例如 `-p 8080:3001`。
+
+默认自动模式下，前端会按当前访问地址自动连接后端；服务端默认开放所有来源访问，并根据当前请求协议自动决定 cookie 是否带 `Secure`。
+
+**需要显式限制来源时，再配置 `CLIENT_URL`：**
+
+```bash
+docker run -d --name music-together --restart unless-stopped \
+  -p 3001:3001 \
+  -e CLIENT_URL=https://music.example.com \
+  ghcr.io/yueby/music-together:latest
+```
+
+UNM HTTP proxy fallback for Netease unavailable/VIP tracks:
+
+```bash
+docker run -d --name music-together --restart unless-stopped \
+  -p 3001:3001 \
+  -e UNM_SERVER_URL=http://unm-server:8080 \
+  ghcr.io/yueby/music-together:latest
+```
+
+Use the HTTP proxy address that the Music Together container can reach. In a
+shared Docker network, this is usually the UNM container name and internal proxy
+port.
+
+> `CLIENT_URL` 现在主要用于显式白名单模式或前后端分离部署；默认自动模式下通常不再需要手动设置。
+>
+> 如果你通过 Nginx / Caddy / 1Panel / Lucky 等反向代理暴露 HTTPS，请确保代理正确透传 `X-Forwarded-Proto`，否则服务端无法自动判断应该下发 Secure cookie。
+
+push 到 main 后 GitHub Actions 自动构建镜像。详见 [架构文档](docs/PROJECT_ARCHITECTURE.md)。
+
+## 项目结构
+
+```
+packages/
+  client/   -- 前端 React 应用
+  server/   -- 后端 Node.js 服务
+  shared/   -- 共享类型、常量与权限定义
+```
+
+## 致谢
+
+| 库                                                                                            | 说明               |
+| --------------------------------------------------------------------------------------------- | ------------------ |
+| [Howler.js](https://github.com/goldfire/howler.js)                                            | Web 音频播放       |
+| [Apple Music-like Lyrics](https://github.com/Steve-xmh/applemusic-like-lyrics)                | 歌词组件 (GPL-3.0) |
+| [Meting](https://github.com/metowolf/Meting)                                                  | 多平台音乐 API     |
+| [NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced) | 网易云音乐 API     |
+| [CASL](https://github.com/stalniy/casl)                                                       | 权限管理           |
+| [Zustand](https://github.com/pmndrs/zustand)                                                  | 状态管理           |
+| [shadcn/ui](https://github.com/shadcn-ui/ui)                                                  | UI 组件库          |
+| [Motion](https://github.com/motiondivision/motion)                                            | 动画库             |
+| [qq-music-download](https://github.com/tooplick/qq-music-download)                            | QQ 音乐登录参考    |
+
+## 协议
+
+[AGPL-3.0](LICENSE)

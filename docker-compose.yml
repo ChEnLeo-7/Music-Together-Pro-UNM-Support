@@ -1,0 +1,35 @@
+services:
+  music-together:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: music-together:local
+    container_name: music-together
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      CLIENT_URL: "${CLIENT_URL:-}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
+      IDENTITY_SECRET: "${IDENTITY_SECRET:-dev-identity-secret-change-me}"
+      IDENTITY_TTL_DAYS: "${IDENTITY_TTL_DAYS:-30}"
+      IDENTITY_COOKIE_SECURE: "${IDENTITY_COOKIE_SECURE:-false}"
+      REJOIN_TTL_MS: "${REJOIN_TTL_MS:-30000}"
+      DATABASE_URL: "${DATABASE_URL:-file:/app/data/music-together.db}"
+      SERVER_ADMIN_IDS: "${SERVER_ADMIN_IDS:-}"
+      AUTO_FALLBACK_ENABLED: "${AUTO_FALLBACK_ENABLED:-true}"
+      UNM_SERVER_URL: "${UNM_SERVER_URL:-}"
+      UNM_SERVER_TIMEOUT_MS: "${UNM_SERVER_TIMEOUT_MS:-10000}"
+    volumes:
+      - music-together-data:/app/data
+    networks:
+      - music-together
+
+networks:
+  music-together:
+    name: music-together
+
+volumes:
+  music-together-data:
