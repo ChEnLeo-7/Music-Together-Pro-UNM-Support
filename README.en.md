@@ -2,14 +2,14 @@
   <img alt="Music Together" src="public/logo.svg" width="80">
 </p>
 
-<h1 align="center">Music Together</h1>
+<h1 align="center">Music Together Pro</h1>
 
 <p align="center">
-  A real-time collaborative music listening platform — create a room, invite friends, and listen to the same song perfectly synchronized.
+  Online multi-user synchronized music platform -- Create a room, invite friends, and listen to the same song together in real time. With UNM server support.
 </p>
 
 <p align="center">
-  <a href="README.md">简体中文</a>
+  <a href="README.md">中文</a>
 </p>
 
 <p align="center">
@@ -32,43 +32,57 @@
 
 ### Desktop
 
-|            Home            |            Search            |            Player            |            Chat            |
-| :------------------------: | :--------------------------: | :--------------------------: | :------------------------: |
+|            Home            |           Search           |           Player           |           Chat            |
+| :------------------------: | :------------------------: | :------------------------: | :-----------------------: |
 | ![Home](screenshots/1.png) | ![Search](screenshots/2.png) | ![Player](screenshots/3.png) | ![Chat](screenshots/4.png) |
 
 ### Mobile
 
-|             Home             |             Search             |             Player             |             Chat             |
-| :--------------------------: | :----------------------------: | :----------------------------: | :--------------------------: |
+|            Home             |           Search            |           Player            |            Chat             |
+| :-------------------------: | :-------------------------: | :-------------------------: | :-------------------------: |
 | ![Home](screenshots/1_m.png) | ![Search](screenshots/2_m.png) | ![Player](screenshots/3_m.png) | ![Chat](screenshots/4_m.png) |
 
 ### Lyrics Display Comparison
 
-|            Desktop Lyrics            |         Portrait Default (Cover)         |           Portrait Lyrics Mode           |
-| :----------------------------------: | :--------------------------------------: | :--------------------------------------: |
+|         Desktop Lyrics         |      Portrait Default (Cover)      |        Portrait Lyrics Mode         |
+| :----------------------------: | :--------------------------------: | :---------------------------------: |
 | ![Desktop Lyrics](screenshots/3.png) | ![Portrait Default](screenshots/3_m.png) | ![Portrait Lyrics](screenshots/3_m1.png) |
 
-## Features
+## Reference Projects:
+> - Original project [Yueby/music-together](https://github.com/Yueby/music-together)
+> - Forked branch [Madokamaes/music-together](https://github.com/Madokamaes/music-together)
 
-- **Real-time sync** -- NTP clock synchronization + scheduled execution for minimal latency
-- **Multi-platform music sources** -- NetEase Cloud Music, QQ Music, Kugou
-- **Apple Music-style lyrics** -- Word-by-word animated lyrics, responsive on desktop and mobile
-- **VIP song support** -- Room-scoped cookie pool via platform account login
-- **RBAC permissions** -- Owner > Admin > Member with fine-grained access control
-- **Temporary admin handoff** -- Non-empty rooms always keep an admin-capable online user
-- **Voting system** -- Members vote to control playback actions
-- **Play modes** -- Sequential, single loop, list loop, shuffle
-- **Real-time chat** -- In-room text messaging with system messages
-- **Mobile responsive** -- Adaptive layout with orientation-based switching
+## Features of this branch (not in the original)
 
-## Quick Start
+1. **⌨ Keyboard Shortcuts**: Quick access to corresponding interfaces (customizable keybindings)
+2. **🧾 User Data Persistence**: Saves nickname, avatar, and identity to the database
+3. **👁‍🗨 Chat History Visibility**: Setting to control whether new users can see historical chat messages when entering a room
+4. **🔄 Manual Sync**: Supports manual sync trigger in Settings → Room, with higher frequency calibration
+5. **🧪 Experimental Features**: Performance optimizations (not guaranteed smooth), click on lyrics to jump to the corresponding timestamp
+6. **🪪 Server Admin Identity**: Allows dissolving any room, viewing account info, deleting accounts, resetting account passwords
+7. **🎵 Audio Source & Quality Adjustment**: Supports adjusting audio source priority and quality priority, real‑time adjustment of current song quality
+8. **👤 Guest Mode**: Enter a room with just a nickname, can later set a password to convert into a registered account
+9. **🌐 Member Offline Persistence**: Saves member information after leaving a room (displayed as offline), this record can be deleted by the room owner
+10. **🏠️ Hidden Rooms**: When enabled, the room is hidden from the lobby, but can still be accessed via the full room ID or invite link
+11. **📒 Account Features**: Persistent account info, restore Cookie and room identity via login, permission support, avatar upload
+12. **🎶 Broader Audio Source Support**: If logged into a music platform's VIP account, can access higher quality audio (Dolby not supported)
+13. **🖥️ UNM Server Support**: Can be set via the environment variable `UNM_SERVER_URL` or in browser settings
+14. **🌟 UI & Detail Optimizations**: Added full‑screen button, click lyrics to jump to timestamp, hide played lyrics (toggle), UI detail tweaks, layout improvements
+15. **🏘️ Permanent Rooms**: When enabled, the room will not be destroyed except by the room owner or server admin (Cookie, UNM server info, etc., persist)
+16. **Song/Album/Playlist ID Search**: Supports searching by NetEase Cloud `song`/`playlist`/`album` ID
 
-### Prerequisites
+## Important Note
+
+This project was secondarily developed using AI (GPT‑5.5), adding UNM support and some personalized features. There may be minor bugs or imperfections (e.g., certain features may not work). Updates are not generally planned. If this causes any offense, please contact me to have it removed.
+
+## Quick Start (Windows)
+
+### Requirements
 
 - Node.js >= 22
 - pnpm >= 10
 
-### Install & Develop
+### Installation & Development
 
 ```bash
 git clone https://github.com/ChEnLeo-7/Music-Together-unm-support.git
@@ -79,34 +93,103 @@ pnpm dev
 
 Frontend: http://localhost:5173 | Backend: http://localhost:3001
 
-## Deploy
+## Docker Local Deployment
 
-Single-image Docker deployment:
+**Docker-Compose**:
+``` Docker-Compose
+services:
+  music-together:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: music-together:local
+    container_name: music-together
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      CLIENT_URL: "${CLIENT_URL:-}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
+      IDENTITY_SECRET: "${IDENTITY_SECRET:-dev-identity-secret-change-me}"
+      IDENTITY_TTL_DAYS: "${IDENTITY_TTL_DAYS:-30}"
+      IDENTITY_COOKIE_SECURE: "${IDENTITY_COOKIE_SECURE:-false}"
+      REJOIN_TTL_MS: "${REJOIN_TTL_MS:-30000}"
+      DATABASE_URL: "${DATABASE_URL:-file:/app/data/music-together.db}"
+      SERVER_ADMIN_IDS: "${SERVER_ADMIN_IDS:-}"
+      AUTO_FALLBACK_ENABLED: "${AUTO_FALLBACK_ENABLED:-true}"
+      UNM_SERVER_URL: "${UNM_SERVER_URL:-}"
+      UNM_SERVER_TIMEOUT_MS: "${UNM_SERVER_TIMEOUT_MS:-10000}"
+    volumes:
+      - music-together-data:/app/data
+    networks:
+      - music-together
 
-```bash
-docker run -d --name music-together --restart unless-stopped \
-  -p 3001:3001 \
-  ghcr.io/yueby/music-together:latest
+networks:
+  music-together:
+    name: music-together
+
+volumes:
+  music-together-data:
+
 ```
-
-> If host port `3001` is already in use, change the left side of `-p <host-port>:<container-port>`, for example `-p 8080:3001`.
-
-In default auto mode, the frontend connects back to the current origin automatically; the server allows all origins and decides whether to set the cookie `Secure` flag based on the incoming request protocol.
-
-**Set `CLIENT_URL` only when you need an explicit origin whitelist:**
-
-```bash
-docker run -d --name music-together --restart unless-stopped \
-  -p 3001:3001 \
-  -e CLIENT_URL=https://music.example.com \
-  ghcr.io/yueby/music-together:latest
+**Dockerfile**
 ```
+# syntax=docker/dockerfile:1
 
-> `CLIENT_URL` is mainly for explicit whitelist mode or separated frontend/backend deployments. In default auto mode, you usually do not need to set it manually.
->
-> If you expose HTTPS through Nginx / Caddy / 1Panel / Lucky, make sure the proxy forwards `X-Forwarded-Proto`, or the server cannot auto-detect whether it should issue Secure cookies.
+FROM node:22-alpine AS base
+WORKDIR /app
+RUN corepack enable
 
-Push to main triggers GitHub Actions to build and push the image. See [Architecture Docs](docs/PROJECT_ARCHITECTURE.md) for details.
+FROM base AS deps
+RUN apk add --no-cache python3 make g++
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/server/package.json packages/server/package.json
+COPY packages/client/package.json packages/client/package.json
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY packages/shared packages/shared
+COPY packages/server packages/server
+COPY packages/client packages/client
+RUN pnpm build
+
+FROM base AS prod-deps
+RUN apk add --no-cache python3 make g++
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/server/package.json packages/server/package.json
+COPY packages/client/package.json packages/client/package.json
+RUN pnpm install --frozen-lockfile --prod --filter @music-together/server...
+
+FROM node:22-alpine AS production
+ENV NODE_ENV=production
+ENV PORT=3001
+WORKDIR /app
+
+RUN apk add --no-cache vips
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/server/package.json packages/server/package.json
+COPY packages/client/package.json packages/client/package.json
+COPY --from=prod-deps /app/node_modules node_modules
+COPY --from=prod-deps /app/packages/shared/node_modules packages/shared/node_modules
+COPY --from=prod-deps /app/packages/server/node_modules packages/server/node_modules
+COPY --from=build /app/packages/shared/dist packages/shared/dist
+COPY --from=build /app/packages/server/dist packages/server/dist
+COPY --from=build /app/packages/client/dist packages/client/dist
+
+RUN sed -i 's|./src/index.ts|./dist/index.js|g' packages/shared/package.json \
+  && mkdir -p /app/data
+
+EXPOSE 3001
+VOLUME ["/app/data"]
+CMD ["node", "packages/server/dist/index.js"]
+
+```
 
 ## Project Structure
 
@@ -117,18 +200,19 @@ packages/
   shared/   -- Shared types, constants, and permission definitions
 ```
 
-## Acknowledgements
+## Acknowledgments
 
-| Library                                                                                       | Description                |
-| --------------------------------------------------------------------------------------------- | -------------------------- |
-| [Howler.js](https://github.com/goldfire/howler.js)                                            | Web audio playback         |
-| [Apple Music-like Lyrics](https://github.com/Steve-xmh/applemusic-like-lyrics)                | Lyrics component (GPL-3.0) |
-| [Meting](https://github.com/metowolf/Meting)                                                  | Multi-platform music API   |
-| [NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced) | NetEase Cloud Music API    |
-| [CASL](https://github.com/stalniy/casl)                                                       | Permission management      |
-| [Zustand](https://github.com/pmndrs/zustand)                                                  | State management           |
-| [shadcn/ui](https://github.com/shadcn-ui/ui)                                                  | UI component library       |
-| [Motion](https://github.com/motiondivision/motion)                                            | Animation library          |
+| Library                                                                                       | Description                      |
+| --------------------------------------------------------------------------------------------- | -------------------------------- |
+| [Howler.js](https://github.com/goldfire/howler.js)                                            | Web audio playback               |
+| [Apple Music-like Lyrics](https://github.com/Steve-xmh/applemusic-like-lyrics)                | Lyrics component (GPL-3.0)       |
+| [Meting](https://github.com/metowolf/Meting)                                                  | Multi-platform music API         |
+| [NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced) | NetEase Cloud Music API          |
+| [CASL](https://github.com/stalniy/casl)                                                       | Permission management            |
+| [Zustand](https://github.com/pmndrs/zustand)                                                  | State management                 |
+| [shadcn/ui](https://github.com/shadcn-ui/ui)                                                  | UI component library             |
+| [Motion](https://github.com/motiondivision/motion)                                            | Animation library                |
+| [qq-music-download](https://github.com/tooplick/qq-music-download)                            | QQ Music login reference         |
 
 ## License
 
