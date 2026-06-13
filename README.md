@@ -212,7 +212,7 @@ packages/
 | [shadcn/ui](https://github.com/shadcn-ui/ui)                                                  | UI 组件库          |
 | [Motion](https://github.com/motiondivision/motion)                                            | 动画库             |
 | [qq-music-download](https://github.com/tooplick/qq-music-download)                            | QQ 音乐登录参考    |
-| [UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server))                         |        解灰        |
+| [UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server)                         |        解灰        |
 
 ## 协议
 
