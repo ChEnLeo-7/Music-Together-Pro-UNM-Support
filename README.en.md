@@ -213,7 +213,7 @@ packages/
 | [shadcn/ui](https://github.com/shadcn-ui/ui)                                                  | UI component library             |
 | [Motion](https://github.com/motiondivision/motion)                                            | Animation library                |
 | [qq-music-download](https://github.com/tooplick/qq-music-download)                            | QQ Music login reference         |
-| [UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server))                         |Unlock gray-area copyrighted music|
+| [UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server)                         |Unlock gray-area copyrighted music|
 
 ## License
 
