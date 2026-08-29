@@ -2,6 +2,7 @@ import type { Track } from '@music-together/shared'
 
 export interface NativePlaybackEvent {
   type: 'load' | 'play' | 'pause' | 'end' | 'error'
+  trackId?: string
   source?: string
   duration?: number
   message?: string
@@ -20,7 +21,9 @@ interface NativePlaybackBridge {
   getVolume(): number
   setRate(rate: number): void
   getRate(): number
+  getTrackId(): string
   releaseSource(source: string): void
+  releaseSession(): void
 }
 
 declare global {
@@ -43,6 +46,10 @@ export function configureNativePlayback(config: {
   rejoinToken?: string
 }): void {
   getNativePlaybackBridge()?.configureSession(JSON.stringify(config))
+}
+
+export function releaseNativePlayback(): void {
+  getNativePlaybackBridge()?.releaseSession()
 }
 
 export function nativeTrackMetadata(track: Track): string {

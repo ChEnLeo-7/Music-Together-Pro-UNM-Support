@@ -56,6 +56,7 @@ export const PlayerControls = memo(function PlayerControls({
   const [playCooldown, setPlayCooldown] = useState(false)
   const [isSeeking, setIsSeeking] = useState(false)
   const [seekTime, setSeekTime] = useState(0)
+  const seekDurationRef = useRef(0)
   const cooldownTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const playCooldownTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const disabled = !currentTrack
@@ -67,6 +68,11 @@ export const PlayerControls = memo(function PlayerControls({
       if (playCooldownTimer.current) clearTimeout(playCooldownTimer.current)
     }
   }, [])
+
+  useEffect(() => {
+    setIsSeeking(false)
+    seekDurationRef.current = 0
+  }, [currentTrack?.id])
 
   const handleSkip = (action: () => void, voteAction: 'next' | 'prev') => {
     if (skipCooldown) return
@@ -111,21 +117,24 @@ export const PlayerControls = memo(function PlayerControls({
         {/* 1. Progress bar */}
         <div className="flex w-full flex-col gap-1">
           <Slider
-            value={[duration > 0 ? ((isSeeking ? seekTime : currentTime) / duration) * 100 : 0]}
+            value={[duration > 0 ? Math.max(0, Math.min(100, ((isSeeking ? seekTime : currentTime) / duration) * 100)) : 0]}
             max={100}
             step={0.1}
-            disabled={disabled || !canSeek}
+            disabled={disabled || !canSeek || duration <= 0}
             onValueChange={(val) => {
               if (duration > 0) {
+                if (!isSeeking) seekDurationRef.current = duration
                 setIsSeeking(true)
-                setSeekTime((val[0] / 100) * duration)
+                setSeekTime((val[0] / 100) * seekDurationRef.current)
               }
             }}
             onValueCommit={(val) => {
-              if (duration > 0) {
-                onSeek((val[0] / 100) * duration)
+              const seekDuration = seekDurationRef.current || duration
+              if (seekDuration > 0) {
+                onSeek((val[0] / 100) * seekDuration)
               }
               setIsSeeking(false)
+              seekDurationRef.current = 0
             }}
             className="min-h-8 w-full py-2"
           />
@@ -195,7 +204,7 @@ export const PlayerControls = memo(function PlayerControls({
                     variant="ghost"
                     size="icon"
                     className="h-14 w-14 rounded-full bg-white/20 text-white/90 hover:bg-white/30 hover:text-white"
-                    disabled={disabled || playCooldown}
+                    disabled={disabled || playCooldown || (!canPlay && !canVote)}
                     onClick={handlePlayPause}
                     aria-label={isPlaying ? '暂停' : '播放'}
                   >

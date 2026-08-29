@@ -637,24 +637,27 @@ export function resumeTrack(io: TypedServer, roomId: string, _initiatorSocket?: 
 
 export function pauseTrack(io: TypedServer, roomId: string, _initiatorSocket?: TypedSocket): void {
   const room = roomRepo.get(roomId)
-  if (!room) return
+  if (!room || !room.currentTrack) return
 
-  // Snapshot estimated position before pausing so resume starts from the correct point
-  const snapshotTime = estimateCurrentTime(roomId)
-  room.playState = { isPlaying: false, currentTime: snapshotTime, serverTimestamp: Date.now() }
+  const scheduleTime = getScheduleTime(roomId)
+  const scheduleDelay = room.playState.isPlaying ? (scheduleTime - Date.now()) / 1000 : 0
+  const pauseTime = estimateCurrentTime(roomId) + scheduleDelay
+  const snapshotTime = room.currentTrack.duration > 0 ? Math.min(room.currentTrack.duration, pauseTime) : pauseTime
+  room.playState = { isPlaying: false, currentTime: snapshotTime, serverTimestamp: scheduleTime }
   // All clients must pause at the same scheduled moment
-  io.to(roomId).emit(EVENTS.PLAYER_PAUSE, { playState: scheduled(room.playState, roomId) })
+  io.to(roomId).emit(EVENTS.PLAYER_PAUSE, { playState: scheduled(room.playState, roomId, scheduleTime) })
 }
 
 export function seekTrack(io: TypedServer, roomId: string, currentTime: number, _initiatorSocket?: TypedSocket): void {
   const room = roomRepo.get(roomId)
-  if (!room) return
+  if (!room || !room.currentTrack) return
 
   const scheduleTime = getScheduleTime(roomId)
+  const boundedTime = room.currentTrack.duration > 0 ? Math.min(currentTime, room.currentTrack.duration) : currentTime
   // When playing, align serverTimestamp with scheduled time so estimateCurrentTime() is accurate
   room.playState = {
     ...room.playState,
-    currentTime,
+    currentTime: boundedTime,
     serverTimestamp: room.playState.isPlaying ? scheduleTime : Date.now(),
   }
   // All clients must seek at the same scheduled moment

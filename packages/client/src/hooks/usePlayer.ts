@@ -188,10 +188,20 @@ export function usePlayer() {
       }
     }
 
+    const cancelPendingPlay = () => {
+      if (!playTimerRef.current) return
+      clearTimeout(playTimerRef.current)
+      playTimerRef.current = null
+    }
+
     socket.on(EVENTS.PLAYER_PLAY, onPlayerPlay)
+    socket.on(EVENTS.PLAYER_PAUSE, cancelPendingPlay)
+    socket.on(EVENTS.PLAYER_SEEK, cancelPendingPlay)
 
     return () => {
       socket.off(EVENTS.PLAYER_PLAY, onPlayerPlay)
+      socket.off(EVENTS.PLAYER_PAUSE, cancelPendingPlay)
+      socket.off(EVENTS.PLAYER_SEEK, cancelPendingPlay)
       if (playTimerRef.current) {
         clearTimeout(playTimerRef.current)
         playTimerRef.current = null
@@ -277,13 +287,21 @@ export function usePlayer() {
   }, [socket])
 
   const pause = useCallback(() => {
+    if (playTimerRef.current) {
+      clearTimeout(playTimerRef.current)
+      playTimerRef.current = null
+    }
     socket.emit(EVENTS.PLAYER_PAUSE)
   }, [socket])
 
   const seek = useCallback(
     (time: number) => {
+      if (playTimerRef.current) {
+        clearTimeout(playTimerRef.current)
+        playTimerRef.current = null
+      }
       // Optimistic local update for the progress bar UI
-      localSeek(time)
+      if (!getNativePlaybackBridge()) localSeek(time)
       usePlayerStore.getState().setCurrentTime(time)
       socket.emit(EVENTS.PLAYER_SEEK, { currentTime: time })
     },
