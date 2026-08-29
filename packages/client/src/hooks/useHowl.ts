@@ -295,7 +295,6 @@ class AndroidMediaEngine implements AudioEngine {
   private handleNativeEvent = (event: CustomEvent<NativePlaybackEvent>) => {
     if (this.destroyed) return
     const detail = event.detail
-    if (detail.source && detail.source !== this.source) return
     if (detail.type === 'load') this.options.onload()
     if (detail.type === 'play') {
       this.emitOnce('play')
