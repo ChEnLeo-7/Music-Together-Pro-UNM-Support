@@ -7,6 +7,7 @@ import { storage } from '@/lib/storage'
 import type { MusicSource, MyPlatformAuth, PlatformAuthStatus } from '@music-together/shared'
 import { Crown, KeyRound, LogOut, ScanLine } from 'lucide-react'
 import { useState } from 'react'
+import { useI18n } from '@/lib/i18n'
 import { ManualCookieDialog } from './ManualCookieDialog'
 import { QrLoginDialog } from './QrLoginDialog'
 
@@ -29,6 +30,7 @@ function PlatformRow({
   onCookieLogin: () => void
   onLogout: () => void
 }) {
+  const t = useI18n((s) => s.t)
   const loggedInCount = status?.loggedInCount ?? 0
   const hasVip = status?.hasVip ?? false
   const maxVipType = status?.maxVipType ?? 0
@@ -42,14 +44,14 @@ function PlatformRow({
           {hasVip && (
             <Badge className="gap-1 border-yellow-400/40 bg-yellow-400/15 text-xs text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.12)] hover:bg-yellow-400/20">
               <Crown className="h-3 w-3" />
-              {VIP_LABELS[maxVipType] || 'VIP'}
+              {maxVipType === 10 || maxVipType === 11 ? t('vipVinyl') : maxVipType === 2 ? t('vipDeluxe') : maxVipType === 3 ? t('vipSuper') : VIP_LABELS[maxVipType] || 'VIP'}
             </Badge>
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          {loggedInCount > 0 ? `${loggedInCount} 人已登录${hasVip ? '，VIP 可用' : ''}` : '暂无人登录'}
+           {loggedInCount > 0 ? t('loggedInCountStatus', { count: loggedInCount, vip: hasVip ? '，VIP 可用' : '' }) : t('noLoggedIn')}
           {isMyLoggedIn && myStatus?.nickname && (
-            <span className="text-foreground ml-1">（我：{myStatus.nickname}）</span>
+             <span className="text-foreground ml-1">({t('currentUser', { nickname: myStatus.nickname })})</span>
           )}
         </p>
       </div>
@@ -60,10 +62,10 @@ function PlatformRow({
             {(platform === 'netease' || platform === 'kugou' || platform === 'tencent') && (
               <Button variant="outline" size="sm" onClick={() => onQrLogin(platform)} className="gap-1">
                 <ScanLine className="h-3.5 w-3.5" />
-                扫码
+                 {t('scanLogin')}
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={onCookieLogin} className="gap-1">
+             <Button variant="outline" size="sm" onClick={onCookieLogin} className="gap-1" aria-label={t('cookieLogin')}>
               <KeyRound className="h-3.5 w-3.5" />
               Cookie
             </Button>
@@ -71,7 +73,7 @@ function PlatformRow({
         ) : (
           <Button variant="ghost" size="sm" onClick={onLogout} className="text-destructive gap-1">
             <LogOut className="h-3.5 w-3.5" />
-            登出
+             {t('logout')}
           </Button>
         )}
       </div>
@@ -88,6 +90,7 @@ export function PlatformAuthSection() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [cookieDialogOpen, setCookieDialogOpen] = useState(false)
   const [cookieDialogPlatform, setCookieDialogPlatform] = useState<MusicSource>('netease')
+  const t = useI18n((s) => s.t)
 
   const platforms: MusicSource[] = ['netease', 'tencent', 'kugou']
 
@@ -109,9 +112,9 @@ export function PlatformAuthSection() {
 
   return (
     <div className="space-y-1">
-      <h3 className="text-base font-semibold">平台账号</h3>
+       <h3 className="text-base font-semibold">{t('platformAccountsTitle')}</h3>
       <Separator className="mt-2 mb-4" />
-      <p className="text-muted-foreground mb-4 text-xs">登录音乐平台 VIP 账号后，房间内所有人都可以播放 VIP 歌曲</p>
+       <p className="text-muted-foreground mb-4 text-xs">{t('platformAccountsVipDesc')}</p>
 
       {platforms.map((platform, i) => (
         <div key={platform}>

@@ -7,8 +7,10 @@ import { Label } from '@/components/ui/label'
 import { useState } from 'react'
 import { storage } from '@/lib/storage'
 import { useSocketContext } from '@/providers/SocketProvider'
-import { loginIdentity, useGuestIdentity } from '@/lib/identityAuth'
+import { createGuestIdentity, loginIdentity } from '@/lib/identityAuth'
 import { toast } from 'sonner'
+import { useAccountStore } from '@/stores/accountStore'
+import { getLocalizedError, useI18n } from '@/lib/i18n'
 
 interface InteractionGateProps {
   onStart: (password?: string, nickname?: string) => void
@@ -22,16 +24,18 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
   const prefersReducedMotion = useReducedMotion()
   const [password, setPassword] = useState('')
   const [mode, setMode] = useState<'account' | 'guest'>('account')
-  const [accountId, setAccountId] = useState('')
+  const [username, setUsername] = useState('')
   const [accountPassword, setAccountPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const me = useAccountStore((state) => state.me)
+  const t = useI18n((s) => s.t)
 
-  const savedNickname = storage.getNickname()
-  const needsIdentity = !savedNickname
+  const savedNickname = me?.nickname || storage.getNickname()
+  const needsIdentity = !me
   const [nickname, setNickname] = useState(savedNickname)
 
-  const identityReady = !needsIdentity || (mode === 'account' ? accountId.trim() && accountPassword : nickname.trim())
-  const canStart = Boolean(identityReady) && (!hasPassword || password.trim().length > 0)
+  const identityReady = !needsIdentity || (mode === 'account' ? username.trim() && accountPassword : nickname.trim())
+  const canStart = Boolean(identityReady) && (!hasPassword || password.length > 0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,17 +45,17 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
       let joinNickname = savedNickname
       if (needsIdentity) {
         if (mode === 'account') {
-          const me = await loginIdentity(socket, accountId, accountPassword)
-          joinNickname = me.nickname || me.id
-          toast.success('登录成功')
+          const me = await loginIdentity(socket, username, accountPassword)
+          joinNickname = me.nickname
+           toast.success(t('loginSuccess'))
         } else {
-          const me = await useGuestIdentity(socket, nickname)
+          const me = await createGuestIdentity(socket, nickname)
           joinNickname = me?.nickname || nickname.trim()
         }
       }
-      onStart(hasPassword ? password.trim() : undefined, joinNickname)
+      onStart(hasPassword ? password : undefined, joinNickname)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '身份切换失败')
+       toast.error(getLocalizedError(err, t))
     } finally {
       setLoading(false)
     }
@@ -88,7 +92,7 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
                 <KeyRound className="h-3.5 w-3.5" />
                 <span>账号登录</span>
               </div>
-              <Input placeholder="账号 ID" value={accountId} onChange={(e) => setAccountId(e.target.value)} autoFocus />
+              <Input placeholder="用户名" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
               <Input type="password" placeholder="密码" value={accountPassword} onChange={(e) => setAccountPassword(e.target.value)} />
             </div>
           )}

@@ -4,7 +4,9 @@ export const ERROR_CODE = {
   INVALID_DATA: 'INVALID_DATA',
   INTERNAL: 'INTERNAL',
   ROOM_NOT_FOUND: 'ROOM_NOT_FOUND',
+  ROOM_PASSWORD_REQUIRED: 'ROOM_PASSWORD_REQUIRED',
   WRONG_PASSWORD: 'WRONG_PASSWORD',
+  ROOM_GRANT_INVALID: 'ROOM_GRANT_INVALID',
   JOIN_FAILED: 'JOIN_FAILED',
   NOT_IN_ROOM: 'NOT_IN_ROOM',
   NOT_OWNER: 'NOT_OWNER',
@@ -91,8 +93,6 @@ export interface RoomState {
   creatorId: string
   hostId: string
   hasPassword: boolean
-  /** 密码明文（仅 owner 可见；普通成员和临时管理员只收到 hasPassword） */
-  password?: string | null
   audioQuality: AudioQuality
   sourcePriority: SourcePriority
   hidden: boolean

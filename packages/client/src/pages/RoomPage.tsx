@@ -23,11 +23,11 @@ import { useRoomStore } from '@/stores/roomStore'
 import { useChatStore } from '@/stores/chatStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useShortcutStore } from '@/stores/shortcutStore'
-import { useAccountStore, type AccountMe } from '@/stores/accountStore'
 import { useSocketContext } from '@/providers/SocketProvider'
 import { AbilityProvider } from '@/providers/AbilityProvider'
 import { useClockSync } from '@/hooks/useClockSync'
 import { storage } from '@/lib/storage'
+import { getLocalizedError, useI18n } from '@/lib/i18n'
 
 /** Invisible component that runs NTP clock-sync only while in a room. */
 function ClockSyncRunner() {
@@ -39,6 +39,7 @@ interface RoomCheckInfo {
   name: string
   hasPassword: boolean
   userCount: number
+  mayJoinWithoutPassword: boolean
 }
 
 export default function RoomPage() {
@@ -48,6 +49,7 @@ export default function RoomPage() {
   const { leaveRoom, dissolveRoom, updateSettings, setUserRole } = useRoom()
   const { play, pause, seek, next, prev } = usePlayer()
   const { addTrack, insertAfterCurrent, removeTrack, reorderTracks, clearQueue } = useQueue()
+  const t = useI18n((s) => s.t)
 
   const room = useRoomStore((s) => s.room)
   const chatOpen = useChatStore((s) => s.isChatOpen)
@@ -66,7 +68,6 @@ export default function RoomPage() {
   // From lobby: isAudioUnlocked() is already true → gate skipped, auto-join runs immediately.
   // Direct URL / page refresh: gate blocks until user clicks "开始收听".
   const [gateOpen, setGateOpen] = useState(() => isAudioUnlocked())
-  const [gatePasswordError, setGatePasswordError] = useState<string | null>(null)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
@@ -76,6 +77,14 @@ export default function RoomPage() {
   const [fullscreenSignal, setFullscreenSignal] = useState(0)
   const [searchFocusSignal, setSearchFocusSignal] = useState(0)
   const [mobileChatMetrics, setMobileChatMetrics] = useState({ bottom: 0, height: 0 })
+  const mobileChatDialogRef = useRef<HTMLDivElement>(null)
+
+  const closeOtherOverlays = useCallback((except: 'search' | 'queue' | 'settings' | 'chat') => {
+    if (except !== 'search') setSearchOpen(false)
+    if (except !== 'queue') setQueueOpen(false)
+    if (except !== 'settings') setSettingsOpen(false)
+    if (except !== 'chat') setChatOpen(false)
+  }, [setChatOpen])
 
   // Fallback password dialog state (edge case: password changed after pre-check)
   const [passwordNeeded, setPasswordNeeded] = useState(false)
@@ -87,25 +96,6 @@ export default function RoomPage() {
   const passwordRef = useRef<string | undefined>(undefined)
   const gateNicknameRef = useRef<string | undefined>(undefined)
   const overlayStateRef = useRef({ searchOpen: false, queueOpen: false, settingsOpen: false, chatOpen: false })
-
-  useEffect(() => {
-    let cancelled = false
-    useAccountStore.getState().setLoading(true)
-    fetch(`${SERVER_URL}/api/auth/me`, { credentials: 'include' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: AccountMe | null) => {
-        if (!cancelled) useAccountStore.getState().setMe(data)
-      })
-      .catch(() => {
-        if (!cancelled) useAccountStore.getState().setMe(null)
-      })
-      .finally(() => {
-        if (!cancelled) useAccountStore.getState().setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   // --- Pre-check: fetch room existence & password requirement ---
   useEffect(() => {
@@ -133,7 +123,7 @@ export default function RoomPage() {
 
         if (!res.ok) {
           // Room not found
-          toast.error('房间不存在')
+           toast.error(t('roomNotFound'))
           navigate('/', { replace: true })
           return
         }
@@ -143,7 +133,11 @@ export default function RoomPage() {
           name: data.name,
           hasPassword: data.hasPassword,
           userCount: data.userCount,
+          mayJoinWithoutPassword: data.mayJoinWithoutPassword,
         })
+        if (data.hasPassword && !data.mayJoinWithoutPassword && !storage.getRejoinToken(roomId!)) {
+          setGateOpen(false)
+        }
       } catch (err) {
         if (cancelled) return
         // Network error — still allow the user to try (gate will show, join may fail)
@@ -167,15 +161,15 @@ export default function RoomPage() {
   // --- Gate start handler (receives password from gate if applicable) ---
   const handleGateStart = useCallback(async (password?: string, nickname?: string) => {
     await unlockAudio()
-    if (password) passwordRef.current = password
+    if (password !== undefined) passwordRef.current = password
     if (nickname) gateNicknameRef.current = nickname
-    setGatePasswordError(null)
     setGateOpen(true)
   }, [])
 
   // --- Auto-join if room state is missing (e.g. page refresh, direct URL access) ---
   // Only after the interaction gate is open — avoids autoplay warnings.
   useEffect(() => {
+    if (checking) return
     if (!gateOpen) return
     if (isLeavingRef.current) return
     if (!room && isConnected && !joiningRef.current && roomId) {
@@ -196,38 +190,26 @@ export default function RoomPage() {
     if (room) {
       joiningRef.current = false
     }
-  }, [gateOpen, room, isConnected, socket, roomId])
+  }, [checking, gateOpen, room, isConnected, socket, roomId])
 
   // --- Handle ROOM_ERROR — password errors, fallback dialog ---
   useEffect(() => {
     const onRoomError = (error: { code: string; message: string }) => {
       joiningRef.current = false
 
-      if (error.code === ERROR_CODE.WRONG_PASSWORD) {
-        // If we came through the gate, revert to gate with error
-        if (!passwordNeeded && !gateOpen) {
-          // Gate was not yet open — shouldn't happen, but handle gracefully
-          setPasswordNeeded(true)
-          return
-        }
-
-        if (gateOpen && !passwordNeeded) {
-          // Password was sent from gate but rejected (e.g. race condition / password changed)
-          // Reset gate so user can re-enter password
-          setGateOpen(false)
-          setGatePasswordError('密码错误，请重试')
-          passwordRef.current = undefined
-          return
-        }
-
-        // Fallback password dialog path
-        if (passwordNeeded) {
-          setPasswordError('密码错误，请重试')
-          setPasswordLoading(false)
-        } else {
-          setPasswordNeeded(true)
-          setPasswordLoading(false)
-        }
+      if (
+        error.code === ERROR_CODE.WRONG_PASSWORD ||
+        error.code === ERROR_CODE.ROOM_PASSWORD_REQUIRED ||
+        error.code === ERROR_CODE.ROOM_GRANT_INVALID
+      ) {
+        if (roomId) storage.clearRejoinToken(roomId)
+        passwordRef.current = undefined
+        setPasswordNeeded(true)
+         setPasswordError(error.code === ERROR_CODE.WRONG_PASSWORD ? t('wrongPassword') : null)
+        setPasswordLoading(false)
+      } else if (error.code === ERROR_CODE.RATE_LIMITED) {
+        setPasswordLoading(false)
+         toast.error(getLocalizedError(error, t))
       }
     }
 
@@ -238,7 +220,6 @@ export default function RoomPage() {
         setPasswordError(null)
         setPasswordLoading(false)
       }
-      setGatePasswordError(null)
     }
 
     socket.on(EVENTS.ROOM_ERROR, onRoomError)
@@ -247,7 +228,7 @@ export default function RoomPage() {
       socket.off(EVENTS.ROOM_ERROR, onRoomError)
       socket.off(EVENTS.ROOM_STATE, onRoomState)
     }
-  }, [socket, passwordNeeded, gateOpen])
+  }, [socket, passwordNeeded, roomId, t])
 
   // No unmount cleanup needed — the server handles room membership:
   // - On disconnect: server's disconnect handler removes user
@@ -265,7 +246,6 @@ export default function RoomPage() {
         roomId,
         nickname,
         password,
-        rejoinToken: storage.getRejoinToken(roomId) ?? undefined,
       })
     },
     [socket, roomId],
@@ -290,9 +270,10 @@ export default function RoomPage() {
 
   const handleLeaveRoom = useCallback(() => {
     isLeavingRef.current = true
+    if (roomId) storage.clearRejoinToken(roomId)
     leaveRoom()
     navigate('/', { replace: true })
-  }, [leaveRoom, navigate])
+  }, [leaveRoom, navigate, roomId])
 
   useEffect(() => {
     if (playerFullscreen) setChatOpen(false)
@@ -310,12 +291,15 @@ export default function RoomPage() {
       const viewport = window.visualViewport
       const layoutHeight = window.innerHeight
       const visibleHeight = viewport?.height ?? layoutHeight
+      const offsetTop = viewport?.offsetTop ?? 0
+      // Fixed elements use the layout viewport, while the keyboard shrinks the visual viewport.
+      const keyboardInset = Math.max(0, layoutHeight - (offsetTop + visibleHeight))
       const verticalGap = 8
       const minHeight = Math.min(360, Math.max(280, visibleHeight - verticalGap * 2))
       const preferredHeight = visibleHeight * 0.72
       const maxHeight = Math.max(minHeight, visibleHeight - verticalGap * 2)
       setMobileChatMetrics({
-        bottom: 0,
+        bottom: keyboardInset,
         height: Math.round(Math.min(Math.max(preferredHeight, minHeight), maxHeight)),
       })
     }
@@ -334,6 +318,58 @@ export default function RoomPage() {
       document.documentElement.style.overscrollBehavior = previousHtmlOverscroll
     }
   }, [chatOpen, isMobile])
+
+  useEffect(() => {
+    if (!isMobile || !chatOpen) return
+
+    const dialog = mobileChatDialogRef.current
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    let focusFrame: number | undefined
+    const getFocusableElements = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.offsetParent !== null)
+
+    // Focus the sheet itself so opening it does not unexpectedly summon the keyboard.
+    focusFrame = requestAnimationFrame(() => {
+      dialog?.focus()
+    })
+
+    const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        setChatOpen(false)
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = getFocusableElements()
+      if (focusable.length === 0) {
+        event.preventDefault()
+        dialog?.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    dialog?.addEventListener('keydown', handleDialogKeyDown)
+    return () => {
+      if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
+      dialog?.removeEventListener('keydown', handleDialogKeyDown)
+      if (previouslyFocused?.isConnected) previouslyFocused.focus()
+    }
+  }, [chatOpen, isMobile, setChatOpen])
 
   useEffect(() => {
     overlayStateRef.current = { searchOpen, queueOpen, settingsOpen, chatOpen }
@@ -409,6 +445,9 @@ export default function RoomPage() {
 
   // --- Interaction gate (audio unlock + optional password) ---
   if (!gateOpen) {
+    const requiresPasswordInput = Boolean(
+      roomId && roomInfo?.hasPassword && !roomInfo.mayJoinWithoutPassword && !storage.getRejoinToken(roomId),
+    )
     return (
       <motion.div
         initial={{ opacity: 0 }}
@@ -419,8 +458,7 @@ export default function RoomPage() {
         <InteractionGate
           onStart={handleGateStart}
           roomName={roomInfo?.name}
-          hasPassword={roomInfo?.hasPassword || !!gatePasswordError}
-          passwordError={gatePasswordError}
+          hasPassword={requiresPasswordInput}
         />
       </motion.div>
     )
@@ -437,9 +475,9 @@ export default function RoomPage() {
       >
         <div className="flex h-dvh flex-col bg-background">
           <RoomHeader
-            onOpenSearch={() => setSearchOpen(true)}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenMembers={handleOpenMembers}
+            onOpenSearch={() => { closeOtherOverlays('search'); setSearchOpen(true) }}
+            onOpenSettings={() => { closeOtherOverlays('settings'); setSettingsOpen(true) }}
+            onOpenMembers={() => { closeOtherOverlays('settings'); handleOpenMembers() }}
             onLeaveRoom={handleLeaveRoom}
           />
 
@@ -451,8 +489,8 @@ export default function RoomPage() {
                 onSeek={seek}
                 onNext={next}
                 onPrev={prev}
-                onOpenChat={toggleChat}
-                onOpenQueue={() => setQueueOpen(true)}
+                onOpenChat={() => { closeOtherOverlays('chat'); toggleChat() }}
+                onOpenQueue={() => { closeOtherOverlays('queue'); setQueueOpen(true) }}
                 chatUnreadCount={chatUnreadCount}
                 onFullscreenChange={setPlayerFullscreen}
                 fullscreenSignal={fullscreenSignal}
@@ -484,12 +522,15 @@ export default function RoomPage() {
                 role="dialog"
                 aria-modal="true"
                 aria-label="聊天"
+                tabIndex={-1}
+                ref={mobileChatDialogRef}
                 initial={{ opacity: 1 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 1 }}
               >
                 <motion.button
                   type="button"
+                  tabIndex={-1}
                   className="absolute inset-0 bg-black/50"
                   aria-label="关闭聊天"
                   onClick={() => setChatOpen(false)}
@@ -547,6 +588,7 @@ export default function RoomPage() {
 
         {/* Fallback password dialog for edge cases (password changed after pre-check) */}
         <PasswordDialog
+          key={`${roomId ?? 'room'}:${passwordNeeded ? 'open' : 'closed'}`}
           open={passwordNeeded}
           onOpenChange={handlePasswordOpenChange}
           roomName={room?.name ?? roomId ?? ''}

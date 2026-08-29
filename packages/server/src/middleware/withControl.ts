@@ -30,6 +30,10 @@ export function isRoomManager(ctx: HandlerContext): boolean {
   return ctx.user.role === 'owner' || ctx.user.role === 'admin' || userRepo.isServerAdmin(ctx.socket.data.identityUserId)
 }
 
+export function isRoomOwner(roomCreatorId: string, principalUserId: string): boolean {
+  return principalUserId === roomCreatorId
+}
+
 export function createWithRoomManager(io: TypedServer) {
   const withRoom = createWithRoom(io)
 
@@ -47,4 +51,20 @@ export function createWithRoomManager(io: TypedServer) {
   }
 }
 
-export const createWithOwnerOnly = createWithRoomManager
+export function createWithOwnerOnly(io: TypedServer) {
+  const withRoom = createWithRoom(io)
+
+  return function withOwnerOnly<T = void>(handler: (ctx: HandlerContext, data: T) => void | Promise<void>) {
+    return withRoom<T>((ctx, data) => {
+      const principalId = ctx.socket.data.identityUserId
+      if (!isRoomOwner(ctx.room.creatorId, principalId) || ctx.user.id !== ctx.room.creatorId) {
+        ctx.socket.emit(EVENTS.ROOM_ERROR, {
+          code: ERROR_CODE.NO_PERMISSION,
+          message: '只有房主可以操作',
+        })
+        return
+      }
+      return handler(ctx, data)
+    })
+  }
+}

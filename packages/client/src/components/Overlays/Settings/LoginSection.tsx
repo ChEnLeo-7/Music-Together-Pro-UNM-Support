@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { MusicSource, MyPlatformAuth, PlatformAuthStatus } from '@music-together/shared'
 import { Crown, KeyRound, Loader2, LogOut, ScanLine } from 'lucide-react'
+import { useI18n } from '@/lib/i18n'
 
 const VIP_LABELS: Record<number, string> = {
   0: '',
@@ -38,6 +39,7 @@ export function LoginSection({
   const hasVip = status?.hasVip ?? false
   const maxVipType = status?.maxVipType ?? 0
   const isMyLoggedIn = myStatus?.loggedIn ?? false
+  const t = useI18n((s) => s.t)
 
   return (
     <div className="flex items-center justify-between gap-2 overflow-hidden rounded-lg border p-3">
@@ -48,20 +50,20 @@ export function LoginSection({
           ) : isVerifying ? (
             <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-sm">
               <Loader2 className="h-3 w-3 animate-spin" />
-              验证登录中…
+              {t('verifyingLogin')}
             </span>
           ) : (
-            <span className="text-muted-foreground shrink-0 text-sm">未登录</span>
+            <span className="text-muted-foreground shrink-0 text-sm">{t('notLoggedIn')}</span>
           )}
           {hasVip && (
             <Badge className="shrink-0 gap-1 border-yellow-400/40 bg-yellow-400/15 text-xs text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.12)] hover:bg-yellow-400/20">
               <Crown className="h-3 w-3" />
-              {VIP_LABELS[maxVipType] || 'VIP'}
+              {maxVipType === 10 || maxVipType === 11 ? t('vipVinyl') : maxVipType === 2 ? t('vipDeluxe') : maxVipType === 3 ? t('vipSuper') : VIP_LABELS[maxVipType] || 'VIP'}
             </Badge>
           )}
         </div>
         <p className="text-muted-foreground truncate text-xs">
-          {loggedInCount > 0 ? `房间内 ${loggedInCount} 人已登录${hasVip ? '，VIP 可用' : ''}` : '房间暂无人登录此平台'}
+          {loggedInCount > 0 ? t('roomLoggedInStatus', { count: loggedInCount, vip: hasVip ? '，VIP 可用' : '' }) : t('noRoomLoggedIn')}
         </p>
       </div>
 
@@ -69,16 +71,16 @@ export function LoginSection({
         {!isMyLoggedIn && !isVerifying ? (
           <>
             {(platform === 'netease' || platform === 'kugou' || platform === 'tencent') && (
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={onQrLogin} title="扫码登录">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={onQrLogin} title={t('scanLogin')} aria-label={t('scanLogin')}>
                 <ScanLine className="h-3.5 w-3.5" />
               </Button>
             )}
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={onCookieLogin} title="Cookie 登录">
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={onCookieLogin} title={t('cookieLogin')} aria-label={t('cookieLogin')}>
               <KeyRound className="h-3.5 w-3.5" />
             </Button>
           </>
         ) : isMyLoggedIn ? (
-          <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={onLogout} title="登出">
+          <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={onLogout} title={t('logout')} aria-label={t('logout')}>
             <LogOut className="h-3.5 w-3.5" />
           </Button>
         ) : null}

@@ -110,7 +110,12 @@ export function ChatPanel({ className }: ChatPanelProps = {}) {
           placeholder="输入消息..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          onKeyDown={(e) => {
+            // Enter is also emitted while an IME is composing on mobile.
+            if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return
+            e.preventDefault()
+            handleSend()
+          }}
           className="flex-1"
           aria-label="输入聊天消息"
         />

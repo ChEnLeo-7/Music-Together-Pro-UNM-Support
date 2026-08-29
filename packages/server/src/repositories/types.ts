@@ -1,10 +1,12 @@
 import type { AudioQuality, ChatMessage, PlayMode, PlayState, RoomListItem, SourcePriority, Track, User } from '@music-together/shared'
+import type { EncryptedRoomCredential } from '../services/roomCredentialService.js'
 
-/** 服务端内部房间数据模型 -- 含密码（仅通过 owner 专用 RoomState 发送给客户端） */
+/** 服务端内部房间数据模型。凭据绝不能通过普通房间状态下发。 */
 export interface RoomData {
   id: string
   name: string
-  password: string | null
+  credential: EncryptedRoomCredential | null
+  passwordVersion: number
   /** 房间创建者 ID（永久不变，创建者为 owner，加入时自动成为 conductor） */
   creatorId: string
   hostId: string

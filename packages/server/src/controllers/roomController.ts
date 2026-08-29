@@ -7,18 +7,19 @@
   setRoleSchema,
 } from '@music-together/shared'
 import type { TypedServer, TypedSocket } from '../middleware/types.js'
-import { createWithOwnerOnly, isRoomManager } from '../middleware/withControl.js'
+import { createWithOwnerOnly } from '../middleware/withControl.js'
 import { createWithRoom } from '../middleware/withRoom.js'
 import { cleanupSocketRateLimit } from '../middleware/socketRateLimiter.js'
 import { roomRepo } from '../repositories/roomRepository.js'
 import * as chatService from '../services/chatService.js'
 import * as playerService from '../services/playerService.js'
-import { issueRejoinTicket, revokeRejoinTickets } from '../services/rejoinTicketService.js'
+import { revokeUserRoomAdmissionGrants } from '../services/roomAdmissionService.js'
 import { destroyRoom } from '../services/roomLifecycleService.js'
 import * as roomService from '../services/roomService.js'
 import * as voteService from '../services/voteService.js'
 import { logger } from '../utils/logger.js'
 import type { RoomData } from '../repositories/types.js'
+import { getSocketSourceIp } from '../utils/sourceIp.js'
 
 export function registerRoomController(io: TypedServer, socket: TypedSocket) {
   const withOwnerOnly = createWithOwnerOnly(io)
@@ -60,9 +61,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       socket.leave('lobby')
       socket.join(room.id)
       socket.emit(EVENTS.ROOM_CREATED, { roomId: room.id, userId: user.id })
-      socket.emit(EVENTS.ROOM_STATE, roomService.toPublicRoomStateForOwner(room, { includeQueue: true }))
-      const rejoin = issueRejoinTicket(room.id, user.id)
-      socket.emit(EVENTS.ROOM_REJOIN_TOKEN, { roomId: room.id, token: rejoin.token, expiresAt: rejoin.expiresAt })
+      socket.emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(room, { includeQueue: true }))
 
       roomService.broadcastRoomList(io)
     } catch (err) {
@@ -91,6 +90,8 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         socket.data.identityUserId,
         password,
         rejoinToken,
+        socket.data.sessionId,
+        getSocketSourceIp(socket),
       )
       if (!validation.valid) {
         socket.emit(EVENTS.ROOM_ERROR, {
@@ -113,25 +114,20 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       }
 
       const { room: updatedRoom, user, hostChanged, roleChanged, hadMemberRecord } = result
-      const rejoin = issueRejoinTicket(roomId, user.id)
 
       socket.leave('lobby')
       socket.join(roomId)
 
-      // Send full room state + chat history
-      // Owner 鏀跺埌鍚瘑鐮佺増鏈紝鍏朵粬鎴愬憳鏀跺埌涓嶅惈瀵嗙爜鐗堟湰
-      const canManageRoom = user.role === 'owner' || roomService.isServerAdminUser(user.id)
-      const stateForJoiner = canManageRoom
-        ? roomService.toPublicRoomStateForOwner(updatedRoom, { includeQueue: true })
-        : roomService.toPublicRoomState(updatedRoom, { includeQueue: true })
-      socket.emit(EVENTS.ROOM_STATE, stateForJoiner)
+      socket.emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(updatedRoom, { includeQueue: true }))
 
       // If conductor or roles changed (owner/admin returned, temporary admin cleared),
       // broadcast to ALL OTHER clients so permissions stay in sync.
       if (hostChanged || roleChanged) {
         socket.to(roomId).emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(updatedRoom))
       }
-      socket.emit(EVENTS.ROOM_REJOIN_TOKEN, { roomId, token: rejoin.token, expiresAt: rejoin.expiresAt })
+      if (validation.grant) {
+        socket.emit(EVENTS.ROOM_REJOIN_TOKEN, { roomId, token: validation.grant.token, expiresAt: validation.grant.expiresAt })
+      }
       if (updatedRoom.chatHistoryForNewUsers || hadMemberRecord) {
         socket.emit(EVENTS.CHAT_HISTORY, chatService.getHistory(roomId))
       } else {
@@ -203,12 +199,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
   socket.on(
     EVENTS.ROOM_REFRESH,
     withRoom((ctx) => {
-      ctx.socket.emit(
-        EVENTS.ROOM_STATE,
-        isRoomManager(ctx)
-          ? roomService.toPublicRoomStateForOwner(ctx.room, { includeQueue: true })
-          : roomService.toPublicRoomState(ctx.room, { includeQueue: true }),
-      )
+      ctx.socket.emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(ctx.room, { includeQueue: true }))
     }),
   )
 
@@ -241,7 +232,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       // 浠?owner 鏀跺埌瀵嗙爜鏄庢枃锛屽叾浠栨垚鍛樺彧鏀跺埌 hasPassword 鏍囪
       const baseSettings = {
         name: updatedRoom.name,
-        hasPassword: updatedRoom.password !== null,
+        hasPassword: updatedRoom.credential !== null,
         audioQuality: updatedRoom.audioQuality,
         sourcePriority: updatedRoom.sourcePriority,
         hidden: updatedRoom.hidden,
@@ -340,7 +331,7 @@ function handleLeave(io: TypedServer, socket: TypedSocket, reason?: string, revo
 
   const { roomId, user, room, hostChanged, roleChanged, voteUpdated, staleSocketOnly } = result
   if (revokeTicket) {
-    revokeRejoinTickets(roomId, user.id)
+    revokeUserRoomAdmissionGrants(roomId, user.id)
   }
   socket.leave(roomId)
   socket.join('lobby')
@@ -383,18 +374,5 @@ function handleLeave(io: TypedServer, socket: TypedSocket, reason?: string, revo
 }
 
 function emitRoomStateByPermission(io: TypedServer, roomId: string, room: RoomData): void {
-  const managerSocketIds = room.users
-    .filter((user) => user.online !== false && (user.role === 'owner' || roomService.isServerAdminUser(user.id)))
-    .map((user) => roomRepo.getSocketIdForUser(roomId, user.id))
-    .filter((socketId): socketId is string => Boolean(socketId))
-
-  if (managerSocketIds.length === 0) {
-    io.to(roomId).emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(room))
-    return
-  }
-
-  for (const socketId of managerSocketIds) {
-    io.to(socketId).emit(EVENTS.ROOM_STATE, roomService.toPublicRoomStateForOwner(room))
-  }
-  io.to(roomId).except(managerSocketIds).emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(room))
+  io.to(roomId).emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(room))
 }

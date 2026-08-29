@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from 'react'
 import { Lock, Music, Loader2, UserRound } from 'lucide-react'
-import { LIMITS } from '@music-together/shared'
+import { LIMITS, roomPasswordSchema } from '@music-together/shared'
 import {
   ResponsiveDialog,
   ResponsiveDialogBody,
@@ -39,7 +39,8 @@ export function CreateRoomDialog({
     }
   }, [open, defaultNickname])
 
-  const canSubmit = nickname.trim() && !(passwordEnabled && !password.trim())
+  const passwordResult = passwordEnabled ? roomPasswordSchema.safeParse(password) : null
+  const canSubmit = Boolean(nickname.trim()) && (!passwordEnabled || passwordResult?.success === true)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,7 +48,7 @@ export function CreateRoomDialog({
     onCreateRoom(
       nickname.trim(),
       roomName.trim() || undefined,
-      passwordEnabled && password.trim() ? password.trim() : undefined,
+      passwordEnabled && passwordResult?.success ? passwordResult.data : undefined,
     )
   }
 

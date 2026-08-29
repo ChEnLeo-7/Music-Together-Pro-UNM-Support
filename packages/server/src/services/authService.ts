@@ -127,6 +127,19 @@ export function clearPersistedUserCookies(roomId: string, userId: string): void 
   logger.info(`Auth: cleared persisted cookies for user ${userId} in room ${roomId}`)
 }
 
+export function cleanupUser(userId: string): void {
+  for (const [roomId, pool] of roomCookiePool) {
+    for (const [platform, entries] of pool) {
+      const remaining = entries.filter((entry) => entry.userId !== userId)
+      if (remaining.length === 0) pool.delete(platform)
+      else pool.set(platform, remaining)
+      platformAuthRepo.remove(roomId, platform, userId)
+    }
+    if (pool.size === 0) roomCookiePool.delete(roomId)
+  }
+  logger.info(`Auth: cleared all cookies for deleted user ${userId}`)
+}
+
 /**
  * Check if a specific cookie value already exists for the given room + platform.
  * Used to skip redundant validation on auto-resend.

@@ -2,8 +2,8 @@ import { Router, type Router as RouterType, type Request, type Response } from '
 import * as z from 'zod/v4'
 import { roomRepo } from '../repositories/roomRepository.js'
 import { persistentRoomRepo } from '../repositories/persistentRoomRepository.js'
-import { userRepo } from '../repositories/userRepository.js'
 import { getUnmServerUrl, normalizeUnmServerUrl } from '../services/runtimeConfigService.js'
+import { userRepo } from '../repositories/userRepository.js'
 
 const router: RouterType = Router()
 
@@ -29,15 +29,25 @@ function requireRoomAccess(req: Request, res: Response, roomId: string) {
   return room
 }
 
-function requireRoomManager(req: Request, res: Response, roomId: string) {
+function requireServerAdminRoomAccess(req: Request, res: Response, roomId: string) {
   const room = requireRoomAccess(req, res, roomId)
   if (!room) return null
-  const user = room.users.find((member) => member.id === req.identityUserId)
-  if (user?.role !== 'owner' && user?.role !== 'admin' && !userRepo.isServerAdmin(req.identityUserId ?? '')) {
-    res.status(403).json({ error: 'Forbidden' })
+  if (!req.identityUserId || !userRepo.isServerAdmin(req.identityUserId)) {
+    res.status(403).json({ code: 'UNM_ADMIN_REQUIRED', error: 'Only server administrators can configure UNM' })
     return null
   }
   return room
+}
+
+function validateUnmServerUrl(rawUrl: string): string | null {
+  const normalized = normalizeUnmServerUrl(rawUrl)
+  if (!normalized) return ''
+  try {
+    const url = new URL(normalized)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? normalized : null
+  } catch {
+    return null
+  }
 }
 
 router.get('/', (req: Request, res: Response) => {
@@ -47,7 +57,7 @@ router.get('/', (req: Request, res: Response) => {
     return
   }
 
-  const room = requireRoomManager(req, res, parsed.data.roomId)
+  const room = requireRoomAccess(req, res, parsed.data.roomId)
   if (!room) return
 
   res.json({
@@ -63,10 +73,15 @@ router.patch('/', (req: Request, res: Response) => {
     return
   }
 
-  const room = requireRoomManager(req, res, parsed.data.roomId)
+  const room = requireServerAdminRoomAccess(req, res, parsed.data.roomId)
   if (!room) return
 
-  room.unmServerUrl = normalizeUnmServerUrl(parsed.data.unmServerUrl ?? '')
+  const requestedUrl = validateUnmServerUrl(parsed.data.unmServerUrl ?? '')
+  if (requestedUrl === null) {
+    res.status(400).json({ code: 'INVALID_UNM_URL', error: 'UNM server URL must be a valid HTTP(S) URL' })
+    return
+  }
+  room.unmServerUrl = requestedUrl
   if (room.permanent) persistentRoomRepo.save(room)
 
   res.json({

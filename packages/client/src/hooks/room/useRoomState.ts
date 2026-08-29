@@ -8,6 +8,7 @@ import type { AudioQuality, RoomAutoFallbackEvent, RoomState, SourcePriority, Us
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { getLocalizedError, useI18n } from '@/lib/i18n'
 
 /**
  * Handles core room lifecycle events:
@@ -20,6 +21,7 @@ import { toast } from 'sonner'
  */
 export function useRoomState() {
   const navigate = useNavigate()
+  const t = useI18n((s) => s.t)
   const { socket } = useSocketContext()
   const navigateRef = useRef(navigate)
   navigateRef.current = navigate
@@ -43,14 +45,6 @@ export function useRoomState() {
       if (!roomState.currentTrack) {
         usePlayerStore.getState().reset()
       }
-      // 仅 owner 专用 ROOM_STATE 携带密码明文；公开 ROOM_STATE 不应清空本地密码缓存。
-      if ('password' in roomState) {
-        useRoomStore.getState().setRoomPassword(roomState.password ?? null)
-      }
-
-      // Full room sync (join/refresh) carries queue. Only resend persisted
-      // cookies once per room to avoid auth broadcasts triggering a ROOM_STATE
-      // -> AUTH_SET_COOKIE loop with large rooms.
       if ('queue' in roomState && authResendRoomIdRef.current !== roomState.id) {
         authResendRoomIdRef.current = roomState.id
         resendCookies()
@@ -72,7 +66,6 @@ export function useRoomState() {
     const onSettings = (settings: {
       name: string
       hasPassword: boolean
-      password?: string | null
       audioQuality: AudioQuality
       sourcePriority: SourcePriority
       hidden?: boolean
@@ -80,10 +73,6 @@ export function useRoomState() {
       chatHistoryForNewUsers?: boolean
     }) => {
       useRoomStore.getState().updateRoom(settings)
-      // 存储密码明文（服务端广播）
-      if ('password' in settings) {
-        useRoomStore.getState().setRoomPassword(settings.password ?? null)
-      }
     }
 
     const onRoleChanged = (data: { userId: string; role: UserRole }) => {
@@ -98,59 +87,62 @@ export function useRoomState() {
     const onRoomDissolved = (data: { roomId: string }) => {
       storage.clearRejoinToken(data.roomId)
       resetAllRoomState()
-      toast.info('房间已解散')
+       toast.info(t('roomDissolvedNotice'))
       navigateRef.current('/', { replace: true })
     }
 
-    const sourceLabel = (source: 'netease' | 'tencent') => (source === 'netease' ? '网易云' : 'QQ音乐')
+     const sourceLabel = (source: 'netease' | 'tencent') => t(source)
 
     const onAutoFallback = (data: RoomAutoFallbackEvent) => {
       const id = `auto-fallback:${data.attemptId}`
-      const from = sourceLabel(data.fromSource)
-      const to = sourceLabel(data.toSource)
+       const from = sourceLabel(data.fromSource)
+       const to = sourceLabel(data.toSource)
 
       if (data.status === 'trying') {
         const reasonLabel =
           data.reasonType === 'VIP_REQUIRED'
-            ? '无权限'
+             ? t('fallbackVip')
             : data.reasonType === 'COPYRIGHT_RESTRICTED'
-              ? '版权限制'
+               ? t('fallbackCopyright')
               : data.reasonType === 'NO_RESOURCE'
-                ? '无资源'
+                 ? t('fallbackNoResource')
                 : data.reasonType === 'TIMEOUT'
-                  ? '超时'
-                  : '不可用'
+                   ? t('fallbackTimeout')
+                   : t('fallbackUnavailable')
 
-        toast.loading(`${from} ${reasonLabel}，正在尝试使用 ${to} 点播…`, { id })
+         toast.loading(t('sourceFallbackTrying', { from, reason: reasonLabel, to }), { id })
         return
       }
 
       if (data.status === 'success') {
-        toast.success(`已切换到 ${to}，点播成功：${data.trackTitle}`, { id })
+         toast.success(t('sourceFallbackSuccess', { to, track: data.trackTitle }), { id })
         return
       }
 
       // failed
       type ReasonType = NonNullable<RoomAutoFallbackEvent['reasonType']>
       const reasonMap: Partial<Record<ReasonType, string>> = {
-        VIP_REQUIRED: 'VIP/权限',
-        COPYRIGHT_RESTRICTED: '版权限制',
-        NO_RESOURCE: '无资源',
-        TIMEOUT: '超时',
+         VIP_REQUIRED: t('fallbackVip'),
+         COPYRIGHT_RESTRICTED: t('fallbackCopyright'),
+         NO_RESOURCE: t('fallbackNoResource'),
+         TIMEOUT: t('fallbackTimeout'),
       }
       const reasonText = data.reasonType ? (reasonMap[data.reasonType] ?? null) : null
-      toast.error(
-        reasonText ? `自动换源失败：${data.trackTitle}（${reasonText}）` : `自动换源失败：${data.trackTitle}`,
-        { id },
-      )
+       toast.error(t('sourceFallbackFailed', { track: data.trackTitle, reason: reasonText ? `（${reasonText}）` : '' }), { id })
     }
 
     const onError = (error: { code: string; message: string }) => {
       // WRONG_PASSWORD is handled by RoomPage's own UI (gate password field),
       // so skip the generic toast to avoid duplicate feedback.
-      if (error.code === ERROR_CODE.WRONG_PASSWORD) return
+      if (
+        error.code === ERROR_CODE.WRONG_PASSWORD ||
+        error.code === ERROR_CODE.ROOM_PASSWORD_REQUIRED ||
+        error.code === ERROR_CODE.ROOM_GRANT_INVALID
+      ) {
+        return
+      }
 
-      toast.error(error.message)
+       toast.error(getLocalizedError(error, t))
       if (error.code === ERROR_CODE.ROOM_NOT_FOUND) {
         navigateRef.current('/', { replace: true })
       }
@@ -166,8 +158,6 @@ export function useRoomState() {
     socket.on(EVENTS.ROOM_AUTO_FALLBACK, onAutoFallback)
     socket.on(EVENTS.ROOM_ERROR, onError)
 
-    // If room was already set before this hook mounted (e.g. HomePage consumed
-    // ROOM_STATE and navigated here), resend cookies now once for that room.
     const mountedRoom = useRoomStore.getState().room
     if (mountedRoom && authResendRoomIdRef.current !== mountedRoom.id) {
       authResendRoomIdRef.current = mountedRoom.id
@@ -185,5 +175,5 @@ export function useRoomState() {
       socket.off(EVENTS.ROOM_AUTO_FALLBACK, onAutoFallback)
       socket.off(EVENTS.ROOM_ERROR, onError)
     }
-  }, [socket])
+  }, [socket, t])
 }

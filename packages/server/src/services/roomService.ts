@@ -1,11 +1,12 @@
-import { timingSafeEqual } from 'node:crypto'
 import type { AudioQuality, RoomListItem, SourcePriority, User, UserRole } from '@music-together/shared'
 import { nanoid } from 'nanoid'
 import type { RoomData } from '../repositories/types.js'
 import { roomRepo } from '../repositories/roomRepository.js'
 import { chatRepo } from '../repositories/chatRepository.js'
 import { scheduleDeletion, cancelDeletionTimer } from './roomLifecycleService.js'
-import { consumeRejoinTicket } from './rejoinTicketService.js'
+import { authorizeRoomJoin, revokeRoomAdmissionGrants } from './roomAdmissionService.js'
+import type { IssuedRoomGrant } from './roomAdmissionService.js'
+import { encryptRoomPassword } from './roomCredentialService.js'
 import { estimateCurrentTime } from './syncService.js'
 import { updateVoteThreshold } from './voteService.js'
 import { logger } from '../utils/logger.js'
@@ -150,7 +151,8 @@ export function createRoom(
   const room: RoomData = {
     id: roomId,
     name: roomName?.trim() || `${profile.nickname}的房间`,
-    password: password || null,
+    credential: password === undefined || password === null ? null : encryptRoomPassword(password),
+    passwordVersion: password === undefined || password === null ? 0 : 1,
     creatorId: userId,
     hostId: userId,
     adminUserIds: new Set(),
@@ -328,6 +330,7 @@ export function updateSettings(
 ): void {
   const room = roomRepo.get(roomId)
   if (!room) return
+  const wasPermanent = room.permanent
 
   if (settings.name !== undefined) {
     room.name = settings.name
@@ -335,7 +338,9 @@ export function updateSettings(
 
   // password: string -> set password; null -> remove password; undefined -> no change
   if (settings.password !== undefined) {
-    room.password = settings.password
+    room.credential = settings.password === null ? null : encryptRoomPassword(settings.password)
+    room.passwordVersion += 1
+    revokeRoomAdmissionGrants(room.id)
   }
 
   if (settings.audioQuality !== undefined) {
@@ -362,7 +367,7 @@ export function updateSettings(
     room.unmServerUrl = settings.unmServerUrl.trim().replace(/\/+$/, '')
   }
 
-  if (room.permanent) {
+  if (room.permanent || wasPermanent) {
     persistentRoomRepo.save(room)
   }
 }
@@ -389,6 +394,7 @@ export function setUserRole(
   const reconciledRoleChanged = reconcileRoomRoles(room)
   // Re-elect conductor (admin promotion/demotion may change priority)
   const hostChanged = electConductor(room)
+  if (room.permanent) persistentRoomRepo.save(room)
   return { success: true, roleChanged: directRoleChanged || reconciledRoleChanged, hostChanged }
 }
 
@@ -425,22 +431,13 @@ export function getRoomBySocket(socketId: string): { roomId: string; room: RoomD
 // Join validation (business logic extracted from roomController)
 // ---------------------------------------------------------------------------
 
-/** Constant-time string comparison to mitigate timing attacks */
-function safeCompare(a: string, b: string): boolean {
-  const bufA = Buffer.from(a)
-  const bufB = Buffer.from(b)
-  if (bufA.length !== bufB.length) return false
-  return timingSafeEqual(bufA, bufB)
-}
-
 export interface JoinValidationResult {
   valid: boolean
   errorCode?: string
   errorMessage?: string
   /** Whether this is a rejoin (user already in room or same socket mapping) — skip join notification */
   isRejoin: boolean
-  /** Whether password should be bypassed (rejoin, creator, or persistent admin) */
-  skipPassword: boolean
+  grant?: IssuedRoomGrant
 }
 
 /**
@@ -453,6 +450,8 @@ export function validateJoinRequest(
   identityUserId: string,
   password?: string,
   rejoinToken?: string,
+  sessionId?: string,
+  sourceIp = 'unknown',
 ): JoinValidationResult {
   const room = roomRepo.get(roomId)
   if (!room) {
@@ -461,42 +460,41 @@ export function validateJoinRequest(
       errorCode: 'ROOM_NOT_FOUND',
       errorMessage: '房间不存在',
       isRejoin: false,
-      skipPassword: false,
     }
   }
 
   const existingMapping = roomRepo.getSocketMapping(socketId)
   const effectiveUserId = identityUserId
   const existingUser = room.users.find((u) => u.id === effectiveUserId)
-  const alreadyInRoom = Boolean(existingUser)
   const alreadyOnlineInRoom = existingUser?.online !== false
-  const isCreator = effectiveUserId === room.creatorId
-  const isPersistentAdmin = room.adminUserIds.has(effectiveUserId)
-  const isServerAdmin = userRepo.isServerAdmin(effectiveUserId)
-  const hasValidRejoinTicket =
-    typeof rejoinToken === 'string' && rejoinToken.length > 0
-      ? consumeRejoinTicket(rejoinToken, roomId, effectiveUserId)
-      : false
-
-  // Password bypass: same socket mapping, already in room, creator, or persistent admin
-  const skipPassword =
-    hasValidRejoinTicket ||
-    existingMapping?.roomId === roomId ||
-    alreadyInRoom ||
-    isCreator ||
-    isPersistentAdmin ||
-    isServerAdmin
   // Notification skip: only when user is literally still in the room
   const isRejoin = existingMapping?.roomId === roomId || alreadyOnlineInRoom
 
-  if (!skipPassword && room.password !== null) {
-    if (!password || !safeCompare(password, room.password)) {
-      return { valid: false, errorCode: 'WRONG_PASSWORD', errorMessage: '密码错误', isRejoin, skipPassword }
+  const admission = authorizeRoomJoin({
+    room,
+    userId: effectiveUserId,
+    sessionId: sessionId || effectiveUserId,
+    password,
+    grantToken: rejoinToken,
+    sourceIp,
+    socketId,
+  })
+  if (!admission.authorized) {
+    const messages = {
+      ROOM_PASSWORD_REQUIRED: '请输入房间密码',
+      WRONG_PASSWORD: '密码错误',
+      RATE_LIMITED: '尝试过于频繁，请稍后再试',
+    }
+    return {
+      valid: false,
+      errorCode: admission.errorCode,
+      errorMessage: messages[admission.errorCode],
+      isRejoin,
     }
   }
 
   // Auto-leave check: if the socket is mapped to a different room, the caller
   // should call leaveRoom before proceeding. We just flag the scenario here.
 
-  return { valid: true, isRejoin, skipPassword }
+  return { valid: true, isRejoin, grant: admission.grant }
 }

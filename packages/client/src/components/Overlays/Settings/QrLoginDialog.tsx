@@ -1,9 +1,17 @@
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { PLATFORM_LABELS } from '@/lib/platform'
+import {
+  ResponsiveDialog,
+  ResponsiveDialogBody,
+  ResponsiveDialogClose,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from '@/components/ui/responsive-dialog'
+import { useI18n } from '@/lib/i18n'
 import type { MusicSource } from '@music-together/shared'
 import { QR_STATUS, QR_TIMING } from '@music-together/shared'
-import { Loader2, RefreshCw, CheckCircle2, AlertCircle, Smartphone } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Smartphone, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 interface QrLoginDialogProps {
@@ -28,8 +36,9 @@ export function QrLoginDialog({
   onCheckStatus,
 }: QrLoginDialogProps) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const label = PLATFORM_LABELS[platform] ?? platform
-  const scanApp = platform === 'tencent' ? '手机QQ' : `${label} App`
+  const t = useI18n((s) => s.t)
+  const label = t(platform)
+  const scanApp = platform === 'tencent' ? t('phoneQq') : `${label} App`
 
   // Auto-poll QR status every 2 seconds when dialog is open and QR is generated
   useEffect(() => {
@@ -71,14 +80,19 @@ export function QrLoginDialog({
   const statusCode = qrStatus?.status ?? 0
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>{label}扫码登录</DialogTitle>
-          <DialogDescription>使用{scanApp}扫描二维码登录</DialogDescription>
-        </DialogHeader>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-sm" showCloseButton={false}>
+        <ResponsiveDialogHeader className="relative pr-10">
+          <ResponsiveDialogTitle>{t('qrLoginTitle', { platform: label })}</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>{t('qrLoginDescription', { app: scanApp })}</ResponsiveDialogDescription>
+          <ResponsiveDialogClose asChild>
+            <Button variant="ghost" size="icon" className="absolute top-0 right-0" aria-label={t('close')}>
+              <X />
+            </Button>
+          </ResponsiveDialogClose>
+        </ResponsiveDialogHeader>
 
-        <div className="flex flex-col items-center gap-4 py-4">
+        <ResponsiveDialogBody className="flex min-h-0 flex-1 flex-col items-center gap-4 py-4">
           {/* QR Code */}
           <div className="relative flex h-52 w-52 items-center justify-center rounded-lg border bg-white">
             {isLoading && <Loader2 className="text-muted-foreground h-8 w-8 animate-spin" />}
@@ -86,25 +100,25 @@ export function QrLoginDialog({
               <>
                 <img
                   src={qrData.qrimg}
-                  alt={`${label}登录二维码`}
+                  alt={t('qrCodeAlt', { platform: label })}
                   className="h-full w-full rounded-lg object-contain p-2"
                 />
                 {/* Overlay for expired/success */}
                 {statusCode === QR_STATUS.EXPIRED && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/60">
                     <AlertCircle className="mb-2 h-8 w-8 text-white" />
-                    <p className="text-sm text-white">二维码已过期</p>
+                    <p className="text-sm text-white">{t('qrExpired')}</p>
                   </div>
                 )}
                 {statusCode === QR_STATUS.SUCCESS && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-green-600/80">
                     <CheckCircle2 className="mb-2 h-8 w-8 text-white" />
-                    <p className="text-sm text-white">登录成功</p>
+                    <p className="text-sm text-white">{t('loginSuccess')}</p>
                   </div>
                 )}
               </>
             )}
-            {!isLoading && !qrData && <p className="text-muted-foreground text-sm">生成二维码失败</p>}
+            {!isLoading && !qrData && <p className="text-muted-foreground text-sm">{t('qrGenerateFailed')}</p>}
           </div>
 
           {/* Status message */}
@@ -112,25 +126,25 @@ export function QrLoginDialog({
             {statusCode === QR_STATUS.WAITING_SCAN && (
               <>
                 <Smartphone className="text-muted-foreground h-4 w-4" />
-                <span className="text-muted-foreground">打开{scanApp}扫码</span>
+                <span className="text-muted-foreground">{t('openAppToScan', { app: scanApp })}</span>
               </>
             )}
             {statusCode === QR_STATUS.SCANNED && (
               <>
                 <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                <span className="text-blue-600">已扫码，请在手机上确认</span>
+                <span className="text-blue-600">{t('qrScannedConfirm')}</span>
               </>
             )}
             {statusCode === QR_STATUS.SUCCESS && (
               <>
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
-                <span className="text-green-600">登录成功！</span>
+                <span className="text-green-600">{t('loginSuccessExclamation')}</span>
               </>
             )}
             {statusCode === QR_STATUS.EXPIRED && (
               <>
                 <AlertCircle className="text-destructive h-4 w-4" />
-                <span className="text-destructive">二维码已过期</span>
+                <span className="text-destructive">{t('qrExpired')}</span>
               </>
             )}
           </div>
@@ -139,11 +153,11 @@ export function QrLoginDialog({
           {(statusCode === QR_STATUS.EXPIRED || (!qrData && !isLoading)) && (
             <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" />
-              重新获取二维码
+              {t('refreshQrCode')}
             </Button>
           )}
-        </div>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogBody>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }

@@ -9,7 +9,9 @@ import { useAuth } from '@/hooks/useAuth'
 import { usePlaylist } from '@/hooks/usePlaylist'
 import { getAudioQualityOptions, platformLabel } from '@/lib/audioQuality'
 import { SERVER_URL } from '@/lib/config'
+import { AuthRequestError } from '@/lib/identityAuth'
 import { useI18n } from '@/lib/i18n'
+import { getLocalizedError } from '@/lib/i18n'
 import { PLATFORM_COLORS, PLATFORM_SHORT_LABELS, PLATFORM_TEXT, getMyPlatformStatus, getPlatformStatus } from '@/lib/platform'
 import { storage } from '@/lib/storage'
 import { cn } from '@/lib/utils'
@@ -29,12 +31,12 @@ import { QrLoginDialog } from './QrLoginDialog'
 type ViewState = { type: 'list' } | { type: 'detail'; playlist: Playlist; source: MusicSource }
 
 const PLATFORMS: MusicSource[] = ['netease', 'tencent', 'kugou']
-const SOURCE_PRIORITY_OPTIONS: Array<{ value: SourcePriority; label: string; description: string }> = [
-  { value: 'smart', label: '智能模式', description: '平台优先，失败或无权限时 UNM 兜底' },
-  { value: 'platform-first', label: '平台优先', description: '先用平台音源，失败后尝试 UNM' },
-  { value: 'unm-first', label: 'UNM 优先', description: '先用 UNM，失败后尝试平台' },
-  { value: 'platform-only', label: '仅平台', description: '只从平台获取，不使用 UNM' },
-  { value: 'unm-only', label: '仅 UNM', description: '只从 UNM 获取，不使用平台音源' },
+const SOURCE_PRIORITY_OPTIONS: Array<{ value: SourcePriority; labelKey: 'sourcePrioritySmart' | 'sourcePriorityPlatformFirst' | 'sourcePriorityUnmFirst' | 'sourcePriorityPlatformOnly' | 'sourcePriorityUnmOnly'; descriptionKey: 'sourcePrioritySmartDesc' | 'sourcePriorityPlatformFirstDesc' | 'sourcePriorityUnmFirstDesc' | 'sourcePriorityPlatformOnlyDesc' | 'sourcePriorityUnmOnlyDesc' }> = [
+  { value: 'smart', labelKey: 'sourcePrioritySmart', descriptionKey: 'sourcePrioritySmartDesc' },
+  { value: 'platform-first', labelKey: 'sourcePriorityPlatformFirst', descriptionKey: 'sourcePriorityPlatformFirstDesc' },
+  { value: 'unm-first', labelKey: 'sourcePriorityUnmFirst', descriptionKey: 'sourcePriorityUnmFirstDesc' },
+  { value: 'platform-only', labelKey: 'sourcePriorityPlatformOnly', descriptionKey: 'sourcePriorityPlatformOnlyDesc' },
+  { value: 'unm-only', labelKey: 'sourcePriorityUnmOnly', descriptionKey: 'sourcePriorityUnmOnlyDesc' },
 ]
 
 function qualityOptionKey(option: { value: AudioQuality; platform?: string }): string {
@@ -164,15 +166,15 @@ export function PlatformHub() {
         body: JSON.stringify({ roomId, unmServerUrl }),
       })
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? `Request failed: ${res.status}`)
+        const body = (await res.json().catch(() => null)) as { code?: string; error?: string } | null
+        throw new AuthRequestError(body?.error ?? `Request failed: ${res.status}`, body?.code, res.status)
       }
       const data = (await res.json()) as { roomUnmServerUrl?: string }
       setUnmServerUrl(data.roomUnmServerUrl ?? '')
       useRoomStore.getState().updateRoom({ unmServerUrl: data.roomUnmServerUrl ?? '' })
       toast.success(t('unmServerSaved'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('adminLoadFailed'))
+       toast.error(getLocalizedError(err, t))
     } finally {
       setSavingUnm(false)
     }
@@ -222,7 +224,7 @@ export function PlatformHub() {
               <Switch checked={serverAuthPersistence} onCheckedChange={handleServerAuthPersistenceChange} />
             </div>
 
-            <div className="mb-3 min-w-0 max-w-full overflow-hidden rounded-md border px-3 py-2">
+            {isServerAdmin && <div className="mb-3 min-w-0 max-w-full overflow-hidden rounded-md border px-3 py-2">
               <div className="mb-2 min-w-0">
                 <p className="text-sm font-medium">{t('unmServer')}</p>
                 <p className="text-xs text-muted-foreground">{t('unmServerDesc')}</p>
@@ -233,12 +235,12 @@ export function PlatformHub() {
                   {t('save')}
                 </Button>
               </div>
-            </div>
+            </div>}
 
             <div className="mb-3 min-w-0 max-w-full overflow-hidden rounded-md border px-3 py-2">
               <div className="mb-2 min-w-0">
-                <p className="text-sm font-medium">音源优先级</p>
-                <p className="text-xs text-muted-foreground">控制平台音源与 UNM 的兜底顺序</p>
+                <p className="text-sm font-medium">{t('sourcePriority')}</p>
+                <p className="text-xs text-muted-foreground">{t('sourcePriorityDesc')}</p>
               </div>
               <div className={cn('grid min-w-0 gap-2', isMobileDialog ? 'grid-cols-1' : 'grid-cols-2')}>
                 {SOURCE_PRIORITY_OPTIONS.map((option) => (
@@ -250,8 +252,8 @@ export function PlatformHub() {
                     className={cn('h-auto min-w-0 flex-col items-start overflow-hidden whitespace-normal px-2 py-2 text-left text-xs', !isMobileDialog && 'sm:px-3 sm:text-sm')}
                     onClick={() => updateRoomSetting({ sourcePriority: option.value as SourcePriority })}
                   >
-                    <span className="w-full truncate font-medium">{option.label}</span>
-                    <span className="w-full truncate text-[10px] opacity-70">{option.description}</span>
+                     <span className="w-full truncate font-medium">{t(option.labelKey)}</span>
+                     <span className="w-full truncate text-[10px] opacity-70">{t(option.descriptionKey)}</span>
                   </Button>
                 ))}
               </div>

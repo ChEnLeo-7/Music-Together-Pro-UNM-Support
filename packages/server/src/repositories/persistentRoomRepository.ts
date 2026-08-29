@@ -7,7 +7,11 @@ interface RoomRow {
   id: string
   name: string
   creator_id: string
-  password_hash: string | null
+  password_ciphertext?: string | null
+  password_nonce?: string | null
+  password_tag?: string | null
+  password_key_version?: number | null
+  password_version?: number | null
   hidden: 0 | 1
   permanent: 0 | 1
   settings_json: string
@@ -50,17 +54,28 @@ function normalizeSourcePriority(value: unknown): SourcePriority {
 }
 
 const upsertRoomStmt = db.prepare(`
-  INSERT INTO rooms (id, name, creator_id, password_hash, hidden, permanent, settings_json, created_at, updated_at, dissolved_at)
-  VALUES (@id, @name, @creatorId, @password, @hidden, @permanent, @settingsJson, @now, @now, NULL)
-  ON CONFLICT(id) DO UPDATE SET
-    name = excluded.name,
-    password_hash = excluded.password_hash,
-    hidden = excluded.hidden,
-    permanent = excluded.permanent,
-    settings_json = excluded.settings_json,
-    updated_at = excluded.updated_at,
-    dissolved_at = NULL
-`)
+      INSERT INTO rooms (
+        id, name, creator_id, password_ciphertext, password_nonce, password_tag,
+        password_key_version, password_version, hidden, permanent, settings_json,
+        created_at, updated_at, dissolved_at
+      ) VALUES (
+        @id, @name, @creatorId, @passwordCiphertext, @passwordNonce, @passwordTag,
+        @passwordKeyVersion, @passwordVersion, @hidden, @permanent, @settingsJson,
+        @now, @now, NULL
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        password_ciphertext = excluded.password_ciphertext,
+        password_nonce = excluded.password_nonce,
+        password_tag = excluded.password_tag,
+        password_key_version = excluded.password_key_version,
+        password_version = excluded.password_version,
+        hidden = excluded.hidden,
+        permanent = excluded.permanent,
+        settings_json = excluded.settings_json,
+        updated_at = excluded.updated_at,
+        dissolved_at = NULL
+    `)
 
 const upsertMemberStmt = db.prepare(`
   INSERT INTO room_members (room_id, user_id, nickname_snapshot, role, online, joined_at, left_at)
@@ -99,7 +114,11 @@ export const persistentRoomRepo = {
       id: room.id,
       name: room.name,
       creatorId: room.creatorId,
-      password: room.password,
+      passwordCiphertext: room.credential?.ciphertext ?? null,
+      passwordNonce: room.credential?.nonce ?? null,
+      passwordTag: room.credential?.tag ?? null,
+      passwordKeyVersion: room.credential?.keyVersion ?? null,
+      passwordVersion: room.passwordVersion,
       hidden: room.hidden ? 1 : 0,
       permanent: room.permanent ? 1 : 0,
       settingsJson: JSON.stringify(roomSettings(room)),
@@ -145,10 +164,25 @@ export const persistentRoomRepo = {
         }
       })
 
+      const credentialParts = [row.password_ciphertext, row.password_nonce, row.password_tag, row.password_key_version]
+      const presentCredentialParts = credentialParts.filter((part) => part !== null && part !== undefined).length
+      if (presentCredentialParts !== 0 && presentCredentialParts !== credentialParts.length) {
+        throw new Error(`Room ${row.id} has a corrupted encrypted password credential`)
+      }
+      const credential = presentCredentialParts === credentialParts.length
+        ? {
+            ciphertext: row.password_ciphertext!,
+            nonce: row.password_nonce!,
+            tag: row.password_tag!,
+            keyVersion: row.password_key_version!,
+          }
+        : null
+
       return {
         id: row.id,
         name: row.name,
-        password: row.password_hash,
+        credential,
+        passwordVersion: row.password_version ?? 0,
         creatorId: row.creator_id,
         hostId: row.creator_id,
         adminUserIds: new Set(settings.adminUserIds ?? []),

@@ -27,6 +27,43 @@ function safeRemove(key: string): void {
   }
 }
 
+// Remove credentials written by versions that incorrectly used localStorage.
+safeRemove('auth-cookies')
+
+function safeSessionGet(key: string): string | null {
+  try {
+    return sessionStorage.getItem(`${PREFIX}${key}`)
+  } catch {
+    return null
+  }
+}
+
+function safeSessionSet(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(`${PREFIX}${key}`, value)
+  } catch {
+    // quota exceeded or blocked
+  }
+}
+
+function safeSessionRemove(key: string): void {
+  try {
+    sessionStorage.removeItem(`${PREFIX}${key}`)
+  } catch {
+    // blocked
+  }
+}
+
+function safeSessionGetJSON<T>(key: string): T | null {
+  const raw = safeSessionGet(key)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // JSON helpers (safe parse / stringify through the PREFIX system)
 // ---------------------------------------------------------------------------
@@ -94,7 +131,7 @@ export const SETTING_DEFAULTS = {
 } satisfies Record<string, unknown>
 
 export const storage = {
-  /** Persistent user identity — synced from server identity bootstrap */
+  /** Cached solely to identify the current user in room state; never an account credential. */
   getUserId: (): string => {
     return safeGet('userId') ?? ''
   },
@@ -201,50 +238,46 @@ export const storage = {
   },
   setShortcuts: (shortcuts: ShortcutMap) => safeSetJSON('shortcuts', shortcuts),
 
-  // Auth cookie persistence
-  getAuthCookies: (): StoredCookie[] => safeGetJSON<StoredCookie[]>('auth-cookies') ?? [],
-  setAuthCookies: (cookies: StoredCookie[]) => safeSetJSON('auth-cookies', cookies),
-
-  upsertAuthCookie: (platform: MusicSource, cookie: string) => {
-    const list = (safeGetJSON<StoredCookie[]>('auth-cookies') ?? []).filter((c) => c.platform !== platform)
-    list.push({ platform, cookie })
-    safeSetJSON('auth-cookies', list)
-  },
-
-  removeAuthCookie: (platform: MusicSource) => {
-    const list = (safeGetJSON<StoredCookie[]>('auth-cookies') ?? []).filter((c) => c.platform !== platform)
-    safeSetJSON('auth-cookies', list)
-  },
-
-  hasAuthCookie: (platform: MusicSource): boolean => {
-    const list = safeGetJSON<StoredCookie[]>('auth-cookies') ?? []
-    return list.some((c) => c.platform === platform)
-  },
+  // Platform credentials are encrypted and restored by the server. These
+  // compatibility methods intentionally never read or write browser storage.
+  getAuthCookies: (): StoredCookie[] => [],
+  setAuthCookies: (_cookies: StoredCookie[]) => undefined,
+  clearAuthCookies: () => safeRemove('auth-cookies'),
+  upsertAuthCookie: (_platform: MusicSource, _cookie: string) => undefined,
+  removeAuthCookie: (_platform: MusicSource) => undefined,
+  hasAuthCookie: (_platform: MusicSource): boolean => false,
 
   getServerAuthPersistence: () => safeGet('server-auth-persistence') !== 'false',
   setServerAuthPersistence: (v: boolean) => safeSet('server-auth-persistence', String(v)),
 
   getRejoinToken: (roomId: string): string | null => {
-    const data = safeGetJSON<StoredRejoinToken>('rejoin-token')
+    safeRemove('rejoin-token')
+    const data = safeSessionGetJSON<StoredRejoinToken>('rejoin-token')
     if (!data) return null
     if (data.roomId !== roomId) return null
-    if (data.expiresAt <= Date.now()) return null
+    if (data.expiresAt <= Date.now()) {
+      safeSessionRemove('rejoin-token')
+      return null
+    }
     return data.token
   },
-  setRejoinToken: (roomId: string, token: string, expiresAt: number) =>
-    safeSetJSON('rejoin-token', { roomId, token, expiresAt } satisfies StoredRejoinToken),
+  setRejoinToken: (roomId: string, token: string, expiresAt: number) => {
+    safeRemove('rejoin-token')
+    safeSessionSet('rejoin-token', JSON.stringify({ roomId, token, expiresAt } satisfies StoredRejoinToken))
+  },
   clearRejoinToken: (roomId?: string) => {
-    const data = safeGetJSON<StoredRejoinToken>('rejoin-token')
+    safeRemove('rejoin-token')
+    const data = safeSessionGetJSON<StoredRejoinToken>('rejoin-token')
     if (!data) {
-      safeRemove('rejoin-token')
+      safeSessionRemove('rejoin-token')
       return
     }
     if (roomId && data.roomId !== roomId) return
-    safeRemove('rejoin-token')
+    safeSessionRemove('rejoin-token')
   },
 }
 
-/** Shape stored in localStorage for auth cookies */
+/** Legacy shape retained only for type compatibility; never persisted. */
 export interface StoredCookie {
   platform: MusicSource
   cookie: string

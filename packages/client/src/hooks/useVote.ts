@@ -4,16 +4,12 @@ import type { PlayMode, VoteAction, VoteState } from '@music-together/shared'
 import { useSocketContext } from '@/providers/SocketProvider'
 import { useSocketEvent } from './useSocketEvent'
 import { toast } from 'sonner'
+import { useI18n } from '@/lib/i18n'
 
-const ACTION_LABELS: Record<VoteAction, string> = {
-  pause: '暂停',
-  resume: '播放',
-  next: '下一首',
-  prev: '上一首',
-  'set-mode': '切换播放模式',
-  'play-track': '指定播放',
-  'remove-track': '投票移除',
-}
+const ACTION_KEYS = {
+  pause: 'votePause', resume: 'voteResume', next: 'voteNext', prev: 'votePrev',
+  'set-mode': 'voteSetMode', 'play-track': 'votePlay', 'remove-track': 'voteRemove',
+} as const
 
 const PLAY_MODE_LABELS: Record<PlayMode, string> = {
   sequential: '顺序播放',
@@ -24,22 +20,24 @@ const PLAY_MODE_LABELS: Record<PlayMode, string> = {
 
 /** Get a human-readable label for a vote action, including payload context */
 export function getVoteActionLabel(action: VoteAction, payload?: Record<string, unknown>): string {
+  const t = useI18n.getState().t
   if (action === 'set-mode' && payload?.mode) {
     const modeLabel = PLAY_MODE_LABELS[payload.mode as PlayMode] ?? payload.mode
-    return `切换为${modeLabel}`
+    return `${t('voteSetMode')}: ${modeLabel}`
   }
   if (action === 'play-track' && payload?.trackTitle) {
-    return `播放「${payload.trackTitle}」`
+    return `${t('votePlay')}: ${payload.trackTitle}`
   }
   if (action === 'remove-track' && payload?.trackTitle) {
-    return `移除「${payload.trackTitle}」`
+    return `${t('voteRemove')}: ${payload.trackTitle}`
   }
-  return ACTION_LABELS[action]
+  return t(ACTION_KEYS[action])
 }
 
 export function useVote() {
   const { socket } = useSocketContext()
   const [activeVote, setActiveVote] = useState<VoteState | null>(null)
+  const t = useI18n((s) => s.t)
 
   useSocketEvent(
     EVENTS.VOTE_STARTED,
@@ -52,14 +50,14 @@ export function useVote() {
     EVENTS.VOTE_RESULT,
     useCallback((data: { passed: boolean; action: VoteAction; reason?: string }) => {
       setActiveVote(null)
-      const label = ACTION_LABELS[data.action]
+       const label = getVoteActionLabel(data.action)
       if (data.passed) {
-        toast.success(`投票通过：${label}`)
+         toast.success(t('votePassed', { action: label }))
       } else {
-        const reasonText = data.reason === 'host_veto' ? '（房主否决）' : data.reason === 'timeout' ? '（超时）' : ''
-        toast.error(`投票未通过：${label}${reasonText}`)
+        const reasonText = data.reason === 'host_veto' ? t('voteHostVeto') : data.reason === 'timeout' ? t('voteTimeout') : ''
+         toast.error(t('voteRejected', { action: label, reason: reasonText }))
       }
-    }, []),
+     }, [t]),
   )
 
   // Clear active vote on disconnect
@@ -74,9 +72,9 @@ export function useVote() {
   const startVote = useCallback(
     (action: VoteAction, payload?: Record<string, unknown>) => {
       socket.emit(EVENTS.VOTE_START, { action, payload })
-      toast.info(`已发起投票：${getVoteActionLabel(action, payload)}`)
+       toast.info(t('voteStarted', { action: getVoteActionLabel(action, payload) }))
     },
-    [socket],
+     [socket, t],
   )
 
   const castVote = useCallback(

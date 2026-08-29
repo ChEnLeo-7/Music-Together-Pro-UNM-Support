@@ -10,6 +10,7 @@ import { useLobby } from '@/hooks/useLobby'
 import { unlockAudio } from '@/lib/audioUnlock'
 import { ACTION_LOADING_TIMEOUT_MS } from '@/lib/constants'
 import { storage } from '@/lib/storage'
+import { SERVER_URL } from '@/lib/config'
 import { useSocketContext } from '@/providers/SocketProvider'
 import { useRoomStore } from '@/stores/roomStore'
 import { useChatStore } from '@/stores/chatStore'
@@ -21,12 +22,14 @@ import { motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { getLocalizedError, useI18n } from '@/lib/i18n'
 
 export default function HomePage() {
   const navigate = useNavigate()
   const { socket } = useSocketContext()
   const { rooms, isLoading, createRoom, joinRoom } = useLobby()
   const hasUpdate = useVersionCheck()
+  const t = useI18n((s) => s.t)
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [passwordDialog, setPasswordDialog] = useState<{ open: boolean; room: RoomListItem | null }>({
@@ -40,7 +43,7 @@ export default function HomePage() {
   const [identityDialogOpen, setIdentityDialogOpen] = useState(false)
 
   // Stores the pending join action while waiting for nickname input
-  const pendingJoinRef = useRef<{ type: 'room'; room: RoomListItem } | { type: 'direct'; roomId: string } | null>(null)
+  const pendingJoinRef = useRef<{ type: 'room'; room: RoomListItem } | { type: 'direct'; roomId: string } | { type: 'create' } | null>(null)
 
   // Refs for onError closure to always read the latest values
   const passwordDialogRef = useRef(passwordDialog)
@@ -54,15 +57,14 @@ export default function HomePage() {
 
   const setRoom = useRoomStore((s) => s.setRoom)
   const accountMe = useAccountStore((s) => s.me)
-  const savedNickname = storage.getNickname()
-  const effectiveNickname = accountMe?.nickname || savedNickname
+  const effectiveNickname = accountMe?.nickname || ''
 
   // Safety timeout: reset actionLoading after 15s to prevent stuck button
   useEffect(() => {
     if (actionLoading) {
       actionTimeoutRef.current = setTimeout(() => {
         setActionLoading(false)
-        toast.error('操作超时，请重试')
+         toast.error(t('actionTimeout'))
       }, ACTION_LOADING_TIMEOUT_MS)
     } else {
       if (actionTimeoutRef.current) {
@@ -98,9 +100,6 @@ export default function HomePage() {
       pendingNavigationRoomIdRef.current = null
       // setRoom automatically derives currentUser from room.users
       setRoom(roomState)
-      if ('password' in roomState) {
-        useRoomStore.getState().setRoomPassword(roomState.password ?? null)
-      }
       setActionLoading(false)
       setPasswordDialog({ open: false, room: null })
       setPasswordError(null)
@@ -120,13 +119,22 @@ export default function HomePage() {
 
     const onError = (error: { code: string; message: string }) => {
       setActionLoading(false)
-      if (error.code === ERROR_CODE.WRONG_PASSWORD) {
+      if (
+        error.code === ERROR_CODE.WRONG_PASSWORD ||
+        error.code === ERROR_CODE.ROOM_PASSWORD_REQUIRED ||
+        error.code === ERROR_CODE.ROOM_GRANT_INVALID
+      ) {
+        const targetRoomId =
+          passwordDialogRef.current.room?.id ||
+          pendingNavigationRoomIdRef.current ||
+          lastJoinedRoomIdRef.current ||
+          directRoomIdRef.current.trim()
+        if (targetRoomId) storage.clearRejoinToken(targetRoomId)
         // If password dialog is already open, show error
         if (passwordDialogRef.current.open) {
-          setPasswordError('密码错误，请重试')
+           setPasswordError(error.code === ERROR_CODE.WRONG_PASSWORD ? t('wrongPassword') : t('roomPasswordRequired'))
         } else {
           // Direct join hit a password-protected room — open password dialog
-          const targetRoomId = lastJoinedRoomIdRef.current || directRoomIdRef.current.trim()
           if (targetRoomId) {
             setPasswordDialog({
               open: true,
@@ -143,11 +151,11 @@ export default function HomePage() {
             })
             setPasswordError(null)
           } else {
-            toast.error(error.message)
+             toast.error(getLocalizedError(error, t))
           }
         }
       } else {
-        toast.error(error.message)
+         toast.error(getLocalizedError(error, t))
       }
     }
 
@@ -164,7 +172,7 @@ export default function HomePage() {
       socket.off(EVENTS.CHAT_HISTORY, onChatHistory)
       socket.off(EVENTS.ROOM_ERROR, onError)
     }
-  }, [socket, navigate, setRoom])
+   }, [socket, navigate, setRoom, t])
 
   const handleCreateRoom = async (nickname: string, roomName?: string, password?: string) => {
     await unlockAudio()
@@ -176,7 +184,7 @@ export default function HomePage() {
 
   const handleRoomClick = async (room: RoomListItem) => {
     if (actionLoading) return
-    if (!effectiveNickname) {
+    if (!accountMe) {
       pendingJoinRef.current = { type: 'room', room }
       setIdentityDialogOpen(true)
       return
@@ -184,14 +192,28 @@ export default function HomePage() {
 
     await unlockAudio()
 
-    if (room.hasPassword) {
-      setPasswordDialog({ open: true, room })
-      setPasswordError(null)
-    } else {
-      pendingNavigationRoomIdRef.current = room.id
-      setActionLoading(true)
-      joinRoom(room.id, effectiveNickname)
+    if (room.hasPassword && !storage.getRejoinToken(room.id)) {
+      try {
+        const response = await fetch(`${SERVER_URL}/api/rooms/${encodeURIComponent(room.id)}/check`, {
+          credentials: 'include',
+        })
+        const check = response.ok ? await response.json() as { mayJoinWithoutPassword?: boolean } : null
+        if (!check?.mayJoinWithoutPassword) {
+          setPasswordDialog({ open: true, room })
+          setPasswordError(null)
+          return
+        }
+      } catch {
+        setPasswordDialog({ open: true, room })
+        setPasswordError(null)
+        return
+      }
     }
+
+    pendingNavigationRoomIdRef.current = room.id
+    lastJoinedRoomIdRef.current = room.id
+    setActionLoading(true)
+    joinRoom(room.id, effectiveNickname)
   }
 
   const handlePasswordSubmit = (password: string) => {
@@ -206,10 +228,10 @@ export default function HomePage() {
   const handleDirectJoin = async () => {
     if (actionLoading) return
     if (!directRoomId.trim()) {
-      toast.error('请输入房间号')
+       toast.error(t('roomIdRequired'))
       return
     }
-    if (!effectiveNickname) {
+    if (!accountMe) {
       pendingJoinRef.current = { type: 'direct', roomId: directRoomId.trim() }
       setIdentityDialogOpen(true)
       return
@@ -229,18 +251,19 @@ export default function HomePage() {
       pendingJoinRef.current = null
       if (!pending) return
 
+      if (pending.type === 'create') {
+        setCreateDialogOpen(true)
+        return
+      }
+
       await unlockAudio()
 
       if (pending.type === 'room') {
         const room = pending.room
-        if (room.hasPassword) {
-          setPasswordDialog({ open: true, room })
-          setPasswordError(null)
-        } else {
-          pendingNavigationRoomIdRef.current = room.id
-          setActionLoading(true)
-          joinRoom(room.id, nickname)
-        }
+        pendingNavigationRoomIdRef.current = room.id
+        lastJoinedRoomIdRef.current = room.id
+        setActionLoading(true)
+        joinRoom(room.id, nickname)
       } else {
         lastJoinedRoomIdRef.current = pending.roomId
         pendingNavigationRoomIdRef.current = pending.roomId
@@ -278,7 +301,13 @@ export default function HomePage() {
           <ActionCards
             directRoomId={directRoomId}
             onDirectRoomIdChange={setDirectRoomId}
-            onCreateClick={() => setCreateDialogOpen(true)}
+            onCreateClick={() => {
+              if (accountMe) setCreateDialogOpen(true)
+              else {
+                pendingJoinRef.current = { type: 'create' }
+                setIdentityDialogOpen(true)
+              }
+            }}
             onDirectJoin={handleDirectJoin}
             actionLoading={actionLoading}
           />
@@ -337,6 +366,7 @@ export default function HomePage() {
       />
 
       <PasswordDialog
+        key={`${passwordDialog.room?.id ?? 'room'}:${passwordDialog.open ? 'open' : 'closed'}`}
         open={passwordDialog.open}
         onOpenChange={(open: boolean) => {
           setPasswordDialog((prev) => ({ ...prev, open }))

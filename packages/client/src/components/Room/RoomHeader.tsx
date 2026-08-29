@@ -21,6 +21,7 @@ import { EVENTS, type AudioQuality, type StreamSource } from '@music-together/sh
 import { Check, Copy, Ellipsis, LogOut, Search, Settings, Users, Wifi, WifiOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { useI18n } from '@/lib/i18n'
 
 interface RoomHeaderProps {
   onOpenSearch: () => void
@@ -38,6 +39,7 @@ function getSourceLabel(source?: StreamSource): string {
 }
 
 export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeaveRoom }: RoomHeaderProps) {
+  const t = useI18n((s) => s.t)
   const roomName = useRoomStore((s) => s.room?.name)
   const roomId = useRoomStore((s) => s.room?.id)
   const room = useRoomStore((s) => s.room)
@@ -80,7 +82,7 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
   const copyRoomLink = () => {
     if (!roomId) return
     navigator.clipboard.writeText(window.location.href)
-    toast.success('房间链接已复制')
+     toast.success(t('roomLinkCopied'))
   }
 
   const sourceLabel = getSourceLabel(streamSource)

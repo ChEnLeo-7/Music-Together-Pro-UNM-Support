@@ -8,21 +8,26 @@ import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-ro
 import { Toaster } from 'sonner'
 import { AnimatePresence } from 'motion/react'
 import { AlertTriangle } from 'lucide-react'
+import { PasswordChangeGate } from '@/components/PasswordChangeGate'
+import { useI18n } from '@/lib/i18n'
 
 // Lazy-loaded routes (keep HomePage sync for fast first paint)
 const RoomPage = lazy(() => import('@/pages/RoomPage'))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
 
 function ErrorFallback({ error, resetErrorBoundary }: { error: unknown; resetErrorBoundary: () => void }) {
-  const message = error instanceof Error ? error.message : '应用遇到了意外错误'
+  const t = useI18n((s) => s.t)
+  const showDiagnostics = import.meta.env.DEV && import.meta.env.VITE_SHOW_ERROR_DETAILS === 'true'
+  const diagnostic = error instanceof Error ? error.message : String(error)
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border bg-card p-8 text-center shadow-lg">
         <AlertTriangle className="h-12 w-12 text-destructive" />
-        <h2 className="text-xl font-semibold">出了点问题</h2>
-        <p className="text-sm text-muted-foreground">{message}</p>
+        <h2 className="text-xl font-semibold">{t('unexpectedErrorTitle')}</h2>
+        <p className="text-sm text-muted-foreground">{t('unexpectedError')}</p>
+        {showDiagnostics && <pre className="max-w-full overflow-auto text-left text-xs text-muted-foreground">{diagnostic}</pre>}
         <Button onClick={resetErrorBoundary} variant="default">
-          重试
+          {t('retry')}
         </Button>
       </div>
     </div>
@@ -83,6 +88,7 @@ export default function App() {
         <TooltipProvider>
           <ErrorBoundary FallbackComponent={ErrorFallback} onReset={() => window.location.reload()}>
             <AnimatedRoutes />
+            <PasswordChangeGate />
           </ErrorBoundary>
           <Toaster position="top-center" richColors />
         </TooltipProvider>

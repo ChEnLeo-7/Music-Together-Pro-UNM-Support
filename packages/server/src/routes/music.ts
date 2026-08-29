@@ -11,6 +11,7 @@ import { musicProvider } from '../services/musicProvider.js'
 import * as authService from '../services/authService.js'
 import { roomRepo } from '../repositories/roomRepository.js'
 import { logger } from '../utils/logger.js'
+import { assertPublicHttpUrl } from '../utils/publicUrl.js'
 import { verifyStreamProxySignature } from '../utils/streamProxy.js'
 import { getUnmServerTimeoutMs, getUnmServerUrl } from '../services/runtimeConfigService.js'
 import { request as httpRequest } from 'node:http'
@@ -309,11 +310,7 @@ router.get('/stream-proxy', async (req: Request, res: Response) => {
   }
 
   try {
-    const parsed = new URL(audioUrl)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      res.status(400).json({ error: 'Unsupported protocol' })
-      return
-    }
+    const parsed = await assertPublicHttpUrl(audioUrl)
 
     const upstreamHeaders: HeadersInit = {
       'User-Agent': 'Mozilla/5.0',
@@ -330,6 +327,7 @@ router.get('/stream-proxy', async (req: Request, res: Response) => {
     const upstream = await fetch(audioUrl, {
       headers: upstreamHeaders,
       signal: AbortSignal.timeout(STREAM_FETCH_TIMEOUT_MS),
+      redirect: 'error',
     })
 
     if (!upstream.ok && upstream.status !== 206) {

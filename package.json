@@ -9,6 +9,10 @@
     "dev:client": "pnpm --filter @music-together/client dev",
     "dev:server": "pnpm --filter @music-together/server dev",
     "build": "pnpm -r run build",
+    "test:server": "pnpm --filter @music-together/server test",
+    "typecheck:server": "NODE_OPTIONS=--max-old-space-size=1536 pnpm --filter @music-together/server typecheck",
+    "account:init-admin": "pnpm --filter @music-together/server account:init-admin",
+    "account:reset": "pnpm --filter @music-together/server account:reset",
     "format": "prettier --write \"packages/*/src/**/*.{ts,tsx}\" \"packages/shared/src/**/*.ts\""
   },
   "keywords": [],

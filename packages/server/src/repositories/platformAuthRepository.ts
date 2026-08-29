@@ -1,5 +1,7 @@
 import type { MusicSource } from '@music-together/shared'
 import { db } from './database.js'
+import { decryptPlatformCredential, encryptPlatformCredential } from '../services/platformAuthCredentialService.js'
+import { logger } from '../utils/logger.js'
 
 export interface PersistedPlatformAuth {
   roomId: string
@@ -72,7 +74,7 @@ export const platformAuthRepo = {
       userId: entry.userId,
       roomId: entry.roomId,
       platform: entry.platform,
-      cookie: entry.cookie,
+      cookie: encryptPlatformCredential(entry.cookie),
       persistPolicy: entry.persistPolicy,
       nickname: entry.nickname,
       vipType: entry.vipType,
@@ -89,14 +91,26 @@ export const platformAuthRepo = {
   },
 
   loadRoom(roomId: string): PersistedPlatformAuth[] {
-    return loadRoomStmt.all(roomId).map((row) => ({
-      roomId: row.room_id ?? roomId,
-      userId: row.user_id,
-      platform: row.platform,
-      cookie: row.cookie_encrypted,
-      nickname: row.nickname_snapshot ?? row.user_id,
-      vipType: row.vip_type ?? 0,
-      persistPolicy: row.persist_policy,
-    }))
+    return loadRoomStmt.all(roomId).flatMap((row) => {
+      try {
+        return [{
+          roomId: row.room_id ?? roomId,
+          userId: row.user_id,
+          platform: row.platform,
+          cookie: decryptPlatformCredential(row.cookie_encrypted),
+          nickname: row.nickname_snapshot ?? row.user_id,
+          vipType: row.vip_type ?? 0,
+          persistPolicy: row.persist_policy,
+        }]
+      } catch {
+        logger.warn('Discarding corrupted persisted platform credential', {
+          roomId,
+          userId: row.user_id,
+          platform: row.platform,
+        })
+        deleteStmt.run(roomId, row.platform, row.user_id)
+        return []
+      }
+    })
   },
 }

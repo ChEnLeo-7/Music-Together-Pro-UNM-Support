@@ -5,16 +5,22 @@ import { LIMITS } from './constants.js'
 // Room
 // ---------------------------------------------------------------------------
 
+export const roomPasswordSchema = z
+  .string()
+  .min(LIMITS.ROOM_PASSWORD_MIN_LENGTH, '密码至少需要 6 个字符')
+  .max(LIMITS.ROOM_PASSWORD_MAX_LENGTH, '密码过长')
+  .refine((password) => password.trim().length > 0, '密码不能只包含空白字符')
+
 export const roomCreateSchema = z.object({
   nickname: z.string().min(1, '昵称不能为空').max(LIMITS.NICKNAME_MAX_LENGTH, '昵称过长'),
   roomName: z.string().max(LIMITS.ROOM_NAME_MAX_LENGTH, '房间名过长').optional(),
-  password: z.string().max(LIMITS.ROOM_PASSWORD_MAX_LENGTH, '密码过长').optional(),
+  password: roomPasswordSchema.optional(),
 })
 
 export const roomJoinSchema = z.object({
   roomId: z.string().min(1, '房间号不能为空'),
   nickname: z.string().min(1, '昵称不能为空'),
-  password: z.string().max(LIMITS.ROOM_PASSWORD_MAX_LENGTH).optional(),
+  password: roomPasswordSchema.optional(),
   rejoinToken: z.string().min(1).max(500).optional(),
 })
 
@@ -36,7 +42,7 @@ export const audioQualitySchema = z.union([
 
 export const roomSettingsSchema = z.object({
   name: z.string().min(1).max(LIMITS.ROOM_NAME_MAX_LENGTH).optional(),
-  password: z.string().max(LIMITS.ROOM_PASSWORD_MAX_LENGTH).nullable().optional(),
+  password: roomPasswordSchema.nullable().optional(),
   audioQuality: audioQualitySchema.optional(),
   sourcePriority: z.enum(['smart', 'platform-first', 'platform-only', 'unm-first', 'unm-only']).optional(),
   hidden: z.boolean().optional(),
