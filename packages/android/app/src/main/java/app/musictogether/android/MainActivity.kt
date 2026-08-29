@@ -19,6 +19,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -31,6 +32,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -79,7 +82,7 @@ class MainActivity : ComponentActivity() {
       addJavascriptInterface(PlaybackBridge(this@MainActivity), "MusicTogetherAndroid")
       loadUrl(serverUrl)
     }
-    setContentView(webView)
+    setSafeContent(webView ?: return)
   }
 
   private fun showServerPicker() {
@@ -172,7 +175,7 @@ class MainActivity : ComponentActivity() {
     content.addView(connect, matchHeight(dp(52), top = dp(20)))
     content.addView(privacy, matchWrap())
 
-    setContentView(ScrollView(this).apply {
+    setSafeContent(ScrollView(this).apply {
       setBackgroundColor(Color.rgb(9, 9, 11))
       isFillViewport = true
       addView(content, matchHeight(LinearLayout.LayoutParams.MATCH_PARENT))
@@ -241,6 +244,23 @@ class MainActivity : ComponentActivity() {
   ).apply { topMargin = top }
 
   private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+  private fun setSafeContent(content: View) {
+    val root = FrameLayout(this).apply {
+      setBackgroundColor(Color.rgb(9, 9, 11))
+      addView(content, FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT,
+      ))
+    }
+    ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+      val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+      view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+      insets
+    }
+    setContentView(root)
+    ViewCompat.requestApplyInsets(root)
+  }
 
   private inner class PlaybackBridge(private val context: Context) {
     @JavascriptInterface
