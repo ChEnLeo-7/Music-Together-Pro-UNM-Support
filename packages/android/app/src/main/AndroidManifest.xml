@@ -8,7 +8,7 @@
 
   <application
     android:allowBackup="false"
-    android:label="Music Together"
+    android:label="@string/app_name"
     android:usesCleartextTraffic="true"
     android:theme="@style/AppTheme">
     <activity

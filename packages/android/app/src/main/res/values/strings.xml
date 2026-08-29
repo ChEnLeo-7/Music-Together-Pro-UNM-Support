@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">Music Together</string>
+  <string name="server_title">连接 Music Together</string>
+  <string name="server_description">输入要连接的 Music Together 服务器地址。应用会记住此地址，并在下次启动时自动填入。</string>
+  <string name="server_address_label">服务器地址</string>
+  <string name="server_address_hint">例如：https://music.example.com</string>
+  <string name="server_connect">连接服务器</string>
+  <string name="server_invalid">请输入有效的 HTTP 或 HTTPS 服务器地址</string>
+  <string name="server_privacy">登录信息仅保存在此设备对应服务器的 WebView 中。</string>
+</resources>
