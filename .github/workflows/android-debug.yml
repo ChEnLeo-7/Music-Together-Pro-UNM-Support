@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
     paths:
       - '.github/workflows/android-debug.yml'
       - 'packages/android/**'
@@ -79,10 +81,62 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Name release APK
+        if: github.ref_type == 'tag'
+        run: cp packages/android/app/build/outputs/apk/debug/app-debug.apk "packages/android/app/build/outputs/apk/debug/music-together-android-${{ github.ref_name }}.apk"
+
       - name: Publish debug APK download
+        if: github.ref_type == 'branch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-debug-${{ github.sha }}
           name: Android debug ${{ github.sha }}
           prerelease: true
           files: packages/android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish Android release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Music Together Android ${{ github.ref_name }}
+          prerelease: false
+          make_latest: true
+          files: packages/android/app/build/outputs/apk/debug/music-together-android-${{ github.ref_name }}.apk
+          body: |
+            ## 中文
+
+            Music Together Android ${{ github.ref_name }} 提供基于 Media3 的原生后台播放体验，可连接自托管的 HTTP 或 HTTPS Music Together 服务端。
+
+            ### 本次更新
+
+            - 支持后台、锁屏播放和 Android 系统媒体控制。
+            - 修复播放/暂停按钮与 ExoPlayer 实际状态不同步的问题。
+            - 修复缓冲、切歌和 seek 期间按钮错误反复切换的问题。
+            - 修复进度条触摸偏移、拖动回跳和旧时长污染新曲的问题。
+            - 消除 WebView 与原生服务重复执行播放、暂停和 seek 的竞态。
+            - 增加原生 NTP 时钟校准及重连状态对账。
+            - 离开房间时停止播放、断开房间连接并释放前台服务。
+            - 限制原生播放桥仅在配置服务器的同源页面中使用。
+
+            ### 安装
+
+            下载 `music-together-android-${{ github.ref_name }}.apk` 并覆盖安装。首次启动时输入你的 Music Together 服务端地址。
+
+            ## English
+
+            Music Together Android ${{ github.ref_name }} delivers native Media3 background playback and connects to a self-hosted Music Together server over HTTP or HTTPS.
+
+            ### What's Changed
+
+            - Added background and lock-screen playback with Android system media controls.
+            - Fixed play/pause button state diverging from the actual ExoPlayer state.
+            - Fixed false pause toggles during buffering, track changes, and seeking.
+            - Fixed seek-bar touch offset, snap-back, and stale duration leaking across tracks.
+            - Removed races caused by WebView and the native service executing playback commands twice.
+            - Added native NTP clock calibration and playback reconciliation after reconnecting.
+            - Playback, room sockets, and the foreground service are released when leaving a room.
+            - Restricted the privileged native playback bridge to the configured server origin.
+
+            ### Installation
+
+            Download `music-together-android-${{ github.ref_name }}.apk` and install it over the previous version. Enter your Music Together server address on first launch.
