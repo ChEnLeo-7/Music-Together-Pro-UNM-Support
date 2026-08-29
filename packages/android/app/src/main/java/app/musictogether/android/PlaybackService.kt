@@ -8,6 +8,7 @@ import android.os.Build
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
@@ -29,6 +30,7 @@ data class PlaybackSnapshot(
   val isPlaying: Boolean = false,
   val volume: Float = 0.8f,
   val rate: Float = 1f,
+  val trackId: String = "",
 )
 
 class PlaybackService : MediaSessionService(), Player.Listener {
@@ -47,6 +49,9 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   private var currentTrackId: String? = null
   private var pendingPlayback: Runnable? = null
   private var suppressEnded = false
+  private var ntpPingId = 0L
+  private val ntpPings = mutableMapOf<Long, Pair<Long, Long>>()
+  private val clockOffsets = ArrayDeque<Long>()
 
   override fun onCreate() {
     super.onCreate()
@@ -79,6 +84,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       ACTION_VOLUME -> player.volume = intent.getFloatExtra(EXTRA_VOLUME, player.volume).coerceIn(0f, 1f)
       ACTION_RATE -> player.setPlaybackSpeed(intent.getFloatExtra(EXTRA_RATE, 1f).coerceIn(0.5f, 2f))
       ACTION_RELEASE_SOURCE -> releaseSource(intent.getStringExtra(EXTRA_SOURCE).orEmpty())
+      ACTION_RELEASE_SESSION -> releaseSession()
     }
     updateSnapshot()
     return START_STICKY
@@ -97,18 +103,46 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       .setExtraHeaders(if (cookie.isBlank()) emptyMap() else mapOf("Cookie" to listOf(cookie)))
       .build()
     socket = IO.socket(URI.create(parsed.serverUrl), options).apply {
-      on(Socket.EVENT_CONNECT) { emitRoomJoin() }
-      on(EVENT_ROOM_STATE) { args -> handleRoomState(args.firstOrNull() as? JSONObject) }
-      on(EVENT_ROOM_REJOIN_TOKEN) { args ->
-        val token = (args.firstOrNull() as? JSONObject)?.optString("token").orEmpty()
-        if (token.isNotBlank()) sessionConfig?.rejoinToken = token
+      on(Socket.EVENT_CONNECT) {
+        handler.post {
+          emitRoomJoin()
+          repeat(NTP_SAMPLE_COUNT) { sample -> handler.postDelayed({ emitNtpPing() }, sample * NTP_SAMPLE_INTERVAL_MS) }
+        }
       }
-      on(EVENT_PLAYER_PLAY) { args -> handlePlayerPlay(args.firstOrNull() as? JSONObject) }
-      on(EVENT_PLAYER_PAUSE) { args -> handleScheduledState(args.firstOrNull() as? JSONObject, false) }
-      on(EVENT_PLAYER_RESUME) { args -> handleScheduledState(args.firstOrNull() as? JSONObject, true) }
-      on(EVENT_PLAYER_SEEK) { args -> handleSeek(args.firstOrNull() as? JSONObject) }
+      on(EVENT_NTP_PONG) { args -> handler.post { handleNtpPong(args.firstOrNull() as? JSONObject) } }
+      on(EVENT_ROOM_STATE) { args -> handler.post { handleRoomState(args.firstOrNull() as? JSONObject) } }
+      on(EVENT_ROOM_REJOIN_TOKEN) { args ->
+        handler.post {
+          val token = (args.firstOrNull() as? JSONObject)?.optString("token").orEmpty()
+          if (token.isNotBlank()) sessionConfig?.rejoinToken = token
+        }
+      }
+      on(EVENT_PLAYER_PLAY) { args -> handler.post { handlePlayerPlay(args.firstOrNull() as? JSONObject) } }
+      on(EVENT_PLAYER_PAUSE) { args -> handler.post { handleScheduledState(args.firstOrNull() as? JSONObject, false) } }
+      on(EVENT_PLAYER_RESUME) { args -> handler.post { handleScheduledState(args.firstOrNull() as? JSONObject, true) } }
+      on(EVENT_PLAYER_SEEK) { args -> handler.post { handleSeek(args.firstOrNull() as? JSONObject) } }
       connect()
     }
+  }
+
+  private fun emitNtpPing() {
+    val activeSocket = socket ?: return
+    val id = ++ntpPingId
+    ntpPings[id] = SystemClock.elapsedRealtime() to System.currentTimeMillis()
+    activeSocket.emit(EVENT_NTP_PING, JSONObject().put("clientPingId", id))
+  }
+
+  private fun handleNtpPong(payload: JSONObject?) {
+    val id = payload?.optLong("clientPingId") ?: return
+    val sent = ntpPings.remove(id) ?: return
+    val rtt = SystemClock.elapsedRealtime() - sent.first
+    if (rtt !in 0..MAX_NTP_RTT_MS) return
+    clockOffsets.addLast(payload.optLong("serverTime") - (sent.second + rtt / 2))
+    while (clockOffsets.size > NTP_SAMPLE_COUNT) clockOffsets.removeFirst()
+  }
+
+  private fun serverTime(): Long = System.currentTimeMillis() + clockOffsets.sorted().let {
+    if (it.isEmpty()) 0L else it[it.size / 2]
   }
 
   private fun Socket.emitRoomJoin() {
@@ -127,19 +161,26 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     config.isConductor = hostId == config.userId
     val track = room.optJSONObject("currentTrack") ?: return
     val state = room.optJSONObject("playState") ?: JSONObject()
-    if (track.optString("id") == currentTrackId) return
     val elapsed = if (state.optBoolean("isPlaying")) {
-      ((System.currentTimeMillis() - state.optLong("serverTimestamp")) / 1000.0).coerceAtLeast(0.0)
+      ((serverTime() - state.optLong("serverTimestamp")) / 1000.0).coerceAtLeast(0.0)
     } else 0.0
-    loadTrack(track, state.optDouble("currentTime") + elapsed, state.optBoolean("isPlaying"))
+    val position = state.optDouble("currentTime") + elapsed
+    if (track.optString("id") == currentTrackId) {
+      if (kotlin.math.abs(player.currentPosition / 1000.0 - position) > ROOM_STATE_DRIFT_SECONDS) {
+        player.seekTo((position * 1000).toLong().coerceAtLeast(0))
+      }
+      if (state.optBoolean("isPlaying")) player.play() else player.pause()
+    } else {
+      loadTrack(track, position, state.optBoolean("isPlaying"))
+    }
   }
 
   private fun handlePlayerPlay(payload: JSONObject?) {
     val track = payload?.optJSONObject("track") ?: return
     val state = payload.optJSONObject("playState") ?: JSONObject()
-    val delay = (state.optLong("serverTimeToExecute") - System.currentTimeMillis()).coerceAtLeast(0)
+    val delay = (state.optLong("serverTimeToExecute") - serverTime()).coerceAtLeast(0)
     schedule(delay) {
-      val elapsed = ((System.currentTimeMillis() - state.optLong("serverTimestamp")) / 1000.0).coerceAtLeast(0.0)
+      val elapsed = ((serverTime() - state.optLong("serverTimestamp")) / 1000.0).coerceAtLeast(0.0)
       val position = state.optDouble("currentTime") + if (state.optBoolean("isPlaying")) elapsed else 0.0
       loadTrack(track, position, state.optBoolean("isPlaying"))
     }
@@ -147,7 +188,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
   private fun handleScheduledState(payload: JSONObject?, shouldPlay: Boolean) {
     val state = payload?.optJSONObject("playState") ?: return
-    val delay = (state.optLong("serverTimeToExecute") - System.currentTimeMillis()).coerceAtLeast(0)
+    val delay = (state.optLong("serverTimeToExecute") - serverTime()).coerceAtLeast(0)
     schedule(delay) {
       player.seekTo((state.optDouble("currentTime") * 1000).toLong().coerceAtLeast(0))
       if (shouldPlay) player.play() else player.pause()
@@ -156,7 +197,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
   private fun handleSeek(payload: JSONObject?) {
     val state = payload?.optJSONObject("playState") ?: return
-    val delay = (state.optLong("serverTimeToExecute") - System.currentTimeMillis()).coerceAtLeast(0)
+    val delay = (state.optLong("serverTimeToExecute") - serverTime()).coerceAtLeast(0)
     schedule(delay) {
       player.seekTo((state.optDouble("currentTime") * 1000).toLong().coerceAtLeast(0))
     }
@@ -218,6 +259,25 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     // WebView may unload a stale wrapper after the service has already received
     // the next track over its own socket. Never release the newer native source.
     if (source.isNotBlank() && source != currentSource) return
+  }
+
+  private fun releaseSession() {
+    pendingPlayback?.let(handler::removeCallbacks)
+    pendingPlayback = null
+    socket?.emit(EVENT_ROOM_LEAVE)
+    socket?.disconnect()
+    socket?.off()
+    socket = null
+    sessionConfig = null
+    currentSource = null
+    currentTrackId = null
+    ntpPings.clear()
+    clockOffsets.clear()
+    player.stop()
+    player.clearMediaItems()
+    stopForeground(STOP_FOREGROUND_REMOVE)
+    updateSnapshot()
+    stopSelf()
   }
 
   private fun normalizeMimeType(value: String): String? = when {
@@ -300,6 +360,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     val payload = JSONObject().apply {
       put("type", type)
       put("source", currentSource)
+      put("trackId", currentTrackId)
       duration?.let { put("duration", it / 1000.0) }
       message?.let { put("message", it) }
     }
@@ -313,6 +374,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       isPlaying = player.isPlaying,
       volume = player.volume,
       rate = player.playbackParameters.speed,
+      trackId = currentTrackId.orEmpty(),
     )
   }
 
@@ -359,6 +421,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     const val ACTION_VOLUME = "app.musictogether.VOLUME"
     const val ACTION_RATE = "app.musictogether.RATE"
     const val ACTION_RELEASE_SOURCE = "app.musictogether.RELEASE_SOURCE"
+    const val ACTION_RELEASE_SESSION = "app.musictogether.RELEASE_SESSION"
     const val ACTION_PLAYBACK_EVENT = "app.musictogether.PLAYBACK_EVENT"
 
     const val EXTRA_CONFIG = "config"
@@ -379,10 +442,17 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     const val EVENT_PLAYER_RESUME = "player:resume"
     const val EVENT_PLAYER_SEEK = "player:seek"
     const val EVENT_PLAYER_NEXT = "player:next"
+    const val EVENT_ROOM_LEAVE = "room:leave"
+    const val EVENT_NTP_PING = "ntp:ping"
+    const val EVENT_NTP_PONG = "ntp:pong"
 
     const val NOTIFICATION_CHANNEL_ID = "music-together-playback"
     const val NOTIFICATION_ID = 1001
     private const val SNAPSHOT_INTERVAL_MS = 100L
+    private const val NTP_SAMPLE_COUNT = 7
+    private const val NTP_SAMPLE_INTERVAL_MS = 50L
+    private const val MAX_NTP_RTT_MS = 10_000L
+    private const val ROOM_STATE_DRIFT_SECONDS = 0.5
 
     @Volatile var snapshot = PlaybackSnapshot()
   }

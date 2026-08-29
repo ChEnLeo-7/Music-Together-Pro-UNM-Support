@@ -3,6 +3,7 @@ import { resetAllRoomState } from '@/lib/resetStores'
 import { storage } from '@/lib/storage'
 import { EVENTS } from '@music-together/shared'
 import { useCallback } from 'react'
+import { releaseNativePlayback } from '@/lib/nativePlayback'
 
 import { useRoomState } from './room/useRoomState'
 import { useChatSync } from './room/useChatSync'
@@ -28,6 +29,7 @@ export function useRoom() {
   const leaveRoom = useCallback(() => {
     storage.clearRejoinToken()
     socket.emit(EVENTS.ROOM_LEAVE)
+    releaseNativePlayback()
     resetAllRoomState()
   }, [socket])
 

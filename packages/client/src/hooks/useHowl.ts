@@ -14,7 +14,6 @@ import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
 import {
   getNativePlaybackBridge,
-  nativeTrackMetadata,
   NATIVE_PLAYBACK_EVENT,
   type NativePlaybackEvent,
 } from '@/lib/nativePlayback'
@@ -206,23 +205,22 @@ class AndroidMediaEngine implements AudioEngine {
   private readonly soundId = 1
   private readonly onceHandlers = new Map<string, Array<(id?: number, message?: unknown) => void>>()
   private destroyed = false
+  private loaded = false
+  private bootstrapTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
-    private readonly source: string,
     private readonly options: NativeAudioOptions,
-    track: Track,
+    private readonly trackId: string,
   ) {
     window.addEventListener(NATIVE_PLAYBACK_EVENT, this.handleNativeEvent as EventListener)
-    getNativePlaybackBridge()?.loadSource(source, options.type ?? '', nativeTrackMetadata(track))
+    this.bootstrapTimer = setTimeout(this.bootstrap, 0)
   }
 
   play(): number {
-    getNativePlaybackBridge()?.play()
     return this.soundId
   }
 
   pause(): this {
-    getNativePlaybackBridge()?.pause()
     return this
   }
 
@@ -231,7 +229,6 @@ class AndroidMediaEngine implements AudioEngine {
   seek(time?: number): number | this {
     const bridge = getNativePlaybackBridge()
     if (typeof time !== 'number') return bridge?.getPosition() ?? 0
-    bridge?.seek(Math.max(0, time))
     return this
   }
 
@@ -259,8 +256,8 @@ class AndroidMediaEngine implements AudioEngine {
 
   unload(): this {
     this.destroyed = true
+    if (this.bootstrapTimer) clearTimeout(this.bootstrapTimer)
     window.removeEventListener(NATIVE_PLAYBACK_EVENT, this.handleNativeEvent as EventListener)
-    getNativePlaybackBridge()?.releaseSource(this.source)
     return this
   }
 
@@ -269,7 +266,6 @@ class AndroidMediaEngine implements AudioEngine {
   rate(value?: number): number | this {
     const bridge = getNativePlaybackBridge()
     if (typeof value !== 'number') return bridge?.getRate() ?? 1
-    bridge?.setRate(value)
     return this
   }
 
@@ -281,7 +277,6 @@ class AndroidMediaEngine implements AudioEngine {
   }
 
   load(): this {
-    getNativePlaybackBridge()?.loadSource(this.source, this.options.type ?? '', '{}')
     return this
   }
 
@@ -295,14 +290,32 @@ class AndroidMediaEngine implements AudioEngine {
   private handleNativeEvent = (event: CustomEvent<NativePlaybackEvent>) => {
     if (this.destroyed) return
     const detail = event.detail
-    if (detail.type === 'load') this.options.onload()
+    if (detail.trackId && detail.trackId !== this.trackId) return
+    if (detail.type === 'load') this.emitLoad()
     if (detail.type === 'play') {
       this.emitOnce('play')
       this.options.onplay()
     }
     if (detail.type === 'pause') this.options.onpause()
-    if (detail.type === 'end') this.options.onend()
+    if (detail.type === 'end') this.options.onpause()
     if (detail.type === 'error') this.options.onloaderror(this.soundId, detail.message ?? 'native-playback-error')
+  }
+
+  private emitLoad() {
+    if (this.loaded) return
+    this.loaded = true
+    this.options.onload()
+  }
+
+  private bootstrap = () => {
+    if (this.destroyed) return
+    const bridge = getNativePlaybackBridge()
+    if (bridge?.getTrackId() === this.trackId && bridge.getDuration() > 0) {
+      this.emitLoad()
+      if (bridge.isPlaying()) this.options.onplay()
+      return
+    }
+    this.bootstrapTimer = setTimeout(this.bootstrap, 100)
   }
 }
 
@@ -428,6 +441,8 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
       soundIdRef.current = undefined
       trackTitleRef.current = track.title
       retryRef.current = false
+      usePlayerStore.getState().setDuration(0)
+      usePlayerStore.getState().setCurrentTime(0)
 
       if (!track.streamUrl) return
 
@@ -541,14 +556,13 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
 
       if (getNativePlaybackBridge()) {
         howl = new AndroidMediaEngine(
-          resolvedUrl,
           {
             src: resolvedUrl,
             type: audioFormat === 'dolby' ? 'audio/mp4; codecs="ec-3"' : undefined,
             volume: 0,
             ...commonOptions,
           },
-          track,
+          track.id,
         )
       } else if (audioFormat === 'dolby') {
         howl = new NativeAudioEngine({

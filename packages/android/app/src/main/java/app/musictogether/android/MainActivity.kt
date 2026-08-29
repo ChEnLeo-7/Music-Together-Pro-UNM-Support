@@ -26,6 +26,7 @@ import android.widget.TextView
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -77,7 +78,17 @@ class MainActivity : ComponentActivity() {
       settings.domStorageEnabled = true
       settings.mediaPlaybackRequiresUserGesture = false
       settings.userAgentString = "${settings.userAgentString} MusicTogetherAndroid/1"
-      webViewClient = WebViewClient()
+      webViewClient = object : WebViewClient() {
+        private val trusted = Uri.parse(serverUrl)
+
+        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+          val target = request?.url ?: return true
+          val sameOrigin = target.scheme == trusted.scheme && target.host == trusted.host && target.port == trusted.port
+          if (sameOrigin) return false
+          runCatching { startActivity(Intent(Intent.ACTION_VIEW, target)) }
+          return true
+        }
+      }
       webChromeClient = WebChromeClient()
       addJavascriptInterface(PlaybackBridge(this@MainActivity), "MusicTogetherAndroid")
       loadUrl(serverUrl)
@@ -86,6 +97,9 @@ class MainActivity : ComponentActivity() {
   }
 
   private fun showServerPicker() {
+    if (webView != null) {
+      startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_RELEASE_SESSION))
+    }
     webView?.apply {
       removeJavascriptInterface("MusicTogetherAndroid")
       destroy()
@@ -296,9 +310,11 @@ class MainActivity : ComponentActivity() {
       putExtra(PlaybackService.EXTRA_RATE, rate.toFloat())
     }
     @JavascriptInterface fun getRate(): Double = PlaybackService.snapshot.rate.toDouble()
+    @JavascriptInterface fun getTrackId(): String = PlaybackService.snapshot.trackId
     @JavascriptInterface fun releaseSource(source: String) = send(PlaybackService.ACTION_RELEASE_SOURCE) {
       putExtra(PlaybackService.EXTRA_SOURCE, source)
     }
+    @JavascriptInterface fun releaseSession() = send(PlaybackService.ACTION_RELEASE_SESSION)
 
     private fun send(action: String, extras: Intent.() -> Unit = {}) {
       context.startService(Intent(context, PlaybackService::class.java).setAction(action).apply(extras))
