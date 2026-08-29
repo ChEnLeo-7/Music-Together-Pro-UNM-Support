@@ -11,13 +11,8 @@ android {
     applicationId = "app.musictogether.android"
     minSdk = 26
     targetSdk = 35
-    versionCode = 1
-    versionName = "0.1.0"
-    buildConfigField("String", "APP_URL", "\"http://192.168.2.155:3001\"")
-  }
-
-  buildFeatures {
-    buildConfig = true
+    versionCode = 2
+    versionName = "0.2.0"
   }
 
   compileOptions {
