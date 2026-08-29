@@ -10,10 +10,7 @@ import type { PlayMode, VoteAction } from '@music-together/shared'
 import { EVENTS, TIMING } from '@music-together/shared'
 import { ArrowRightToLine, ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { memo, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
-
-/** Design-time width (px) at which the controls are laid out — CSS zoom scales from this baseline */
-const DESIGN_WIDTH = 300
+import { memo, useContext, useEffect, useRef, useState } from 'react'
 
 const PLAY_MODE_CYCLE: PlayMode[] = ['sequential', 'loop-all', 'loop-one', 'shuffle']
 
@@ -61,9 +58,6 @@ export const PlayerControls = memo(function PlayerControls({
   const [seekTime, setSeekTime] = useState(0)
   const cooldownTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const playCooldownTimer = useRef<ReturnType<typeof setTimeout>>(null)
-  const wrapperRef = useRef<HTMLDivElement>(null)
-  const innerRef = useRef<HTMLDivElement>(null)
-
   const disabled = !currentTrack
 
   // Clean up cooldown timers on unmount
@@ -72,20 +66,6 @@ export const PlayerControls = memo(function PlayerControls({
       if (cooldownTimer.current) clearTimeout(cooldownTimer.current)
       if (playCooldownTimer.current) clearTimeout(playCooldownTimer.current)
     }
-  }, [])
-
-  // Scale entire controls area proportionally — like the cover image
-  useLayoutEffect(() => {
-    const wrapper = wrapperRef.current
-    const inner = innerRef.current
-    if (!wrapper || !inner) return
-    const update = () => {
-      inner.style.setProperty('zoom', String(wrapper.clientWidth / DESIGN_WIDTH))
-    }
-    update()
-    const ro = new ResizeObserver(() => update())
-    ro.observe(wrapper)
-    return () => ro.disconnect()
   }, [])
 
   const handleSkip = (action: () => void, voteAction: 'next' | 'prev') => {
@@ -126,8 +106,8 @@ export const PlayerControls = memo(function PlayerControls({
   const ModeIcon = modeConfig.icon
 
   return (
-    <div ref={wrapperRef} className="w-full">
-      <div ref={innerRef} className="flex flex-col gap-6" style={{ width: DESIGN_WIDTH }}>
+    <div className="w-full">
+      <div className="flex w-full flex-col gap-6">
         {/* 1. Progress bar */}
         <div className="flex w-full flex-col gap-1">
           <Slider
@@ -147,7 +127,7 @@ export const PlayerControls = memo(function PlayerControls({
               }
               setIsSeeking(false)
             }}
-            className="w-full"
+            className="min-h-8 w-full py-2"
           />
           <div className="flex w-full justify-between">
             <span className="text-xs text-white/50 tabular-nums">{formatTime(isSeeking ? seekTime : currentTime)}</span>

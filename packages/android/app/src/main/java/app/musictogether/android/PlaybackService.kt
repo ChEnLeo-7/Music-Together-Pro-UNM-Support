@@ -35,6 +35,12 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   private lateinit var player: ExoPlayer
   private lateinit var mediaSession: MediaSession
   private val handler = Handler(Looper.getMainLooper())
+  private val snapshotTicker = object : Runnable {
+    override fun run() {
+      updateSnapshot()
+      handler.postDelayed(this, SNAPSHOT_INTERVAL_MS)
+    }
+  }
   private var socket: Socket? = null
   private var sessionConfig: SessionConfig? = null
   private var currentSource: String? = null
@@ -51,6 +57,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     }
     mediaSession = MediaSession.Builder(this, player).build()
     updateSnapshot()
+    handler.post(snapshotTicker)
   }
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession
@@ -310,6 +317,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   }
 
   override fun onDestroy() {
+    handler.removeCallbacks(snapshotTicker)
     pendingPlayback?.let(handler::removeCallbacks)
     socket?.disconnect()
     socket?.off()
@@ -374,6 +382,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
     const val NOTIFICATION_CHANNEL_ID = "music-together-playback"
     const val NOTIFICATION_ID = 1001
+    private const val SNAPSHOT_INTERVAL_MS = 100L
 
     @Volatile var snapshot = PlaybackSnapshot()
   }
