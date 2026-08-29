@@ -20,7 +20,7 @@ on:
       - 'packages/client/src/lib/nativePlayback.ts'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -78,3 +78,11 @@ jobs:
           path: packages/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish debug APK download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-debug-${{ github.sha }}
+          name: Android debug ${{ github.sha }}
+          prerelease: true
+          files: packages/android/app/build/outputs/apk/debug/app-debug.apk
