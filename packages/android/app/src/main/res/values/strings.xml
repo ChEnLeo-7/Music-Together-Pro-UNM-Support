@@ -8,4 +8,8 @@
   <string name="server_connect">连接服务器</string>
   <string name="server_invalid">请输入有效的 HTTP 或 HTTPS 服务器地址</string>
   <string name="server_privacy">登录信息仅保存在此设备对应服务器的 WebView 中。</string>
+  <string name="playback_channel_name">音乐播放</string>
+  <string name="playback_channel_description">在后台继续播放 Music Together 房间音乐</string>
+  <string name="playback_notification_title">Music Together</string>
+  <string name="playback_notification_connecting">正在连接房间</string>
 </resources>

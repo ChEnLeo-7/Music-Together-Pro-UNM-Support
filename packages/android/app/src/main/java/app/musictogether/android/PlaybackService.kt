@@ -1,6 +1,10 @@
 package app.musictogether.android
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
+import android.os.Build
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -12,6 +16,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.core.app.NotificationCompat
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONArray
@@ -39,6 +44,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
   override fun onCreate() {
     super.onCreate()
+    createNotificationChannel()
     player = ExoPlayer.Builder(this).build().also {
       it.addListener(this)
       it.setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
@@ -185,6 +191,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     }
 
     val metadata = parseMetadata(rawMetadata)
+    startForeground(NOTIFICATION_ID, buildNotification(metadata.mediaMetadata))
     val item = MediaItem.Builder()
       .setUri(source)
       .setMimeType(normalizeMimeType(mimeType))
@@ -225,6 +232,35 @@ class PlaybackService : MediaSessionService(), Player.Listener {
         .build(),
     )
   }
+
+  private fun createNotificationChannel() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val channel = NotificationChannel(
+      NOTIFICATION_CHANNEL_ID,
+      getString(R.string.playback_channel_name),
+      NotificationManager.IMPORTANCE_LOW,
+    ).apply {
+      description = getString(R.string.playback_channel_description)
+      setShowBadge(false)
+    }
+    getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+  }
+
+  private fun buildNotification(metadata: MediaMetadata) = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+    .setSmallIcon(R.drawable.ic_notification)
+    .setContentTitle(metadata.title ?: getString(R.string.playback_notification_title))
+    .setContentText(metadata.artist ?: getString(R.string.playback_notification_connecting))
+    .setContentIntent(PendingIntent.getActivity(
+      this,
+      0,
+      packageManager.getLaunchIntentForPackage(packageName),
+      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    ))
+    .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+    .setOnlyAlertOnce(true)
+    .setOngoing(true)
+    .build()
 
   override fun onPlaybackStateChanged(playbackState: Int) {
     updateSnapshot()
@@ -329,6 +365,9 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     const val EVENT_PLAYER_RESUME = "player:resume"
     const val EVENT_PLAYER_SEEK = "player:seek"
     const val EVENT_PLAYER_NEXT = "player:next"
+
+    const val NOTIFICATION_CHANNEL_ID = "music-together-playback"
+    const val NOTIFICATION_ID = 1001
 
     @Volatile var snapshot = PlaybackSnapshot()
   }
