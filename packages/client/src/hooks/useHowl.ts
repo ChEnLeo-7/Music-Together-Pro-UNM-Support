@@ -379,11 +379,17 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
     cancelAnimationFrame(animFrameRef.current)
     stalledRef.current = { lastSeek: -1, since: 0 }
     const update = () => {
-      if (howlRef.current && howlRef.current.playing()) {
+      const engine = howlRef.current
+      const playing = engine?.playing() ?? false
+      if (engine && getNativePlaybackBridge()) {
+        const playerState = usePlayerStore.getState()
+        if (playerState.isPlaying !== playing) playerState.setIsPlaying(playing)
+      }
+      if (engine && playing) {
         const now = performance.now()
         if (now - lastTimeUpdateRef.current >= CURRENT_TIME_THROTTLE_MS) {
           lastTimeUpdateRef.current = now
-          const seekVal = howlRef.current.seek() as number
+          const seekVal = engine.seek() as number
           usePlayerStore.getState().setCurrentTime(seekVal)
 
           // Stalled detection: if currentTime hasn't moved for STALLED_TIMEOUT_MS
