@@ -70,6 +70,7 @@
 14. **🌟UI以及细节优化**：添加全屏按钮、点击歌词跳转对应时间点、隐藏已播放的歌词（开关）、界面细节优化调整、排版优化  
 15. **🏘️永久房间**：开启后除了房主、服务器管理员能解散其他情况都不会销毁（Cookie、UNM服务器等信息会跟随保存）  
 16. **歌曲/专辑/歌单 ID搜索**：支持用网易云的 `歌曲`/`歌单`/`专辑`ID 搜索
+17. **Android 原生后台播放**：提供 Android App，通过 Media3 前台服务支持锁屏和后台播放、系统媒体控制、稳定的播放/暂停状态同步及可拖动进度条；App 启动时可连接自托管的 HTTP 或 HTTPS 服务器
 
 ## 温馨提示
 本项目使用 GPT5.5 AI 二改而来，添加了 UNM 以及一些自己个性化需求的功能，可能会有些小bug小瑕疵（某个功能无效），一般不会有更新，如有冒犯，请联系我删除
@@ -91,6 +92,12 @@ pnpm dev
 ```
 
 前端: http://localhost:5173 | 后端: http://localhost:3001
+
+### Android App
+
+从 [GitHub Releases](https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/releases/latest) 下载最新 APK 并安装。首次启动时输入 Music Together 服务端地址，例如 `https://music.example.com`；可信局域网调试也可使用 `http://192.168.1.10:3001`。
+
+Android App 使用 Media3 前台播放服务，支持后台/锁屏播放和系统媒体控制。`v0.7.0` 修复了播放按钮状态不同步、缓冲时错误切换暂停状态、进度条触摸偏移与拖动回跳、重复执行播放指令，以及离开房间后原生服务未停止等问题。
 
 ## Docker 本地部署
 

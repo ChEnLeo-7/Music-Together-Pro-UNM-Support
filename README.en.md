@@ -70,6 +70,7 @@
 14. **🌟 UI & Detail Optimizations**: Added full‑screen button, click lyrics to jump to timestamp, hide played lyrics (toggle), UI detail tweaks, layout improvements
 15. **🏘️ Permanent Rooms**: When enabled, the room will not be destroyed except by the room owner or server admin (Cookie, UNM server info, etc., persist)
 16. **Song/Album/Playlist ID Search**: Supports searching by NetEase Cloud `song`/`playlist`/`album` ID
+17. **Native Android Background Playback**: Provides an Android app with Media3 foreground playback, lock-screen and background audio, system media controls, stable play/pause state synchronization, and an interactive seek bar. The app can connect to a self-hosted HTTP or HTTPS server at startup.
 
 ## Important Note
 
@@ -92,6 +93,12 @@ pnpm dev
 ```
 
 Frontend: http://localhost:5173 | Backend: http://localhost:3001
+
+### Android App
+
+Download and install the latest APK from [GitHub Releases](https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/releases/latest). On first launch, enter your Music Together server address, such as `https://music.example.com`; trusted LAN testing may use an address such as `http://192.168.1.10:3001`.
+
+The Android app uses a Media3 foreground playback service and supports background/lock-screen playback plus system media controls. Version `v0.7.0` fixes stale play-button state, false pause transitions while buffering, seek-bar touch offset and snap-back, duplicate playback commands, and native playback continuing after leaving a room.
 
 ## Docker Local Deployment
 
