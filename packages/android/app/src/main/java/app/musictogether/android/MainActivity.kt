@@ -119,7 +119,7 @@ class MainActivity : ComponentActivity() {
       setTextColor(Color.WHITE)
       setHintTextColor(Color.rgb(125, 125, 145))
       textSize = 16f
-      singleLine = true
+      setSingleLine(true)
       inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
       imeOptions = EditorInfo.IME_ACTION_GO
       setPadding(dp(16), dp(4), dp(16), dp(4))
