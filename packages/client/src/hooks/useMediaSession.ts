@@ -6,6 +6,7 @@ import { defineAbilityFor, EVENTS, TIMING } from '@music-together/shared'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { getVoteActionLabel } from './useVote'
+import { useI18n } from '@/lib/i18n'
 
 interface MediaSessionControls {
   play: () => void
@@ -44,6 +45,7 @@ interface MediaSessionControls {
  */
 export function useMediaSession({ play, pause, next, prev, seek }: MediaSessionControls) {
   const { socket } = useSocketContext()
+  const t = useI18n((s) => s.t)
   // Build ability directly from roomStore instead of AbilityContext, because
   // usePlayer() (our caller) runs in RoomPage's function body which is
   // *outside* <AbilityProvider>'s subtree — useContext would always return
@@ -75,9 +77,9 @@ export function useMediaSession({ play, pause, next, prev, seek }: MediaSessionC
       if (now - lastVoteRef.current < TIMING.PLAYER_NEXT_DEBOUNCE_MS) return
       lastVoteRef.current = now
       socket.emit(EVENTS.VOTE_START, { action })
-      toast.info(`已发起投票：${getVoteActionLabel(action)}`)
+       toast.info(t('voteStarted', { action: getVoteActionLabel(action) }))
     },
-    [socket],
+     [socket, t],
   )
 
   // Register action handlers based on the current ability.

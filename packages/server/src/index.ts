@@ -22,10 +22,12 @@ import { restorePermanentRooms } from './services/roomService.js'
 import { databasePath } from './repositories/database.js'
 
 const app = express()
+if (config.trustProxyHops > 0) app.set('trust proxy', config.trustProxyHops)
 const httpServer = createServer(app)
+const corsOrigin = config.explicitOrigins.length > 0 ? config.explicitOrigins : config.isProd ? false : true
 const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
   cors: {
-    origin: config.explicitOrigins.length > 0 ? config.explicitOrigins : true,
+    origin: corsOrigin,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -37,9 +39,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string,
 // dev (localhost) and LAN access working consistently.
 app.use(
   cors({
-    origin: config.explicitOrigins.length > 0
-      ? config.explicitOrigins
-      : (true as const),
+    origin: corsOrigin,
     credentials: true,
   }),
 )
@@ -116,7 +116,9 @@ httpServer.listen(config.port, () => {
   logger.info(
     config.explicitOrigins.length > 0
       ? `Accepting connections from explicit origins: ${config.explicitOrigins.join(', ')}`
-      : 'Accepting connections from all origins (auto mode)',
+      : config.isProd
+        ? 'Cross-origin browser connections disabled (same-origin mode)'
+        : 'Accepting connections from all origins (development mode)',
   )
 })
 

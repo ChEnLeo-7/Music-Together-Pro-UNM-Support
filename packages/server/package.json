@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test": "DATABASE_URL=:memory: tsx --test --test-concurrency=1 src/**/*.test.ts",
+    "account:init-admin": "tsx src/cli/initAdmin.ts",
+    "account:reset": "tsx src/cli/resetAccounts.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

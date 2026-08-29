@@ -39,17 +39,19 @@ function ResponsiveDialog({
   open,
   onOpenChange,
   children,
+  repositionInputs,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   children: React.ReactNode
+  repositionInputs?: boolean
 }) {
   const isMobile = useIsMobile()
 
   return (
     <ResponsiveDialogContext.Provider value={isMobile}>
       {isMobile ? (
-        <Drawer open={open} onOpenChange={onOpenChange}>
+        <Drawer open={open} onOpenChange={onOpenChange} repositionInputs={repositionInputs}>
           {children}
         </Drawer>
       ) : (
@@ -69,16 +71,28 @@ function ResponsiveDialogContent({
   className,
   children,
   showCloseButton,
+  mobileStyle,
+  style,
   ...props
-}: React.ComponentProps<typeof DialogContent>) {
+}: React.ComponentProps<typeof DialogContent> & {
+  mobileStyle?: React.CSSProperties
+}) {
   const isMobile = useIsResponsiveMobile()
 
   if (isMobile) {
-    return <DrawerContent className={cn('w-screen max-w-[100dvw] overflow-hidden', className)} {...props}>{children}</DrawerContent>
+    return (
+      <DrawerContent
+        className={cn('w-screen max-w-[100dvw] overflow-hidden', className)}
+        style={mobileStyle ?? style}
+        {...props}
+      >
+        {children}
+      </DrawerContent>
+    )
   }
 
   return (
-    <DialogContent className={className} showCloseButton={showCloseButton} {...props}>
+    <DialogContent className={className} showCloseButton={showCloseButton} style={style} {...props}>
       {children}
     </DialogContent>
   )

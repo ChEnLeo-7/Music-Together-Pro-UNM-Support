@@ -6,7 +6,6 @@ import { Separator } from '@/components/ui/separator'
 import { SERVER_URL } from '@/lib/config'
 import { useI18n } from '@/lib/i18n'
 import { useSocketContext } from '@/providers/SocketProvider'
-import { useAccountStore } from '@/stores/accountStore'
 import { useRoomStore } from '@/stores/roomStore'
 import { EVENTS } from '@music-together/shared'
 import type { UserRole } from '@music-together/shared'
@@ -44,8 +43,7 @@ export function MembersSection({ onSetUserRole }: MembersSectionProps) {
   const room = useRoomStore((s) => s.room)
   const currentUser = useRoomStore((s) => s.currentUser)
   const isOwner = currentUser?.role === 'owner'
-  const isServerAdmin = useAccountStore((s) => s.me?.role === 'admin')
-  const canManageRoom = isOwner || isServerAdmin
+  const canManageRoom = isOwner
   const t = useI18n((s) => s.t)
   const roleLabels: Record<UserRole, string> = {
     owner: t('owner'),

@@ -15,6 +15,7 @@ import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, ty
 import { AbilityContext } from '@/providers/AbilityProvider'
 import { ArrowUpToLine, ChevronDown, ChevronUp, ListX, Music, Play, Search, Trash2, User, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { useI18n } from '@/lib/i18n'
 
 const EMPTY_QUEUE: Track[] = []
 const DESKTOP_ROW_HEIGHT = 64
@@ -27,10 +28,10 @@ const QUEUE_ROW_STYLE = {
   containIntrinsicSize: `${DESKTOP_ROW_HEIGHT}px`,
 } as CSSProperties
 
-const SOURCE_STYLE: Record<MusicSource, { label: string; className: string }> = {
-  netease: { label: '网易', className: 'text-white bg-red-500 ring-red-600/50' },
-  tencent: { label: 'QQ', className: 'text-white bg-green-500 ring-green-600/50' },
-  kugou: { label: '酷狗', className: 'text-white bg-blue-500 ring-blue-600/50' },
+const SOURCE_STYLE: Record<MusicSource, { labelKey: 'netease' | 'tencent' | 'kugou'; className: string }> = {
+  netease: { labelKey: 'netease', className: 'text-white bg-red-500 ring-red-600/50' },
+  tencent: { labelKey: 'tencent', className: 'text-white bg-green-500 ring-green-600/50' },
+  kugou: { labelKey: 'kugou', className: 'text-white bg-blue-500 ring-blue-600/50' },
 }
 
 interface QueueDrawerProps {
@@ -84,6 +85,7 @@ const QueueItem = memo(function QueueItem({
   onMoveDown,
   onInsertAfterCurrent,
 }: QueueItemProps) {
+  const t = useI18n((s) => s.t)
   const renderActionButton = (
     label: string,
     icon: React.ReactNode,
@@ -156,7 +158,7 @@ const QueueItem = memo(function QueueItem({
                 SOURCE_STYLE[track.source].className,
               )}
             >
-              {SOURCE_STYLE[track.source].label}
+              {t(SOURCE_STYLE[track.source].labelKey)}
             </span>
           )}
         </div>
@@ -188,24 +190,24 @@ const QueueItem = memo(function QueueItem({
         >
           {!isCurrent &&
             (canPlay || canVote) &&
-            renderActionButton(canPlay ? '播放' : '投票播放', <Play className="h-3 w-3" />, () => onPlay(track))}
+            renderActionButton(canPlay ? t('play') : t('votePlay'), <Play className="h-3 w-3" />, () => onPlay(track))}
 
           {canReorder && (
             <>
-              {renderActionButton('上移', <ChevronUp className="h-3 w-3" />, () => onMoveUp(index), {
+              {renderActionButton(t('moveUp'), <ChevronUp className="h-3 w-3" />, () => onMoveUp(index), {
                 disabled: index === 0,
               })}
-              {renderActionButton('下移', <ChevronDown className="h-3 w-3" />, () => onMoveDown(index), {
+              {renderActionButton(t('moveDown'), <ChevronDown className="h-3 w-3" />, () => onMoveDown(index), {
                 disabled: index === queueLength - 1,
               })}
-              {renderActionButton('置顶到当前播放下方', <ArrowUpToLine className="h-3 w-3" />, (event) =>
+               {renderActionButton(t('pinBelowCurrent'), <ArrowUpToLine className="h-3 w-3" />, (event) =>
                 onInsertAfterCurrent(track, event),
               )}
             </>
           )}
 
           {(canRemove || canVote) &&
-            renderActionButton(canRemove ? '移除' : '投票移除', <Trash2 className="h-3 w-3" />, () => onRemove(track), {
+            renderActionButton(canRemove ? t('remove') : t('voteRemove'), <Trash2 className="h-3 w-3" />, () => onRemove(track), {
               destructive: true,
             })}
         </div>
@@ -215,6 +217,7 @@ const QueueItem = memo(function QueueItem({
 })
 
 export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQueue, onClearQueue }: QueueDrawerProps) {
+  const t = useI18n((s) => s.t)
   const queue = useRoomStore((s) => s.room?.queue ?? EMPTY_QUEUE)
   const currentTrack = usePlayerStore((s) => s.currentTrack)
   const { socket } = useSocketContext()
@@ -328,7 +331,7 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
     }
     onClearQueue()
     setConfirmClear(false)
-    toast.success('播放列表已清空')
+     toast.success(t('queueCleared'))
   }, [confirmClear, onClearQueue])
 
   const handleMoveUp = useCallback((index: number) => {
@@ -353,20 +356,20 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
         action: 'play-track',
         payload: { trackId: track.id, trackTitle: track.title },
       })
-      toast.info(`已发起投票：播放《${track.title}》`)
+       toast.info(t('votePlayTrack', { track: track.title }))
     }
   }, [canPlay, canVote, socket])
 
   const handleRemoveTrack = useCallback((track: Track) => {
     if (canRemove) {
       onRemoveFromQueue(track.id)
-      toast.success(`已移除《${track.title}》`)
+       toast.success(t('removedTrack', { track: track.title }))
     } else if (canVote) {
       socket.emit(EVENTS.VOTE_START, {
         action: 'remove-track',
         payload: { trackId: track.id, trackTitle: track.title },
       })
-      toast.info(`已发起投票：移除《${track.title}》`)
+       toast.info(t('voteRemoveTrack', { track: track.title }))
     }
   }, [canRemove, canVote, onRemoveFromQueue, socket])
 
@@ -396,7 +399,7 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
     }
 
     onReorderQueue(ids)
-    toast.success(`已置顶《${track.title}》`)
+     toast.success(t('pinnedTrack', { track: track.title }))
   }, [activeTrackId, currentTrack, isTouch, onReorderQueue, queue])
 
   const handleActivateTrack = useCallback((trackId: string) => {
@@ -434,7 +437,7 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
           <div className="flex items-center justify-between">
             <DrawerTitle className="flex items-center gap-2 text-base">
               <Music className="h-4 w-4" />
-              播放列表 ({queue.length})
+               {t('queue')} ({queue.length})
             </DrawerTitle>
             <div className="flex items-center gap-1">
               {canRemove && queue.length > 0 && (
@@ -445,15 +448,15 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
                       size="icon"
                       className={cn('h-7 w-7', confirmClear && 'text-destructive hover:text-destructive')}
                       onClick={handleClear}
-                      aria-label="清空播放列表"
+                       aria-label={t('clearQueue')}
                     >
                       <ListX className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{confirmClear ? '再次点击确认清空' : '清空播放列表'}</TooltipContent>
+                   <TooltipContent>{confirmClear ? t('confirmClearQueue') : t('clearQueue')}</TooltipContent>
                 </Tooltip>
               )}
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpenChange(false)} aria-label="关闭播放列表">
+               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpenChange(false)} aria-label={t('closeQueue')}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -465,9 +468,9 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
                 <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="搜索列表内歌曲"
+                   placeholder={t('queueSearchPlaceholder')}
                   className="h-8 rounded-lg pl-8 pr-8 text-sm"
-                  aria-label="搜索播放列表"
+                   aria-label={t('queueSearch')}
                 />
                 {query && (
                   <Button
@@ -476,7 +479,7 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
                     size="icon"
                     className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground"
                     onClick={() => setQuery('')}
-                    aria-label="清空搜索"
+                     aria-label={t('clearSearch')}
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>
@@ -498,9 +501,9 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
           style={{ WebkitOverflowScrolling: 'touch', contain: 'layout paint style' }}
         >
           {queue.length === 0 ? (
-            <div className="flex h-40 items-center justify-center text-muted-foreground">播放列表为空</div>
+             <div className="flex h-40 items-center justify-center text-muted-foreground">{t('queueEmpty')}</div>
           ) : visibleItems.length === 0 ? (
-            <div className="flex h-40 items-center justify-center text-muted-foreground">没有匹配的歌曲</div>
+             <div className="flex h-40 items-center justify-center text-muted-foreground">{t('noMatchingSongs')}</div>
           ) : (
             <div className="w-full">
               {topSpacerHeight > 0 && <div aria-hidden="true" style={{ height: `${topSpacerHeight}px` }} />}

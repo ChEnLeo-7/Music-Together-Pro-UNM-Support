@@ -112,12 +112,14 @@ services:
       PORT: 3001
       CLIENT_URL: "${CLIENT_URL:-}"
       CORS_ORIGINS: "${CORS_ORIGINS:-}"
-      IDENTITY_SECRET: "${IDENTITY_SECRET:-dev-identity-secret-change-me}"
-      IDENTITY_TTL_DAYS: "${IDENTITY_TTL_DAYS:-30}"
-      IDENTITY_COOKIE_SECURE: "${IDENTITY_COOKIE_SECURE:-false}"
-      REJOIN_TTL_MS: "${REJOIN_TTL_MS:-30000}"
+      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
+      ROOM_PASSWORD_KEY: "${ROOM_PASSWORD_KEY:?ROOM_PASSWORD_KEY is required}"
+      ROOM_PASSWORD_KEY_VERSION: "${ROOM_PASSWORD_KEY_VERSION:-1}"
+      ROOM_ADMISSION_TTL_MS: "${ROOM_ADMISSION_TTL_MS:-300000}"
+      PLATFORM_AUTH_KEY: "${PLATFORM_AUTH_KEY:?PLATFORM_AUTH_KEY is required}"
+      STREAM_PROXY_SECRET: "${STREAM_PROXY_SECRET:?STREAM_PROXY_SECRET is required}"
       DATABASE_URL: "${DATABASE_URL:-file:/app/data/music-together.db}"
-      SERVER_ADMIN_IDS: "${SERVER_ADMIN_IDS:-}"
       AUTO_FALLBACK_ENABLED: "${AUTO_FALLBACK_ENABLED:-true}"
       UNM_SERVER_URL: "${UNM_SERVER_URL:-}"
       UNM_SERVER_TIMEOUT_MS: "${UNM_SERVER_TIMEOUT_MS:-10000}"
@@ -134,6 +136,25 @@ volumes:
   music-together-data:
 
 ```
+
+Before the first deployment, generate and configure the keys in `.env`:
+
+```bash
+openssl rand -base64 32
+openssl rand -base64 32
+openssl rand -hex 32
+```
+
+Use the first two values for `ROOM_PASSWORD_KEY` and `PLATFORM_AUTH_KEY`, and the third for `STREAM_PROXY_SECRET`. Session cookies require HTTPS by default; set `SESSION_COOKIE_SECURE=false` only for trusted LAN HTTP testing. Upgrading from the old account system requires stopping the service, backing up the data, and explicitly resetting all application data:
+
+```bash
+docker compose run --rm music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
+docker compose run --rm music-together node packages/server/dist/cli/initAdmin.js
+docker compose up -d
+```
+
+The reset removes old users, permanent rooms, platform authorizations, and avatars. The first administrator can only be created through the local interactive command; public registration opens after initialization.
+
 **Dockerfile**
 ```
 # syntax=docker/dockerfile:1

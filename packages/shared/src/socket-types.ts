@@ -32,7 +32,6 @@ export interface ServerToClientEvents {
   [EVENTS.ROOM_SETTINGS]: (settings: {
     name: string
     hasPassword: boolean
-    password?: string | null
     audioQuality: AudioQuality
     sourcePriority: SourcePriority
     hidden: boolean
@@ -66,7 +65,6 @@ export interface ServerToClientEvents {
     success: boolean
     message: string
     platform?: MusicSource
-    cookie?: string
     reason?: 'expired' | 'error'
   }) => void
   [EVENTS.AUTH_STATUS_UPDATE]: (data: PlatformAuthStatus[]) => void

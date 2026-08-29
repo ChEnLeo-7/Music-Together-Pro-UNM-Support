@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react'
 
-/**
- * Detects portrait (mobile) vs landscape (desktop) orientation.
- * Portrait = mobile layout (single column), Landscape = desktop layout (two columns).
- */
+/** Matches Tailwind's md breakpoint (768px) for JavaScript-driven layouts. */
 export function useIsMobile() {
   const [isMobile, setIsMobile] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(orientation: portrait)').matches,
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
   )
 
   useEffect(() => {
-    const mql = window.matchMedia('(orientation: portrait)')
+    const mql = window.matchMedia('(max-width: 767px)')
     const onChange = () => setIsMobile(mql.matches)
     mql.addEventListener('change', onChange)
     return () => mql.removeEventListener('change', onChange)

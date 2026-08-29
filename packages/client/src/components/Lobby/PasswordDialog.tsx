@@ -23,16 +23,15 @@ interface PasswordDialogProps {
 export function PasswordDialog({ open, onOpenChange, roomName, onSubmit, error, isLoading }: PasswordDialogProps) {
   const [password, setPassword] = useState('')
 
-  // Reset password when dialog opens
   const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen) setPassword('')
+    if (!nextOpen) setPassword('')
     onOpenChange(nextOpen)
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!password.trim()) return
-    onSubmit(password.trim())
+    if (!password.length) return
+    onSubmit(password)
   }
 
   return (
@@ -69,7 +68,7 @@ export function PasswordDialog({ open, onOpenChange, roomName, onSubmit, error, 
               )}
             </motion.div>
 
-            <Button type="submit" className="w-full" disabled={isLoading || !password.trim()}>
+            <Button type="submit" className="w-full" disabled={isLoading || !password.length}>
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               加入房间
             </Button>

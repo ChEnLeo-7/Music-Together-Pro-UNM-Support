@@ -8,6 +8,7 @@ import { LIMITS } from '@music-together/shared'
 import { ArrowLeft, ListPlus, Music } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { useI18n } from '@/lib/i18n'
 
 const EMPTY_QUEUE: Track[] = []
 
@@ -39,6 +40,7 @@ export function PlaylistDetail({
   onLoadMore,
 }: PlaylistDetailProps) {
   const queue = useRoomStore((s) => s.room?.queue ?? EMPTY_QUEUE)
+  const t = useI18n((s) => s.t)
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set())
   const queueKeys = useMemo(() => new Set(queue.map(trackKey)), [queue])
 
@@ -54,7 +56,7 @@ export function PlaylistDetail({
     (track: Track) => {
       const key = trackKey(track)
       if (queueKeys.has(key) || addedIds.has(key)) {
-        toast.info(`「${track.title}」已在队列中`)
+         toast.info(t('queueDuplicate', { track: track.title }))
         return
       }
       onAddTrack(track)
@@ -67,7 +69,7 @@ export function PlaylistDetail({
     (track: Track) => {
       const key = trackKey(track)
       if (queueKeys.has(key) || addedIds.has(key)) {
-        toast.info(`「${track.title}」已在队列中`)
+         toast.info(t('queueDuplicate', { track: track.title }))
         return
       }
       onInsertAfterCurrent?.(track)
@@ -92,26 +94,26 @@ export function PlaylistDetail({
       return next
     })
     if (addCount < uniqueTracks.length) {
-      toast.success(`已添加 ${addCount} 首到队列（队列已满，还有 ${uniqueTracks.length - addCount} 首未添加）`)
+       toast.success(t('queueAddedPartial', { added: addCount, remaining: uniqueTracks.length - addCount }))
     } else {
-      toast.success(`已添加全部 ${addCount} 首到队列`)
+       toast.success(t('queueAddedAll', { count: addCount }))
     }
   }, [addCount, uniqueTracks, onAddAll, playlist?.name])
 
   // Button label
   let addAllLabel: string
   if (loading) {
-    addAllLabel = '加载中…'
+    addAllLabel = t('loading')
   } else if (tracks.length === 0) {
-    addAllLabel = '添加全部'
+    addAllLabel = t('addAll')
   } else if (isQueueFull) {
-    addAllLabel = '队列已满'
+    addAllLabel = t('queueFull')
   } else if (uniqueTracks.length === 0) {
-    addAllLabel = '全部已添加'
+    addAllLabel = t('allAdded')
   } else if (addCount === uniqueTracks.length) {
-    addAllLabel = `添加全部 ${addCount} 首`
+    addAllLabel = `${t('addAll')} ${addCount}`
   } else {
-    addAllLabel = `添加 ${addCount} 首到队列`
+    addAllLabel = t('addTracks', { count: addCount })
   }
 
   return (
@@ -121,15 +123,15 @@ export function PlaylistDetail({
         <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8 shrink-0">
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">{playlist?.name ?? '歌单详情'}</h4>
+        <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">{playlist?.name ?? t('playlistDetail')}</h4>
       </div>
 
       {/* Row 2: Info + Action */}
       <div className="flex min-w-0 shrink-0 items-center justify-between gap-3 overflow-hidden py-1">
         <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {loading
-            ? '加载中…'
-            : `${total} 首${tracks.length < total ? `（已加载 ${tracks.length}）` : ''}${playlist?.creator ? ` · ${playlist.creator}` : ''}`}
+            ? t('loading')
+            : `${tracks.length < total ? t('tracksLoadedWithProgress', { total, count: tracks.length }) : t('tracksLoaded', { total })}${playlist?.creator ? ` · ${playlist.creator}` : ''}`}
         </p>
         <Button
           variant="outline"
@@ -156,7 +158,7 @@ export function PlaylistDetail({
         onAddTrack={handleAddTrack}
         onInsertAfterCurrent={onInsertAfterCurrent ? handleInsertAfterCurrent : undefined}
         emptyIcon={<Music className="h-8 w-8" />}
-        emptyMessage="歌单为空"
+        emptyMessage={t('playlistEmpty')}
         className="border-0 rounded-none"
       />
     </div>

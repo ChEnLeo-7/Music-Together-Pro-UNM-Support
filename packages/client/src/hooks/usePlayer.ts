@@ -8,10 +8,13 @@ import type { ScheduledPlayState, Track } from '@music-together/shared'
 import { EVENTS } from '@music-together/shared'
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
+import { useI18n } from '@/lib/i18n'
 import { useHowl } from './useHowl'
 import { useLyric } from './useLyric'
 import { useMediaSession } from './useMediaSession'
 import { usePlayerSync } from './usePlayerSync'
+import { configureNativePlayback, getNativePlaybackBridge } from '@/lib/nativePlayback'
+import { SERVER_URL } from '@/lib/config'
 
 /**
  * Composing hook: useHowl + useLyric + usePlayerSync.
@@ -25,6 +28,8 @@ import { usePlayerSync } from './usePlayerSync'
  */
 export function usePlayer() {
   const { socket } = useSocketContext()
+  const t = useI18n((s) => s.t)
+  const room = useRoomStore((s) => s.room)
   const loadingRef = useRef<{ trackId: string; ts: number; serverTimestamp: number } | null>(null)
   // Set by recovery effect to signal onPlayerPlay that this track was already
   // loaded by reconnect recovery — the subsequent PLAYER_PLAY from
@@ -54,7 +59,7 @@ export function usePlayer() {
         streamQuality: undefined,
         availableStreamQualities: undefined,
       }
-      toast.warning('当前浏览器无法播放杜比全景声，已切换为无损')
+       toast.warning(t('dolbyUnavailable'))
       socket.emit(EVENTS.PLAYER_PLAY, {
         track: retryTrack,
         audioQuality: 999,
@@ -62,7 +67,7 @@ export function usePlayer() {
       })
       return true
     },
-    [socket],
+     [socket, t],
   )
 
   const { howlRef, soundIdRef, loadTrack, localSeek } = useHowl(autoNext, recoverFromLoadFailure)
@@ -70,6 +75,17 @@ export function usePlayer() {
 
   // Connect sync (handles SEEK, PAUSE, RESUME + conductor reporting)
   usePlayerSync(howlRef, soundIdRef)
+
+  useEffect(() => {
+    if (!room || !getNativePlaybackBridge()) return
+    configureNativePlayback({
+      serverUrl: SERVER_URL,
+      roomId: room.id,
+      userId: storage.getUserId(),
+      nickname: storage.getNickname(),
+      rejoinToken: storage.getRejoinToken(room.id) ?? undefined,
+    })
+  }, [room?.id])
 
   // Reset dedup ref on disconnect so reconnect PLAYER_PLAY is never blocked
   useEffect(() => {

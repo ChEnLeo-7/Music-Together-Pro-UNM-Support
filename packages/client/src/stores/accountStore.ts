@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 
 export interface AccountMe {
-  id: string
+  userId: string
+  kind: 'guest' | 'account'
+  username: string | null
   nickname: string
   avatarUrl: string | null
-  hasPassword: boolean
   role: 'user' | 'admin'
+  mustChangePassword: boolean
+  mustChangeUsername: boolean
 }
 
 interface AccountState {

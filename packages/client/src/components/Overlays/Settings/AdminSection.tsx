@@ -3,15 +3,17 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { SERVER_URL } from '@/lib/config'
 import { useI18n } from '@/lib/i18n'
+import { getLocalizedError } from '@/lib/i18n'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 interface AdminUser {
   id: string
+  kind: 'guest' | 'account'
+  username: string | null
   nickname: string
   avatarUrl: string | null
   role: 'user' | 'admin'
-  hasPassword: boolean
   createdAt: number
   updatedAt: number
   lastSeenAt: number
@@ -74,7 +76,7 @@ export function AdminSection() {
       if (err instanceof Error && err.message.includes('Forbidden')) {
         setForbidden(true)
       } else {
-        toast.error(err instanceof Error ? err.message : t('adminLoadFailed'))
+         toast.error(getLocalizedError(err, t))
       }
     } finally {
       setLoading(false)
@@ -94,14 +96,14 @@ export function AdminSection() {
 
   const resetPassword = async (user: AdminUser) => {
     const password = passwords[user.id]
-    if (!password || password.length < 8) {
+    if (!password || password.length < 10) {
       toast.error(t('passwordTooShort'))
       return
     }
 
     await requestJson<void>(`/api/admin/users/${encodeURIComponent(user.id)}/reset-password`, {
       method: 'POST',
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ newPassword: password }),
     })
     setPasswords((current) => ({ ...current, [user.id]: '' }))
     toast.success(t('passwordReset'))
@@ -138,10 +140,10 @@ export function AdminSection() {
             <div key={user.id} className="rounded-md border p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{user.nickname || user.id}</p>
-                  <p className="truncate font-mono text-xs text-muted-foreground">{user.id}</p>
+                  <p className="truncate text-sm font-medium">{user.nickname || user.username || user.id}</p>
+                  <p className="truncate text-xs text-muted-foreground">{user.kind === 'account' ? `@${user.username}` : t('guestAccount')}</p>
                   <p className="text-xs text-muted-foreground">
-                    {user.role} / {user.hasPassword ? t('passwordSet') : t('noPassword')} / {t('lastSeen')}{' '}
+                    {user.role} / {t('lastSeen')}{' '}
                     {formatTime(user.lastSeenAt)}
                   </p>
                 </div>
@@ -149,7 +151,7 @@ export function AdminSection() {
                   {t('delete')}
                 </Button>
               </div>
-              <div className="mt-3 flex gap-2">
+              {user.kind === 'account' && <div className="mt-3 flex gap-2">
                 <Input
                   type="password"
                   placeholder={t('newPassword')}
@@ -159,7 +161,7 @@ export function AdminSection() {
                 <Button variant="outline" onClick={() => resetPassword(user)}>
                   {t('reset')}
                 </Button>
-              </div>
+              </div>}
             </div>
           ))}
           {!loading && users.length === 0 && <p className="text-sm text-muted-foreground">{t('noUsers')}</p>}

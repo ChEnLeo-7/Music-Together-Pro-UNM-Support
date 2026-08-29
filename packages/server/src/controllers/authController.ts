@@ -93,7 +93,6 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
             success: true,
             message: `已登录为 ${userInfo.nickname}`,
             platform,
-            cookie: result.cookie,
           })
           logger.info(`${platform} QR login success: ${userInfo.nickname} (vipType=${userInfo.vipType})`)
         } else {
@@ -143,7 +142,6 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
           success: true,
           message: 'Cookie 已生效',
           platform,
-          cookie,
         })
         broadcastAuthStatus(io, socket, mapping)
         return
@@ -167,7 +165,6 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
           success: true,
           message: `已登录为 ${userInfo.nickname}`,
           platform,
-          cookie,
         })
       } else if (platform === 'netease' && infoResult.reason === 'expired') {
         // 仅网易云：明确过期时拒绝保存
@@ -188,7 +185,6 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
           success: true,
           message: 'Cookie 已保存（验证失败，播放时生效）',
           platform,
-          cookie,
         })
       }
 

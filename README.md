@@ -111,12 +111,14 @@ services:
       PORT: 3001
       CLIENT_URL: "${CLIENT_URL:-}"
       CORS_ORIGINS: "${CORS_ORIGINS:-}"
-      IDENTITY_SECRET: "${IDENTITY_SECRET:-dev-identity-secret-change-me}"
-      IDENTITY_TTL_DAYS: "${IDENTITY_TTL_DAYS:-30}"
-      IDENTITY_COOKIE_SECURE: "${IDENTITY_COOKIE_SECURE:-false}"
-      REJOIN_TTL_MS: "${REJOIN_TTL_MS:-30000}"
+      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
+      ROOM_PASSWORD_KEY: "${ROOM_PASSWORD_KEY:?ROOM_PASSWORD_KEY is required}"
+      ROOM_PASSWORD_KEY_VERSION: "${ROOM_PASSWORD_KEY_VERSION:-1}"
+      ROOM_ADMISSION_TTL_MS: "${ROOM_ADMISSION_TTL_MS:-300000}"
+      PLATFORM_AUTH_KEY: "${PLATFORM_AUTH_KEY:?PLATFORM_AUTH_KEY is required}"
+      STREAM_PROXY_SECRET: "${STREAM_PROXY_SECRET:?STREAM_PROXY_SECRET is required}"
       DATABASE_URL: "${DATABASE_URL:-file:/app/data/music-together.db}"
-      SERVER_ADMIN_IDS: "${SERVER_ADMIN_IDS:-}"
       AUTO_FALLBACK_ENABLED: "${AUTO_FALLBACK_ENABLED:-true}"
       UNM_SERVER_URL: "${UNM_SERVER_URL:-}"
       UNM_SERVER_TIMEOUT_MS: "${UNM_SERVER_TIMEOUT_MS:-10000}"
@@ -133,6 +135,25 @@ volumes:
   music-together-data:
 
 ```
+
+首次部署前先在 `.env` 中生成并填写密钥：
+
+```bash
+openssl rand -base64 32
+openssl rand -base64 32
+openssl rand -hex 32
+```
+
+前两个分别用于 `ROOM_PASSWORD_KEY` 和 `PLATFORM_AUTH_KEY`，第三个用于 `STREAM_PROXY_SECRET`。默认会话 Cookie 要求通过 HTTPS 访问；仅在可信局域网 HTTP 调试时才可设置 `SESSION_COOKIE_SECURE=false`。从旧账号系统升级时需要先停止服务并备份数据，然后执行显式全量重置：
+
+```bash
+docker compose run --rm music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
+docker compose run --rm music-together node packages/server/dist/cli/initAdmin.js
+docker compose up -d
+```
+
+重置会删除旧用户、永久房间、平台授权和头像。首个管理员只能通过上述本机交互命令创建，普通注册会在管理员初始化后开放。
+
 **Dockerfile**
 ```
 # syntax=docker/dockerfile:1

@@ -1,21 +1,24 @@
 import { Router, type NextFunction, type Request, type Response } from 'express'
-import bcrypt from 'bcryptjs'
 import { z } from 'zod/v4'
 import type { TypedServer } from '../middleware/types.js'
 import { roomRepo } from '../repositories/roomRepository.js'
+import { persistentRoomRepo } from '../repositories/persistentRoomRepository.js'
 import { userRepo } from '../repositories/userRepository.js'
 import { destroyRoom } from '../services/roomLifecycleService.js'
+import { AccountAuthError, accountAuth } from '../services/accountAuth.js'
+import { sessionManager } from '../services/sessionManager.js'
+import { cleanupUser as cleanupPlatformAuthUser } from '../services/authService.js'
 
 function requireServerAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (!req.identityUserId || !userRepo.isServerAdmin(req.identityUserId)) {
-    res.status(403).json({ error: 'Forbidden' })
+  if (!req.authPrincipal || !userRepo.isServerAdmin(req.authPrincipal.userId)) {
+    res.status(403).json({ code: 'NO_PERMISSION', error: 'Forbidden' })
     return
   }
   next()
 }
 
 const resetPasswordSchema = z.object({
-  password: z.string().min(8).max(128),
+  newPassword: z.string(),
 })
 
 export function createAdminRoutes(io: TypedServer): Router {
@@ -24,22 +27,47 @@ export function createAdminRoutes(io: TypedServer): Router {
 
   router.get('/users', (_req, res) => {
     res.json({
-      users: userRepo.list().map((user) => ({
-        id: user.id,
-        nickname: user.nickname,
-        avatarUrl: user.avatarUrl,
-        role: user.role,
-        hasPassword: Boolean(user.passwordHash),
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-        lastSeenAt: user.lastSeenAt,
-      })),
+      users: userRepo.list().map(({ passwordHash: _, ...user }) => user),
     })
   })
 
   router.delete('/users/:userId', (req, res) => {
-    userRepo.delete(req.params.userId)
-    res.status(204).send()
+    try {
+      const targetUserId = req.params.userId
+      if (!userRepo.get(targetUserId)) {
+        res.status(404).json({ code: 'USER_NOT_FOUND', error: 'User not found' })
+        return
+      }
+      const target = userRepo.get(targetUserId)!
+      if (target.role === 'admin' && userRepo.countAdmins() <= 1) {
+        res.status(409).json({ code: 'LAST_ADMIN', error: 'Cannot delete the last administrator' })
+        return
+      }
+      sessionManager.revokeAllForUser(targetUserId)
+      cleanupPlatformAuthUser(targetUserId)
+      for (const room of [...roomRepo.getAll().values()]) {
+        if (room.creatorId === targetUserId) {
+          destroyRoom(room.id, io)
+          continue
+        }
+        room.users = room.users.filter((user) => user.id !== targetUserId)
+        room.adminUserIds.delete(targetUserId)
+        room.hiddenMemberUserIds.delete(targetUserId)
+        if (room.temporaryAdminUserId === targetUserId) room.temporaryAdminUserId = null
+        if (room.permanent) persistentRoomRepo.saveRoom(room)
+      }
+      if (!userRepo.delete(targetUserId)) {
+        res.status(404).json({ code: 'USER_NOT_FOUND', error: 'User not found' })
+        return
+      }
+      res.status(204).send()
+    } catch (error) {
+      if (error instanceof Error && error.message === 'LAST_ADMIN') {
+        res.status(409).json({ code: 'LAST_ADMIN', error: 'Cannot delete the last administrator' })
+        return
+      }
+      throw error
+    }
   })
 
   router.post('/users/:userId/reset-password', async (req, res) => {
@@ -48,14 +76,16 @@ export function createAdminRoutes(io: TypedServer): Router {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid password' })
       return
     }
-    const user = userRepo.get(req.params.userId)
-    if (!user) {
-      res.status(404).json({ error: 'User not found' })
-      return
+    try {
+      await accountAuth.resetPasswordByAdmin(req.params.userId, parsed.data.newPassword)
+      res.status(204).send()
+    } catch (error) {
+      if (error instanceof AccountAuthError) {
+        res.status(error.code === 'USER_NOT_FOUND' ? 404 : 400).json({ code: error.code, error: error.message })
+        return
+      }
+      throw error
     }
-    const passwordHash = await bcrypt.hash(parsed.data.password, 12)
-    userRepo.setPasswordHash(user.id, passwordHash)
-    res.status(204).send()
   })
 
   router.get('/rooms', (_req, res) => {
@@ -67,7 +97,7 @@ export function createAdminRoutes(io: TypedServer): Router {
         hidden: room.hidden,
         permanent: room.permanent,
         userCount: room.users.filter((user) => user.online !== false).length,
-        hasPassword: Boolean(room.password),
+        hasPassword: room.credential !== null,
         currentTrackTitle: room.currentTrack?.title ?? null,
       })),
     })

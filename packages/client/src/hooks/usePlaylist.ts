@@ -4,7 +4,7 @@ import { useSocketContext } from '@/providers/SocketProvider'
 import { useRoomStore } from '@/stores/roomStore'
 import { SERVER_URL } from '@/lib/config'
 
-const PAGE_SIZE = 1000
+const PAGE_SIZE = 100
 
 /** Build the playlist API URL with all query parameters */
 function buildPlaylistUrl(

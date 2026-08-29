@@ -26,16 +26,50 @@ Docker 容器 (:3001)
 
 ## CORS 策略
 
-- `CLIENT_URL` 未设置 → 自动模式，允许所有来源访问（适用于单镜像同域部署、局域网、公网反代）
-- `CLIENT_URL` 显式设置 → 严格白名单模式（适用于前后端分离跨域部署）
+- 生产环境未设置 `CLIENT_URL` / `CORS_ORIGINS` → 禁止跨域，仅允许浏览器同源请求
+- 开发环境未设置白名单 → 允许本地跨域开发
+- 前后端分离时必须显式配置精确 origin 白名单
 
-## Identity Cookie 策略
+## 反向代理来源地址
 
-- 未显式设置 `IDENTITY_COOKIE_SECURE` 时，服务端会根据当前请求协议自动决定是否添加 `Secure`
-- 局域网 HTTP 访问会下发非 Secure cookie
-- 公网 HTTPS / 反代 HTTPS 访问会下发 Secure cookie
-- 自动判断 HTTPS 依赖代理正确透传 `X-Forwarded-Proto`
-- 仅在需要强制行为时才手动设置 `IDENTITY_COOKIE_SECURE`
+- 直接暴露应用端口时保持 `TRUST_PROXY_HOPS=0`，服务端不会信任客户端伪造的转发头
+- 经本机 Nginx/1Panel 单层反向代理时通常设置 `TRUST_PROXY_HOPS=1`
+- HTTP 登录限速和 Socket 房间密码限速共用相同的可信代理跳数
+- 配置值必须等于实际可信代理层数，否则可能错误归并用户或信任伪造来源地址
+
+## Session Cookie 策略
+
+- 应用使用数据库可撤销会话，浏览器 Cookie 名为 `mt_session`
+- 数据库仅保存会话 token 的 SHA-256 哈希
+- 生产环境默认添加 `Secure`，因此默认必须使用 HTTPS
+- 仅可信局域网 HTTP 调试可显式设置 `SESSION_COOKIE_SECURE=false`
+- `SESSION_TTL_DAYS` 默认 30 天
+- 退出、改密、管理员重置、禁用和删除账号会立即使对应会话失效
+
+## 首次初始化与不兼容升级
+
+新账号 schema 不兼容旧随机 ID 账号数据库。升级前必须停止服务并备份数据，然后显式执行：
+
+```bash
+docker compose run --rm music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
+docker compose run --rm music-together node packages/server/dist/cli/initAdmin.js
+```
+
+- reset 会删除用户、永久房间、平台授权和头像
+- 普通启动绝不会自动重置数据库
+- 首个管理员只允许通过服务器本机交互命令创建
+- 管理员存在后公开注册才会开放
+
+## 房间密码密钥
+
+- `ROOM_PASSWORD_KEY` 必须是 Base64 编码的 32 字节随机密钥，可通过 `openssl rand -base64 32` 生成
+- 永久房间密码使用 AES-256-GCM 加密，丢失该密钥将无法恢复已保存密码
+- `ROOM_PASSWORD_KEY_VERSION` 默认是 `1`，用于后续密钥轮换
+- `ROOM_ADMISSION_TTL_MS` 默认 `300000`，即非房主验证密码后可在 5 分钟内安全重连
+- `PLATFORM_AUTH_KEY` 必须使用另一个 Base64 32 字节密钥，用于加密持久化的音乐平台 Cookie
+- `STREAM_PROXY_SECRET` 独立用于流代理签名，不得复用房间密码密钥
+
+当前版本只加载一个 `ROOM_PASSWORD_KEY`，因此不得直接提高 key version 或替换密钥。正式密钥轮换需要先实现多版本解密和重加密流程。
 
 ## 前端同域适配
 
@@ -51,8 +85,8 @@ Docker 容器 (:3001)
 ## 服务器部署命令
 
 ```bash
-# 启动应用容器
-docker run -d --name music-together --restart unless-stopped -p 3001:3001 ghcr.io/<owner>/music-together:latest
+# 推荐使用仓库 docker-compose.yml，并在 .env 中配置三个独立密钥后启动
+docker compose up -d
 
 # 启动 Watchtower 自动更新
 docker run -d --name watchtower --restart unless-stopped \

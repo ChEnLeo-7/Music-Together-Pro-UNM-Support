@@ -15,12 +15,9 @@ function deriveCurrentUser(room: RoomState | null): User | null {
 interface RoomStore {
   room: RoomState | null
   currentUser: User | null
-  /** 房间密码明文（从 ROOM_SETTINGS 事件接收） */
-  roomPassword: string | null
 
   setRoom: (room: RoomState | null) => void
   updateRoom: (partial: Partial<RoomState>) => void
-  setRoomPassword: (password: string | null) => void
   addUser: (user: User) => void
   removeUser: (userId: string) => void
   markUserOffline: (userId: string) => void
@@ -31,7 +28,6 @@ interface RoomStore {
 export const useRoomStore = create<RoomStore>((set) => ({
   room: null,
   currentUser: null,
-  roomPassword: null,
 
   setRoom: (room) =>
     set((state) => {
@@ -53,8 +49,6 @@ export const useRoomStore = create<RoomStore>((set) => ({
       }
       return { room }
     }),
-
-  setRoomPassword: (password) => set({ roomPassword: password }),
 
   addUser: (user) =>
     set((state) => {
@@ -103,5 +97,5 @@ export const useRoomStore = create<RoomStore>((set) => ({
       return { room, currentUser: deriveCurrentUser(room) }
     }),
 
-  reset: () => set({ room: null, currentUser: null, roomPassword: null }),
+  reset: () => set({ room: null, currentUser: null }),
 }))

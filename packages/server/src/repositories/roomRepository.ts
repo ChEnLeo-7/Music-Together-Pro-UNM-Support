@@ -37,7 +37,7 @@ export class InMemoryRoomRepository implements RoomRepository {
       .map((room) => ({
         id: room.id,
         name: room.name,
-        hasPassword: room.password !== null,
+        hasPassword: room.credential !== null,
         hidden: room.hidden,
         permanent: room.permanent,
         userCount: room.users.filter((user) => user.online !== false).length,

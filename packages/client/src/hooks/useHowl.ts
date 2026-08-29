@@ -11,6 +11,13 @@ import {
   MAX_LOAD_COMPENSATION_S,
 } from '@/lib/constants'
 import { toast } from 'sonner'
+import { useI18n } from '@/lib/i18n'
+import {
+  getNativePlaybackBridge,
+  nativeTrackMetadata,
+  NATIVE_PLAYBACK_EVENT,
+  type NativePlaybackEvent,
+} from '@/lib/nativePlayback'
 
 /** Max wait (ms) for Howler `unlock` event before giving up and skipping */
 const PLAY_ERROR_TIMEOUT_MS = 3000
@@ -195,6 +202,111 @@ class NativeAudioEngine implements AudioEngine {
   }
 }
 
+class AndroidMediaEngine implements AudioEngine {
+  private readonly soundId = 1
+  private readonly onceHandlers = new Map<string, Array<(id?: number, message?: unknown) => void>>()
+  private destroyed = false
+
+  constructor(
+    private readonly source: string,
+    private readonly options: NativeAudioOptions,
+    track: Track,
+  ) {
+    window.addEventListener(NATIVE_PLAYBACK_EVENT, this.handleNativeEvent as EventListener)
+    getNativePlaybackBridge()?.loadSource(source, options.type ?? '', nativeTrackMetadata(track))
+  }
+
+  play(): number {
+    getNativePlaybackBridge()?.play()
+    return this.soundId
+  }
+
+  pause(): this {
+    getNativePlaybackBridge()?.pause()
+    return this
+  }
+
+  seek(): number
+  seek(time: number): this
+  seek(time?: number): number | this {
+    const bridge = getNativePlaybackBridge()
+    if (typeof time !== 'number') return bridge?.getPosition() ?? 0
+    bridge?.seek(Math.max(0, time))
+    return this
+  }
+
+  duration(): number {
+    return getNativePlaybackBridge()?.getDuration() ?? 0
+  }
+
+  volume(): number
+  volume(value: number): this
+  volume(value?: number): number | this {
+    const bridge = getNativePlaybackBridge()
+    if (typeof value !== 'number') return bridge?.getVolume() ?? 0
+    bridge?.setVolume(Math.max(0, Math.min(1, value)))
+    return this
+  }
+
+  fade(_from: number, to: number): this {
+    getNativePlaybackBridge()?.setVolume(Math.max(0, Math.min(1, to)))
+    return this
+  }
+
+  playing(): boolean {
+    return getNativePlaybackBridge()?.isPlaying() ?? false
+  }
+
+  unload(): this {
+    this.destroyed = true
+    window.removeEventListener(NATIVE_PLAYBACK_EVENT, this.handleNativeEvent as EventListener)
+    getNativePlaybackBridge()?.releaseSource(this.source)
+    return this
+  }
+
+  rate(): number
+  rate(value: number): this
+  rate(value?: number): number | this {
+    const bridge = getNativePlaybackBridge()
+    if (typeof value !== 'number') return bridge?.getRate() ?? 1
+    bridge?.setRate(value)
+    return this
+  }
+
+  once(event: string, fn: (id?: number, message?: unknown) => void): this {
+    const handlers = this.onceHandlers.get(event) ?? []
+    handlers.push(fn)
+    this.onceHandlers.set(event, handlers)
+    return this
+  }
+
+  load(): this {
+    getNativePlaybackBridge()?.loadSource(this.source, this.options.type ?? '', '{}')
+    return this
+  }
+
+  private emitOnce(event: string, message?: unknown) {
+    const handlers = this.onceHandlers.get(event)
+    if (!handlers?.length) return
+    this.onceHandlers.delete(event)
+    for (const handler of handlers) handler(this.soundId, message)
+  }
+
+  private handleNativeEvent = (event: CustomEvent<NativePlaybackEvent>) => {
+    if (this.destroyed) return
+    const detail = event.detail
+    if (detail.source && detail.source !== this.source) return
+    if (detail.type === 'load') this.options.onload()
+    if (detail.type === 'play') {
+      this.emitOnce('play')
+      this.options.onplay()
+    }
+    if (detail.type === 'pause') this.options.onpause()
+    if (detail.type === 'end') this.options.onend()
+    if (detail.type === 'error') this.options.onloaderror(this.soundId, detail.message ?? 'native-playback-error')
+  }
+}
+
 function resolveStreamUrl(url: string): string {
   return url.startsWith('/') ? `${SERVER_URL}${url}` : url
 }
@@ -235,6 +347,7 @@ function syncHowlerDolbyCodecSupport(audioFormat: string | undefined): void {
  * Phase 2: onload → seek to target → delay → fade-in unmute
  */
 export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Track) => boolean) {
+  const t = useI18n((s) => s.t)
   const howlRef = useRef<AudioEngine | null>(null)
   const soundIdRef = useRef<number | undefined>(undefined)
   const animFrameRef = useRef<number>(0)
@@ -267,7 +380,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
           if (Math.abs(seekVal - st.lastSeek) < 0.05) {
             if (st.since > 0 && now - st.since > STALLED_TIMEOUT_MS) {
               console.warn('Playback stalled, skipping track')
-              toast.error('播放中断，已跳到下一首')
+               toast.error(t('playbackInterrupted'))
               stalledRef.current = { lastSeek: -1, since: 0 }
               onTrackEnd()
               return
@@ -282,7 +395,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
       animFrameRef.current = requestAnimationFrame(update)
     }
     animFrameRef.current = requestAnimationFrame(update)
-  }, [onTrackEnd])
+   }, [onTrackEnd, t])
 
   const stopTimeUpdate = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current)
@@ -403,7 +516,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
           retryRef.current = false
           if (onTrackLoadFailure?.(track)) return
           console.error('Howl load error (after retry):', msg)
-          toast.error(`「${trackTitleRef.current}」加载失败，已跳到下一首`)
+           toast.error(t('trackLoadFailed', { track: trackTitleRef.current }))
           onTrackEnd()
         },
         onplayerror: function (soundId: number) {
@@ -413,7 +526,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
             playErrorTimerRef.current = null
             if (onTrackLoadFailure?.(track)) return
             console.warn('Howl unlock timeout, skipping track')
-            toast.error('播放失败，已跳到下一首')
+             toast.error(t('playbackFailed'))
             onTrackEnd()
           }, PLAY_ERROR_TIMEOUT_MS)
           howl.once('unlock', () => {
@@ -427,7 +540,18 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
         },
       }
 
-      if (audioFormat === 'dolby') {
+      if (getNativePlaybackBridge()) {
+        howl = new AndroidMediaEngine(
+          resolvedUrl,
+          {
+            src: resolvedUrl,
+            type: audioFormat === 'dolby' ? 'audio/mp4; codecs="ec-3"' : undefined,
+            volume: 0,
+            ...commonOptions,
+          },
+          track,
+        )
+      } else if (audioFormat === 'dolby') {
         howl = new NativeAudioEngine({
           src: resolvedUrl,
           type: 'audio/mp4; codecs="ec-3"',
@@ -447,7 +571,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
       howlRef.current = howl
       usePlayerStore.getState().setCurrentTrack(track)
     },
-    [onTrackEnd, onTrackLoadFailure, startTimeUpdate, stopTimeUpdate],
+    [onTrackEnd, onTrackLoadFailure, startTimeUpdate, stopTimeUpdate, t],
   )
 
   // Volume sync

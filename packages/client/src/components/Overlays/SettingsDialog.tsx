@@ -5,13 +5,12 @@ import {
   ResponsiveDialogTitle,
 } from '@/components/ui/responsive-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { SERVER_URL } from '@/lib/config'
 import { useI18n, type I18nKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { useAccountStore } from '@/stores/accountStore'
 import { Keyboard, Languages, KeyRound, Palette, Settings2, Shield, Type, UserCircle, Users, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { AccountSection, type AccountMe } from './Settings/AccountSection'
+import { AccountSection } from './Settings/AccountSection'
 import { AdminSection } from './Settings/AdminSection'
 import { AppearanceSection } from './Settings/AppearanceSection'
 import { LanguageSection } from './Settings/LanguageSection'
@@ -55,6 +54,7 @@ function NavItem({
     <button
       role="tab"
       aria-selected={active}
+      tabIndex={active ? 0 : -1}
       onClick={onClick}
       className={cn(
         'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -90,35 +90,9 @@ export function SettingsDialog({
   const [tab, setTab] = useState<SettingsTab>('room')
   const accountMe = useAccountStore((s) => s.me)
   const accountLoading = useAccountStore((s) => s.loading)
-  const setAccountMe = useAccountStore((s) => s.setMe)
-  const setAccountLoading = useAccountStore((s) => s.setLoading)
   const t = useI18n((s) => s.t)
   const isServerAdmin = accountMe?.role === 'admin'
   const tabs = TABS.filter((item) => item.id !== 'admin' || isServerAdmin)
-
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setAccountLoading(true)
-    fetch(`${SERVER_URL}/api/auth/me`, { credentials: 'include' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: AccountMe | null) => {
-        if (!cancelled) {
-          setAccountMe(data)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAccountMe(null)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setAccountLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [open])
 
   useEffect(() => {
     if (open && initialTab && (initialTab !== 'admin' || isServerAdmin)) setTab(initialTab)
@@ -141,6 +115,7 @@ export function SettingsDialog({
                   key={item.id}
                   role="tab"
                   aria-selected={tab === item.id}
+                  tabIndex={tab === item.id ? 0 : -1}
                   onClick={() => setTab(item.id)}
                   className={cn(
                     'flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',

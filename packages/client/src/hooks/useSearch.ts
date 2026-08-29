@@ -2,6 +2,7 @@ import { SERVER_URL } from '@/lib/config'
 import type { MusicSource, Playlist, Track } from '@music-together/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { useI18n } from '@/lib/i18n'
 
 const PAGE_SIZE = 20
 
@@ -21,6 +22,7 @@ export function useSearch(
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
+  const t = useI18n((s) => s.t)
   const abortRef = useRef<AbortController | null>(null)
   const loadMoreAbortRef = useRef<AbortController | null>(null)
   const searchIdRef = useRef(0)
@@ -78,7 +80,7 @@ export function useSearch(
         .catch((err) => {
           if (err instanceof DOMException && err.name === 'AbortError') return
           if (searchIdRef.current !== currentSearchId) return
-          toast.error('搜索失败，请重试')
+           toast.error(t('searchFailed'))
           setResults([])
           setHasMore(false)
         })
@@ -88,7 +90,7 @@ export function useSearch(
           }
         })
     },
-    [source, type, fetchPage],
+     [source, type, fetchPage, t],
   )
 
   const loadMore = useCallback(() => {
@@ -110,14 +112,14 @@ export function useSearch(
       .catch((err) => {
         if (err instanceof DOMException && err.name === 'AbortError') return
         if (searchIdRef.current !== currentSearchId) return
-        toast.error('加载失败，请重试')
+         toast.error(t('loadFailed'))
       })
       .finally(() => {
         if (searchIdRef.current === currentSearchId) {
           setLoadingMore(false)
         }
       })
-  }, [loadingMore, page, source, type, fetchPage])
+  }, [loadingMore, page, source, type, fetchPage, t])
 
   const resetState = useCallback(() => {
     abortRef.current?.abort()

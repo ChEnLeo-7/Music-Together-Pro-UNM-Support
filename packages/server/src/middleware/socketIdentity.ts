@@ -1,29 +1,36 @@
 import type { TypedServer, TypedSocket } from './types.js'
-import { getIdentityFromCookieHeader } from '../services/identityService.js'
+import { getSessionTokenFromCookieHeader } from '../services/identityService.js'
+import { sessionManager } from '../services/sessionManager.js'
 import { logger } from '../utils/logger.js'
-import { userRepo } from '../repositories/userRepository.js'
+import { registerSessionSocket } from '../services/sessionSocketRegistry.js'
 
-/**
- * Socket identity guard: every websocket connection must carry a valid
- * mt_identity cookie signed by the server.
- */
 export function attachSocketIdentity(io: TypedServer): void {
   io.use((socket: TypedSocket, next: (err?: Error) => void) => {
-    const identity = getIdentityFromCookieHeader(socket.handshake.headers.cookie)
-    if (!identity) {
-      logger.warn('Socket identity verification failed', {
-        socketId: socket.id,
-        hasCookieHeader: Boolean(socket.handshake.headers.cookie),
-        origin: socket.handshake.headers.origin ?? null,
-      })
+    const token = getSessionTokenFromCookieHeader(socket.handshake.headers.cookie)
+    const principal = token ? sessionManager.authenticate(token) : null
+    if (!principal) {
+      logger.warn('Socket session verification failed', { socketId: socket.id })
       next(new Error('UNAUTHENTICATED'))
       return
     }
-    userRepo.ensure(identity.userId)
-    socket.data.identityUserId = identity.userId
-    logger.info('Socket identity verified', {
-      socketId: socket.id,
-      userId: identity.userId,
+    if (principal.user.mustChangePassword || principal.user.mustChangeUsername) {
+      next(new Error('CREDENTIAL_CHANGE_REQUIRED'))
+      return
+    }
+    socket.data.identityUserId = principal.userId
+    socket.data.sessionId = principal.session.id
+    registerSessionSocket(socket)
+    socket.use((_event, packetNext) => {
+      const current = sessionManager.authenticate(token!)
+      if (!current) {
+        packetNext(new Error('UNAUTHENTICATED'))
+        return
+      }
+      if (current.user.mustChangePassword || current.user.mustChangeUsername) {
+        packetNext(new Error('CREDENTIAL_CHANGE_REQUIRED'))
+        return
+      }
+      packetNext()
     })
     next()
   })

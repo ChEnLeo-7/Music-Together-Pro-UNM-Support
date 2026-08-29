@@ -12,7 +12,7 @@ export function toPublicRoomState(data: RoomData, options: PublicRoomStateOption
     name: data.name,
     creatorId: data.creatorId,
     hostId: data.hostId,
-    hasPassword: data.password !== null,
+    hasPassword: data.credential !== null,
     audioQuality: data.audioQuality,
     sourcePriority: data.sourcePriority,
     hidden: data.hidden,
@@ -32,10 +32,7 @@ export function toPublicRoomState(data: RoomData, options: PublicRoomStateOption
   return state
 }
 
-/** 仅 owner 可见的完整房间状态（含密码明文，用于设置面板展示） */
+/** @deprecated 房间密码只能通过 owner 专用 HTTP 接口读取。 */
 export function toPublicRoomStateForOwner(data: RoomData, options: PublicRoomStateOptions = {}): RoomState {
-  return {
-    ...toPublicRoomState(data, options),
-    password: data.password ?? null,
-  }
+  return toPublicRoomState(data, options)
 }

@@ -16,6 +16,21 @@ const DUPLICATE_SEEK_SUPPRESS_MS = 600
 const SPRING_OFF_CURRENT_CLASS = 'mt-lyric-current'
 const SPRING_OFF_INACTIVE_CLASS = 'mt-lyric-inactive'
 
+interface LyricPlayerViewProps {
+  amllLines: AMLLLyricLine[]
+  alignAnchor: 'top' | 'center' | 'bottom'
+  alignPosition: number
+  enableSpring: boolean
+  enableBlur: boolean
+  enableScale: boolean
+  hidePassedLines: boolean
+  isPlaying: boolean
+  lyricMotionSuspended: boolean
+  lyricFrameSuspended: boolean
+  lyricPlayerRef: React.RefObject<LyricPlayerRef | null>
+  onLyricLineClick?: (event: LyricLineMouseEvent) => void
+}
+
 interface LyricLine {
   time: number
   text: string
@@ -119,14 +134,98 @@ function toAMLLLines(lines: LyricLine[]): AMLLLyricLine[] {
   })
 }
 
+function LyricPlayerView({
+  amllLines,
+  alignAnchor,
+  alignPosition,
+  enableSpring,
+  enableBlur,
+  enableScale,
+  hidePassedLines,
+  isPlaying,
+  lyricMotionSuspended,
+  lyricFrameSuspended,
+  lyricPlayerRef,
+  onLyricLineClick,
+}: LyricPlayerViewProps) {
+  const lyricDisplayTimeMs = usePlayerStore((s) => s.lyricDisplayTimeMs)
+  const frozenTimeRef = useRef(lyricDisplayTimeMs)
+  const shouldFreezeTime = lyricMotionSuspended || lyricFrameSuspended
+  if (!shouldFreezeTime) frozenTimeRef.current = lyricDisplayTimeMs
+  const displayedTimeMs = shouldFreezeTime ? frozenTimeRef.current : lyricDisplayTimeMs
+  const springOffActiveLineIndex = useMemo(
+    () => (!enableSpring ? getActiveLineIndex(amllLines, displayedTimeMs) : -1),
+    [amllLines, displayedTimeMs, enableSpring],
+  )
+
+  useEffect(() => {
+    const player = lyricPlayerRef.current?.lyricPlayer
+    if (!player) return
+    player.setCurrentTime(displayedTimeMs, true)
+  }, [displayedTimeMs, lyricPlayerRef])
+
+  useEffect(() => {
+    const player = lyricPlayerRef.current?.lyricPlayer
+    if (!player) return
+    void player.calcLayout(true)
+  }, [amllLines, alignAnchor, alignPosition, hidePassedLines, lyricPlayerRef])
+
+  useEffect(() => {
+    const player = lyricPlayerRef.current?.lyricPlayer
+    if (!player) return
+    const clearClasses = () => {
+      const objects = (player as unknown as AmllInternalPlayer).currentLyricLineObjects
+      objects?.forEach((line) => {
+        line.getElement().classList.remove(SPRING_OFF_CURRENT_CLASS, SPRING_OFF_INACTIVE_CLASS)
+      })
+    }
+    if (enableSpring) {
+      clearClasses()
+      return
+    }
+    const applyClasses = () => {
+      const objects = (player as unknown as AmllInternalPlayer).currentLyricLineObjects
+      const elements = objects?.map((line) => line.getElement()).filter((el): el is HTMLElement => el instanceof HTMLElement) ?? []
+      elements.forEach((element, index) => {
+        element.classList.toggle(SPRING_OFF_CURRENT_CLASS, index === springOffActiveLineIndex)
+        element.classList.toggle(SPRING_OFF_INACTIVE_CLASS, index !== springOffActiveLineIndex)
+      })
+    }
+    applyClasses()
+    const observer = new MutationObserver(() => requestAnimationFrame(applyClasses))
+    observer.observe(player as unknown as Node, { childList: true })
+    return () => {
+      observer.disconnect()
+      clearClasses()
+    }
+  }, [enableSpring, lyricPlayerRef, springOffActiveLineIndex])
+
+  return (
+    <LyricPlayer
+      ref={lyricPlayerRef}
+      lyricLines={amllLines}
+      currentTime={displayedTimeMs}
+      isSeeking={!isPlaying || lyricMotionSuspended}
+      playing={isPlaying && !shouldFreezeTime}
+      alignAnchor={alignAnchor}
+      alignPosition={hidePassedLines ? Math.max(0, alignPosition - 0.16) : alignPosition}
+      enableSpring={enableSpring}
+      enableBlur={enableBlur}
+      enableScale={enableScale}
+      hidePassedLines={hidePassedLines}
+      onLyricLineClick={onLyricLineClick}
+      disabled={lyricFrameSuspended}
+      style={FULL_SIZE_STYLE}
+    />
+  )
+}
+
 export function LyricDisplay() {
   const { socket } = useSocketContext()
   const lyric = usePlayerStore((s) => s.lyric)
   const tlyric = usePlayerStore((s) => s.tlyric)
   const lyricLoading = usePlayerStore((s) => s.lyricLoading)
   const ttmlLines = usePlayerStore((s) => s.ttmlLines)
-  const lyricDisplayTimeMs = usePlayerStore((s) => s.lyricDisplayTimeMs)
-  const isPlaying = usePlayerStore((s) => s.isPlaying)
 
   const alignAnchor = useSettingsStore((s) => s.lyricAlignAnchor)
   const alignPosition = useSettingsStore((s) => s.lyricAlignPosition)
@@ -139,14 +238,9 @@ export function LyricDisplay() {
   const fontSize = useSettingsStore((s) => s.lyricFontSize)
   const translationFontSize = useSettingsStore((s) => s.lyricTranslationFontSize)
   const romanFontSize = useSettingsStore((s) => s.lyricRomanFontSize)
+  const isPlaying = usePlayerStore((s) => s.isPlaying)
   const lyricMotionSuspended = usePlayerStore((s) => s.lyricMotionSuspended)
   const lyricFrameSuspended = usePlayerStore((s) => s.lyricFrameSuspended)
-  const frozenLyricDisplayTimeMsRef = useRef(lyricDisplayTimeMs)
-  const shouldFreezeLyricTime = lyricMotionSuspended || lyricFrameSuspended
-  if (!shouldFreezeLyricTime) {
-    frozenLyricDisplayTimeMsRef.current = lyricDisplayTimeMs
-  }
-  const displayedLyricTimeMs = shouldFreezeLyricTime ? frozenLyricDisplayTimeMsRef.current : lyricDisplayTimeMs
 
   // LRC 解析（仅在没有 TTML 时使用）
   const lrcLines = useMemo(() => mergeLyrics(lyric, tlyric), [lyric, tlyric])
@@ -155,10 +249,6 @@ export function LyricDisplay() {
   // TTML 优先，LRC 回退
   const amllLines = ttmlLines ?? lrcAmllLines
   const hasLyrics = ttmlLines ? ttmlLines.length > 0 : lrcLines.length > 0
-  const springOffActiveLineIndex = useMemo(
-    () => (!enableSpring && hasLyrics ? getActiveLineIndex(amllLines, displayedLyricTimeMs) : -1),
-    [amllLines, displayedLyricTimeMs, enableSpring, hasLyrics],
-  )
   const lyricPlayerRef = useRef<LyricPlayerRef | null>(null)
   const amllContainerRef = useRef<HTMLDivElement | null>(null)
   const touchStartRef = useRef<{ x: number; y: number; lineIndex: number } | null>(null)
@@ -175,12 +265,9 @@ export function LyricDisplay() {
       container.querySelectorAll('.amll-lyric-player > *').forEach((line) => {
         const lineEl = line as HTMLElement
         lineEl.classList.remove('mt-lyric-line-hidden')
-        Array.from(line.children)
-          .slice(1)
-          .forEach((node) => {
-            const element = node as HTMLElement
-            element.classList.remove('mt-lyric-subline-hidden')
-          })
+        Array.from(line.children).slice(1).forEach((node) => {
+          ;(node as HTMLElement).classList.remove('mt-lyric-subline-hidden')
+        })
       })
     }
 
@@ -190,23 +277,34 @@ export function LyricDisplay() {
     }
 
     let pendingFrame: number | null = null
+    let lineObserver: MutationObserver | null = null
+
+    const syncLineVisibility = (line: Element) => {
+      const lineEl = line as HTMLElement
+      const mainLineEl = line.children.item(0) as HTMLElement | null
+      const opacity = Number.parseFloat(mainLineEl?.style.opacity ?? '')
+      const lineHidden = Number.isFinite(opacity) && opacity <= HIDDEN_LINE_OPACITY
+      lineEl.classList.toggle('mt-lyric-line-hidden', lineHidden)
+      Array.from(line.children).slice(1).forEach((node) => {
+        ;(node as HTMLElement).classList.toggle('mt-lyric-subline-hidden', lineHidden)
+      })
+    }
 
     const syncSubLineVisibility = () => {
       pendingFrame = null
       const player = container.querySelector('.amll-lyric-player')
       if (!player) return
-
+      Array.from(player.children).forEach(syncLineVisibility)
+      lineObserver?.disconnect()
+      lineObserver = new MutationObserver((records) => {
+        records.forEach((record) => {
+          const line = record.target.parentElement
+          if (line) syncLineVisibility(line)
+        })
+      })
       Array.from(player.children).forEach((line) => {
-        const lineEl = line as HTMLElement
-        const mainLineEl = line.children.item(0) as HTMLElement | null
-        const opacity = Number.parseFloat(mainLineEl?.style.opacity ?? '')
-        const lineHidden = Number.isFinite(opacity) && opacity <= HIDDEN_LINE_OPACITY
-
-        lineEl.classList.toggle('mt-lyric-line-hidden', lineHidden)
-        for (const subLine of Array.from(line.children).slice(1)) {
-          const subLineEl = subLine as HTMLElement
-          subLineEl.classList.toggle('mt-lyric-subline-hidden', lineHidden)
-        }
+        const mainLine = line.children.item(0)
+        if (mainLine) lineObserver?.observe(mainLine, { attributes: true, attributeFilter: ['style'] })
       })
     }
 
@@ -217,76 +315,14 @@ export function LyricDisplay() {
 
     scheduleSync()
     const observer = new MutationObserver(scheduleSync)
-    observer.observe(container, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] })
+    observer.observe(container.querySelector('.amll-lyric-player') ?? container, { childList: true })
     return () => {
       observer.disconnect()
+      lineObserver?.disconnect()
       if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)
       clearSubLineVisibility()
     }
   }, [amllLines, hidePassedLines])
-
-  useEffect(() => {
-    const player = lyricPlayerRef.current?.lyricPlayer
-    if (!player) return
-    player.setCurrentTime(displayedLyricTimeMs, true)
-    void player.calcLayout(true)
-  }, [amllLines, alignAnchor, alignPosition, hidePassedLines])
-
-  useEffect(() => {
-    const container = amllContainerRef.current
-    if (!container) return
-
-    const clearSpringOffClasses = () => {
-      container.querySelectorAll(`.${SPRING_OFF_CURRENT_CLASS}, .${SPRING_OFF_INACTIVE_CLASS}`).forEach((node) => {
-        node.classList.remove(SPRING_OFF_CURRENT_CLASS, SPRING_OFF_INACTIVE_CLASS)
-      })
-    }
-
-    if (enableSpring) {
-      clearSpringOffClasses()
-      return
-    }
-
-    let pendingFrame: number | null = null
-
-    const getLyricLineElements = () => {
-      const objects = (lyricPlayerRef.current?.lyricPlayer as unknown as AmllInternalPlayer | undefined)
-        ?.currentLyricLineObjects
-      const objectElements =
-        objects
-          ?.map((line) => line.getElement())
-          .filter((element): element is HTMLElement => element instanceof HTMLElement) ?? []
-      if (objectElements.length > 0) return objectElements
-      return Array.from(container.querySelectorAll<HTMLElement>(".amll-lyric-player > [class*='lyricLine']"))
-    }
-
-    const applySpringOffClasses = () => {
-      pendingFrame = null
-      const elements = getLyricLineElements()
-      if (elements.length === 0) return
-
-      elements.forEach((lineElement, index) => {
-        const isCurrent = index === springOffActiveLineIndex
-        lineElement.classList.toggle(SPRING_OFF_CURRENT_CLASS, isCurrent)
-        lineElement.classList.toggle(SPRING_OFF_INACTIVE_CLASS, !isCurrent)
-      })
-    }
-
-    const scheduleApply = () => {
-      if (pendingFrame !== null) return
-      pendingFrame = requestAnimationFrame(applySpringOffClasses)
-    }
-
-    scheduleApply()
-    const observer = new MutationObserver(scheduleApply)
-    observer.observe(container, { childList: true, subtree: true })
-
-    return () => {
-      observer.disconnect()
-      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)
-      clearSpringOffClasses()
-    }
-  }, [amllLines, enableSpring, springOffActiveLineIndex])
 
   useEffect(() => {
     return () => {
@@ -464,21 +500,19 @@ export function LyricDisplay() {
         } as React.CSSProperties
       }
     >
-      <LyricPlayer
-        ref={lyricPlayerRef}
-        lyricLines={amllLines}
-        currentTime={displayedLyricTimeMs}
-        isSeeking={!isPlaying || lyricMotionSuspended}
-        playing={isPlaying && !shouldFreezeLyricTime}
+      <LyricPlayerView
+        amllLines={amllLines}
         alignAnchor={alignAnchor}
-        alignPosition={hidePassedLines ? Math.max(0, alignPosition - 0.16) : alignPosition}
+        alignPosition={alignPosition}
         enableSpring={enableSpring}
         enableBlur={enableBlur}
         enableScale={enableScale}
         hidePassedLines={hidePassedLines}
+        isPlaying={isPlaying}
+        lyricMotionSuspended={lyricMotionSuspended}
+        lyricFrameSuspended={lyricFrameSuspended}
+        lyricPlayerRef={lyricPlayerRef}
         onLyricLineClick={clickSeekEnabled ? handleLyricClick : undefined}
-        disabled={lyricFrameSuspended}
-        style={FULL_SIZE_STYLE}
       />
     </div>
   )

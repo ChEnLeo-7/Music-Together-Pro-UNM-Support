@@ -1,220 +1,88 @@
-﻿import { useEffect, useRef, useState } from 'react'
-import { CircleUser, KeyRound, Loader2, LogOut } from 'lucide-react'
-import { LIMITS } from '@music-together/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { storage } from '@/lib/storage'
-import { toast } from 'sonner'
+import { Separator } from '@/components/ui/separator'
+import { createGuestIdentity, loginIdentity, logoutIdentity, registerIdentity, updateProfile } from '@/lib/identityAuth'
 import { useSocketContext } from '@/providers/SocketProvider'
 import { useAccountStore } from '@/stores/accountStore'
-import { fetchCurrentAccount, loginIdentity, logoutIdentity, useGuestIdentity } from '@/lib/identityAuth'
+import { CircleUser, Loader2, LogOut } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import { getLocalizedError, useI18n } from '@/lib/i18n'
+
+type Mode = 'login' | 'register' | 'guest' | null
 
 export function UserPopover() {
   const { socket } = useSocketContext()
-  const me = useAccountStore((s) => s.me)
-  const [nickname, setNickname] = useState(storage.getNickname())
-  const [accountId, setAccountId] = useState('')
+  const me = useAccountStore((state) => state.me)
+  const accountLoading = useAccountStore((state) => state.loading)
+  const [mode, setMode] = useState<Mode>(null)
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [loginOpen, setLoginOpen] = useState(false)
-  const [guestOpen, setGuestOpen] = useState(false)
+  const [nickname, setNickname] = useState('')
   const [loading, setLoading] = useState(false)
-  const [open, setOpen] = useState(false)
-  const prevValueRef = useRef(storage.getNickname())
+  const t = useI18n((s) => s.t)
 
   useEffect(() => {
-    void fetchCurrentAccount().catch(() => undefined)
-  }, [])
+    setNickname(me?.nickname ?? '')
+  }, [me?.userId])
 
-  const handleSaveNickname = async () => {
-    const trimmed = nickname.trim()
-    if (!trimmed) return
-    if (trimmed !== prevValueRef.current) {
-      setLoading(true)
-      try {
-        await useGuestIdentity(socket, trimmed)
-        prevValueRef.current = trimmed
-        toast.success('昵称已保存')
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : '昵称保存失败')
-      } finally {
-        setLoading(false)
-      }
-    }
-  }
-
-  const handleLogin = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!accountId.trim() || !password) return
+  const run = async (action: () => Promise<unknown>, message: string) => {
     setLoading(true)
     try {
-      const account = await loginIdentity(socket, accountId, password)
-      setNickname(account.nickname)
-      prevValueRef.current = account.nickname
+      await action()
+      setMode(null)
       setPassword('')
-      setLoginOpen(false)
-      setGuestOpen(false)
-      toast.success('登录成功')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '登录失败')
+      toast.success(message)
+    } catch (error) {
+       toast.error(getLocalizedError(error, t))
     } finally {
       setLoading(false)
     }
   }
 
-  const handleLogout = async () => {
-    setLoading(true)
-    try {
-      await logoutIdentity(socket)
-      setNickname('')
-      prevValueRef.current = ''
-      setLoginOpen(false)
-      setGuestOpen(false)
-      toast.info('已退出账号，下次进入房间需要选择账号登录或游客访问')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '退出失败')
-    } finally {
-      setLoading(false)
-    }
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+     if (mode === 'login') void run(() => loginIdentity(socket, username, password), t('loginSuccess'))
+     if (mode === 'register') void run(() => registerIdentity(socket, { username, password, nickname }), t('registrationSuccess'))
+     if (mode === 'guest') void run(() => createGuestIdentity(socket, nickname), t('guestSessionCreated'))
   }
 
-  const handleGuest = async () => {
-    const trimmed = nickname.trim()
-    if (!trimmed) return
-    setLoading(true)
-    try {
-      const account = await useGuestIdentity(socket, trimmed)
-      setNickname(account?.nickname ?? trimmed)
-      prevValueRef.current = account?.nickname ?? trimmed
-      setLoginOpen(false)
-      setGuestOpen(false)
-      toast.success('已切换为游客身份')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '切换失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') void handleSaveNickname()
-  }
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen) {
-      const current = storage.getNickname()
-      setNickname(current)
-      prevValueRef.current = current
-      setGuestOpen(false)
-    }
-    setOpen(nextOpen)
-  }
-
-  const displayName = me?.nickname || storage.getNickname()
-  const initial = displayName ? displayName.charAt(0).toUpperCase() : null
-  const hasIdentity = Boolean(displayName || me?.hasPassword)
-
+  const displayName = me?.nickname || me?.username || ''
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full border border-border/60">
-          {initial ? <span className="text-sm font-semibold">{initial}</span> : <CircleUser className="h-5 w-5" />}
+          {displayName ? <span className="text-sm font-semibold">{displayName.charAt(0).toUpperCase()}</span> : <CircleUser className="h-5 w-5" />}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72">
+      <PopoverContent align="end" className="w-80">
         <div className="space-y-3">
           <div>
-            <p className="text-sm font-medium">身份</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {me?.hasPassword ? `已登录: ${displayName || me.id}` : displayName ? `游客: ${displayName}` : '尚未设置身份'}
-            </p>
+             <p className="text-sm font-medium">{accountLoading ? t('checkingSession') : me?.kind === 'account' ? me.username : me ? me.nickname : t('unauthenticated')}</p>
+             <p className="text-xs text-muted-foreground">{me?.kind === 'account' ? t('accountIdentity', { nickname: me.nickname }) : me ? t('guestIdentity') : t('chooseIdentity')}</p>
           </div>
-
           <Separator />
-
-          {loginOpen ? (
-            <form onSubmit={handleLogin} className="space-y-2">
-              <Input placeholder="账号 ID" value={accountId} onChange={(e) => setAccountId(e.target.value)} autoFocus />
-              <Input type="password" placeholder="密码" value={password} onChange={(e) => setPassword(e.target.value)} />
+          {mode ? (
+            <form onSubmit={submit} className="space-y-2">
+               {mode !== 'guest' && <Input placeholder={t('username')} value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoFocus />}
+               {mode !== 'guest' && <Input type="password" placeholder={t('password')} value={password} onChange={(event) => setPassword(event.target.value)} minLength={mode === 'register' ? 10 : undefined} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />}
+               {mode !== 'login' && <Input placeholder={t('nickname')} value={nickname} onChange={(event) => setNickname(event.target.value)} autoFocus={mode === 'guest'} />}
               <div className="flex gap-2">
-                <Button type="submit" className="flex-1" disabled={loading || !accountId.trim() || !password}>
-                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  登录
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setLoginOpen(false)} disabled={loading}>
-                  取消
-                </Button>
+                 <Button className="flex-1" disabled={loading}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t('confirmAction')}</Button>
+                 <Button type="button" variant="outline" onClick={() => setMode(null)} disabled={loading}>{t('cancelAction')}</Button>
               </div>
             </form>
-          ) : guestOpen ? (
+          ) : (
             <div className="space-y-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">游客昵称</label>
-                <Input
-                  placeholder="输入昵称..."
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void handleGuest()
-                  }}
-                  maxLength={LIMITS.NICKNAME_MAX_LENGTH}
-                  className="h-8 text-sm"
-                  autoFocus
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button type="button" className="flex-1" onClick={() => void handleGuest()} disabled={loading || !nickname.trim()}>
-                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  确认
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setGuestOpen(false)} disabled={loading}>
-                  取消
-                </Button>
+               {me && <div className="flex gap-2"><Input value={nickname} onChange={(event) => setNickname(event.target.value)} aria-label={t('nickname')} /><Button variant="outline" onClick={() => void run(() => updateProfile(nickname || me.nickname), t('nicknameSaved'))}>{t('save')}</Button></div>}
+              <div className="flex flex-wrap gap-2">
+                 {me?.kind !== 'account' && <Button size="sm" variant="outline" onClick={() => { setNickname(me?.nickname ?? ''); setMode('register') }}>{me ? t('upgradeAccount') : t('register')}</Button>}
+                 {me?.kind !== 'account' && <Button size="sm" onClick={() => setMode('login')}>{t('login')}</Button>}
+                 {!me && <Button size="sm" variant="ghost" onClick={() => setMode('guest')}>{t('continueAsGuest')}</Button>}
+                 {me && <Button size="sm" variant="ghost" className="text-destructive" disabled={loading} onClick={() => void run(() => logoutIdentity(socket), t('logout'))}><LogOut className="mr-2 h-4 w-4" />{t('logout')}</Button>}
               </div>
             </div>
-          ) : (
-            <>
-              {!me?.hasPassword && displayName && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">游客昵称</label>
-                  <Input
-                    placeholder="输入昵称..."
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                    onBlur={() => void handleSaveNickname()}
-                    onKeyDown={handleKeyDown}
-                    maxLength={LIMITS.NICKNAME_MAX_LENGTH}
-                    className="h-8 text-sm"
-                  />
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setLoginOpen(true)}>
-                  <KeyRound className="mr-2 h-4 w-4" />
-                  登录账号
-                </Button>
-                {me?.hasPassword ? (
-                  <Button type="button" variant="ghost" className="text-destructive" onClick={() => void handleLogout()} disabled={loading}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    退出
-                  </Button>
-                ) : !hasIdentity ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setNickname('')
-                      setGuestOpen(true)
-                    }}
-                    disabled={loading}
-                  >
-                    游客访问
-                  </Button>
-                ) : null}
-              </div>
-            </>
           )}
         </div>
       </PopoverContent>
