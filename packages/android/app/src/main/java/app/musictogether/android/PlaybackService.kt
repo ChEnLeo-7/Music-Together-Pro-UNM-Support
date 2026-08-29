@@ -275,7 +275,13 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
   override fun onIsPlayingChanged(isPlaying: Boolean) {
     updateSnapshot()
-    sendPlaybackEvent(if (isPlaying) "play" else "pause")
+    if (isPlaying) {
+      sendPlaybackEvent("play")
+    } else if (!player.playWhenReady) {
+      // Buffering, seeking, and replacing a MediaItem temporarily make
+      // isPlaying false without changing the user's play intent.
+      sendPlaybackEvent("pause")
+    }
   }
 
   override fun onPlayerError(error: PlaybackException) {
