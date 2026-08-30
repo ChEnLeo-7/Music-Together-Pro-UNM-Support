@@ -81,14 +81,27 @@ class MainActivity : ComponentActivity() {
       settings.mediaPlaybackRequiresUserGesture = false
       settings.userAgentString = "${settings.userAgentString} MusicTogetherAndroid/1"
       webViewClient = object : WebViewClient() {
-        private val trusted = Uri.parse(serverUrl)
+        private var trusted = Uri.parse(serverUrl)
+        private var initialNavigation = true
 
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
           val target = request?.url ?: return true
-          val sameOrigin = target.scheme == trusted.scheme && target.host == trusted.host && target.port == trusted.port
+          if (!request.isForMainFrame) return false
+          val sameOrigin = sameOrigin(target, trusted)
           if (sameOrigin) return false
+          if (target.isHttpOrHttps() && (initialNavigation || request.isRedirect)) {
+            trusted = target
+            return false
+          }
           runCatching { startActivity(Intent(Intent.ACTION_VIEW, target)) }
           return true
+        }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+          super.onPageFinished(view, url)
+          val finalUri = url?.let(Uri::parse)
+          if (finalUri?.isHttpOrHttps() == true) trusted = finalUri
+          initialNavigation = false
         }
       }
       webChromeClient = WebChromeClient()
@@ -289,6 +302,19 @@ class MainActivity : ComponentActivity() {
     val uri = runCatching { Uri.parse(withScheme) }.getOrNull() ?: return null
     if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return null
     return uri.toString().trimEnd('/')
+  }
+
+  private fun Uri.isHttpOrHttps(): Boolean = scheme in setOf("http", "https") && !host.isNullOrBlank()
+
+  private fun sameOrigin(first: Uri, second: Uri): Boolean =
+    first.scheme.equals(second.scheme, ignoreCase = true) &&
+      first.host.equals(second.host, ignoreCase = true) &&
+      effectivePort(first) == effectivePort(second)
+
+  private fun effectivePort(uri: Uri): Int = when {
+    uri.port >= 0 -> uri.port
+    uri.scheme.equals("https", ignoreCase = true) -> 443
+    else -> 80
   }
 
   private fun matchWrap() = LinearLayout.LayoutParams(
