@@ -6,7 +6,7 @@
   <string name="server_description">输入自托管服务器地址，即可加入房间并在后台继续播放。</string>
   <string name="server_address_label">服务器地址</string>
   <string name="server_address_hint">https://music.example.com</string>
-  <string name="server_address_helper">支持 HTTP 或 HTTPS；未填写协议时默认使用 HTTP</string>
+  <string name="server_address_helper">支持 HTTP、HTTPS 和服务器重定向；未填写协议时默认使用 HTTP</string>
   <string name="server_connect">继续</string>
   <string name="server_invalid">请输入有效的 HTTP 或 HTTPS 服务器地址</string>
   <string name="server_privacy_title">数据留在此设备</string>
