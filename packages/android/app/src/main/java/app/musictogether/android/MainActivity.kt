@@ -9,7 +9,6 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,9 +16,8 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.Button
-import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -35,6 +33,10 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -106,70 +108,120 @@ class MainActivity : ComponentActivity() {
     }
     webView = null
 
+    val horizontalGutter = if (resources.configuration.smallestScreenWidthDp >= 600) dp(96) else dp(24)
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
-      gravity = Gravity.CENTER_HORIZONTAL
-      setPadding(dp(28), dp(48), dp(28), dp(32))
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(horizontalGutter, dp(32), horizontalGutter, dp(32))
+    }
+    val logo = MaterialCardView(this).apply {
+      radius = dp(24).toFloat()
+      cardElevation = 0f
+      setCardBackgroundColor(Color.rgb(35, 35, 35))
+      addView(ImageView(this@MainActivity).apply {
+        setImageResource(R.drawable.ic_headphones)
+        contentDescription = null
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+      }, FrameLayout.LayoutParams(dp(72), dp(72)))
+    }
+    val eyebrow = TextView(this).apply {
+      text = getString(R.string.server_eyebrow)
+      textSize = 12f
+      letterSpacing = 0.18f
+      setTextColor(Color.rgb(208, 188, 255))
+      setTypeface(typeface, Typeface.BOLD)
     }
     val title = TextView(this).apply {
       text = getString(R.string.server_title)
-      textSize = 28f
-      setTextColor(Color.WHITE)
+      textSize = 32f
+      setTextColor(Color.rgb(230, 224, 233))
       setTypeface(typeface, Typeface.BOLD)
     }
     val description = TextView(this).apply {
       text = getString(R.string.server_description)
-      textSize = 15f
-      setTextColor(Color.rgb(190, 190, 205))
-      gravity = Gravity.CENTER
-      setPadding(0, dp(12), 0, dp(32))
+      textSize = 16f
+      setTextColor(Color.rgb(202, 196, 208))
+      setLineSpacing(0f, 1.25f)
     }
-    val label = TextView(this).apply {
-      text = getString(R.string.server_address_label)
-      textSize = 14f
-      setTextColor(Color.rgb(225, 225, 235))
-      setTypeface(typeface, Typeface.BOLD)
-    }
-    val address = EditText(this).apply {
-      hint = getString(R.string.server_address_hint)
+    val address = TextInputEditText(this).apply {
       setText(getSharedPreferences(PREFERENCES, MODE_PRIVATE).getString(SERVER_URL, ""))
-      setTextColor(Color.WHITE)
-      setHintTextColor(Color.rgb(125, 125, 145))
+      setTextColor(Color.rgb(230, 224, 233))
+      setHintTextColor(Color.rgb(147, 143, 153))
       textSize = 16f
       setSingleLine(true)
       inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
       imeOptions = EditorInfo.IME_ACTION_GO
-      setPadding(dp(16), dp(4), dp(16), dp(4))
-      background = roundedBackground(Color.rgb(31, 31, 39), Color.rgb(78, 78, 96), 12f)
     }
-    val error = TextView(this).apply {
-      text = getString(R.string.server_invalid)
-      textSize = 13f
-      setTextColor(Color.rgb(248, 113, 113))
-      setPadding(dp(4), dp(8), 0, 0)
-      visibility = View.GONE
+    val addressField = TextInputLayout(this).apply {
+      hint = getString(R.string.server_address_label)
+      placeholderText = getString(R.string.server_address_hint)
+      helperText = getString(R.string.server_address_helper)
+      boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
+      boxBackgroundColor = Color.TRANSPARENT
+      boxCornerRadii = floatArrayOf(dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat())
+      isErrorEnabled = true
+      addView(address, matchHeight(dp(56)))
     }
-    val connect = Button(this).apply {
+    val connect = MaterialButton(this).apply {
       text = getString(R.string.server_connect)
-      textSize = 16f
-      setTextColor(Color.WHITE)
+      textSize = 14f
+      setTextColor(Color.rgb(56, 30, 114))
+      setTypeface(typeface, Typeface.BOLD)
       isAllCaps = false
-      background = roundedBackground(Color.rgb(124, 58, 237), Color.TRANSPARENT, 12f)
+      cornerRadius = dp(28)
+      insetTop = 0
+      insetBottom = 0
+      backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(208, 188, 255))
     }
-    val privacy = TextView(this).apply {
-      text = getString(R.string.server_privacy)
-      textSize = 12f
-      gravity = Gravity.CENTER
-      setTextColor(Color.rgb(135, 135, 155))
-      setPadding(0, dp(24), 0, 0)
+    val form = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(dp(20), dp(20), dp(20), dp(20))
+      addView(addressField, matchWrap())
+      addView(connect, matchHeight(dp(56), top = dp(20)))
+    }
+    val formCard = MaterialCardView(this).apply {
+      radius = dp(28).toFloat()
+      cardElevation = 0f
+      strokeWidth = dp(1)
+      strokeColor = Color.rgb(73, 69, 79)
+      setCardBackgroundColor(Color.rgb(33, 31, 38))
+      addView(form, FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+      ))
+    }
+    val privacyText = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      addView(TextView(this@MainActivity).apply {
+        text = getString(R.string.server_privacy_title)
+        textSize = 14f
+        setTextColor(Color.rgb(230, 224, 233))
+        setTypeface(typeface, Typeface.BOLD)
+      })
+      addView(TextView(this@MainActivity).apply {
+        text = getString(R.string.server_privacy)
+        textSize = 13f
+        setTextColor(Color.rgb(202, 196, 208))
+        setLineSpacing(0f, 1.2f)
+      }, matchHeight(LinearLayout.LayoutParams.WRAP_CONTENT, top = dp(4)))
+    }
+    val privacyCard = MaterialCardView(this).apply {
+      radius = dp(16).toFloat()
+      cardElevation = 0f
+      setCardBackgroundColor(Color.rgb(29, 27, 32))
+      addView(privacyText, FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+      ).apply { setMargins(dp(16), dp(14), dp(16), dp(14)) })
     }
 
     val connectToServer = {
       val normalized = normalizeServerUrl(address.text.toString())
       if (normalized == null) {
-        error.visibility = View.VISIBLE
+        addressField.error = getString(R.string.server_invalid)
+        address.requestFocus()
       } else {
-        error.visibility = View.GONE
+        addressField.error = null
         openServer(normalized)
       }
     }
@@ -181,20 +233,18 @@ class MainActivity : ComponentActivity() {
       } else false
     }
 
-    content.addView(title)
-    content.addView(description, matchWrap())
-    content.addView(label, matchWrap())
-    content.addView(address, matchHeight(dp(56), top = dp(8)))
-    content.addView(error, matchWrap())
-    content.addView(connect, matchHeight(dp(52), top = dp(20)))
-    content.addView(privacy, matchWrap())
+    content.addView(logo, LinearLayout.LayoutParams(dp(72), dp(72)))
+    content.addView(eyebrow, matchHeight(LinearLayout.LayoutParams.WRAP_CONTENT, top = dp(24)))
+    content.addView(title, matchHeight(LinearLayout.LayoutParams.WRAP_CONTENT, top = dp(8)))
+    content.addView(description, matchHeight(LinearLayout.LayoutParams.WRAP_CONTENT, top = dp(12)))
+    content.addView(formCard, matchHeight(LinearLayout.LayoutParams.WRAP_CONTENT, top = dp(32)))
+    content.addView(privacyCard, matchHeight(LinearLayout.LayoutParams.WRAP_CONTENT, top = dp(16)))
 
     setSafeContent(ScrollView(this).apply {
-      setBackgroundColor(Color.rgb(9, 9, 11))
+      setBackgroundColor(Color.rgb(20, 18, 24))
       isFillViewport = true
       addView(content, matchHeight(LinearLayout.LayoutParams.MATCH_PARENT))
     })
-    address.requestFocus()
   }
 
   override fun onStart() {
@@ -238,13 +288,6 @@ class MainActivity : ComponentActivity() {
     val uri = runCatching { Uri.parse(withScheme) }.getOrNull() ?: return null
     if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return null
     return uri.toString().trimEnd('/')
-  }
-
-  private fun roundedBackground(fill: Int, stroke: Int, radius: Float) = GradientDrawable().apply {
-    shape = GradientDrawable.RECTANGLE
-    setColor(fill)
-    cornerRadius = dp(radius.toInt()).toFloat()
-    if (stroke != Color.TRANSPARENT) setStroke(dp(1), stroke)
   }
 
   private fun matchWrap() = LinearLayout.LayoutParams(
