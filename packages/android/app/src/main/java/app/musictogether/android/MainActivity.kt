@@ -158,7 +158,8 @@ class MainActivity : ComponentActivity() {
       helperText = getString(R.string.server_address_helper)
       boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
       boxBackgroundColor = Color.TRANSPARENT
-      boxCornerRadii = floatArrayOf(dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat())
+      val corner = dp(12).toFloat()
+      setBoxCornerRadii(corner, corner, corner, corner)
       isErrorEnabled = true
       addView(address, matchHeight(dp(56)))
     }
