@@ -37,6 +37,9 @@ data class PlaybackSnapshot(
 class PlaybackService : MediaSessionService(), Player.Listener {
   private lateinit var player: ExoPlayer
   private lateinit var mediaSession: MediaSession
+  private var preparedPlayer: ExoPlayer? = null
+  private var preparedSource: String? = null
+  private var preparedTrackId: String? = null
   private val handler = Handler(Looper.getMainLooper())
   private val snapshotTicker = object : Runnable {
     override fun run() {
@@ -140,24 +143,25 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       it.addListener(this)
       it.setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
     }
-    val sessionPlayer = object : ForwardingPlayer(player) {
+    mediaSession = MediaSession.Builder(this, createSessionPlayer(player)).build()
+    updateSnapshot()
+    handler.post(snapshotTicker)
+    handler.post(syncTicker)
+  }
+
+  private fun createSessionPlayer(exoPlayer: ExoPlayer) = object : ForwardingPlayer(exoPlayer) {
       override fun play() = emitRoomCommand(EVENT_PLAYER_PLAY)
       override fun pause() = emitRoomCommand(EVENT_PLAYER_PAUSE)
       override fun setPlayWhenReady(playWhenReady: Boolean) =
         emitRoomCommand(if (playWhenReady) EVENT_PLAYER_PLAY else EVENT_PLAYER_PAUSE)
       override fun seekTo(positionMs: Long) = emitRoomSeek(positionMs / 1000.0)
-      override fun seekBack() = emitRoomSeek((player.currentPosition - player.seekBackIncrement).coerceAtLeast(0) / 1000.0)
-      override fun seekForward() = emitRoomSeek((player.currentPosition + player.seekForwardIncrement) / 1000.0)
+      override fun seekBack() = emitRoomSeek((exoPlayer.currentPosition - exoPlayer.seekBackIncrement).coerceAtLeast(0) / 1000.0)
+      override fun seekForward() = emitRoomSeek((exoPlayer.currentPosition + exoPlayer.seekForwardIncrement) / 1000.0)
       override fun seekToNext() = emitRoomCommand(EVENT_PLAYER_NEXT)
       override fun seekToNextMediaItem() = emitRoomCommand(EVENT_PLAYER_NEXT)
       override fun seekToPrevious() = emitRoomCommand(EVENT_PLAYER_PREV)
       override fun seekToPreviousMediaItem() = emitRoomCommand(EVENT_PLAYER_PREV)
     }
-    mediaSession = MediaSession.Builder(this, sessionPlayer).build()
-    updateSnapshot()
-    handler.post(snapshotTicker)
-    handler.post(syncTicker)
-  }
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession
 
@@ -192,6 +196,11 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     if (sessionConfig?.sameConnection(parsed) == true && socket?.connected() == true) return
     pendingPlayback?.let(handler::removeCallbacks)
     pendingPlayback = null
+    preparedPlayer?.release()
+    preparedPlayer = null
+    preparedSource = null
+    preparedTrackId = null
+    preparedRevision = -1L
     sessionConfig = parsed
     latestPlaybackRevision = 0
     pendingRevision = 0
@@ -352,7 +361,9 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     scheduleAt(executeAt, revision) {
       val elapsed = ((serverTime() - state.optLong("serverTimestamp")) / 1000.0).coerceAtLeast(0.0)
       val position = state.optDouble("currentTime") + if (state.optBoolean("isPlaying")) elapsed else 0.0
-      loadTrack(track, position, state.optBoolean("isPlaying"))
+      if (!commitPreparedTrack(track, revision, position, state.optBoolean("isPlaying"))) {
+        loadTrack(track, position, state.optBoolean("isPlaying"))
+      }
       preparedRevision = -1L
     }
   }
@@ -364,7 +375,54 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     preparedRevision = revision
     roomStateRecovery?.let(handler::removeCallbacks)
     roomStateRecovery = null
-    loadTrack(track, 0.0, false)
+    prepareTrack(track, revision)
+  }
+
+  private fun prepareTrack(track: JSONObject, revision: Long) {
+    val source = resolveSource(track.optString("streamUrl"))
+    if (source.isBlank()) return
+    preparedPlayer?.release()
+    preparedSource = source
+    preparedTrackId = track.optString("id")
+    preparedPlayer = ExoPlayer.Builder(this).build().also { preload ->
+      preload.setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
+      preload.addListener(object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+          if (playbackState != Player.STATE_READY || preparedPlayer !== preload || preparedRevision != revision) return
+          socket?.emit(EVENT_PLAYER_READY, JSONObject().apply {
+            put("trackId", preparedTrackId)
+            put("playbackRevision", revision)
+          })
+        }
+      })
+      preload.setMediaItem(MediaItem.Builder().setUri(source).setMediaId(preparedTrackId.orEmpty()).build())
+      preload.prepare()
+      preload.playWhenReady = false
+    }
+  }
+
+  private fun commitPreparedTrack(
+    track: JSONObject,
+    revision: Long,
+    positionSeconds: Double,
+    autoPlay: Boolean,
+  ): Boolean {
+    val preload = preparedPlayer ?: return false
+    if (preparedRevision != revision || preparedTrackId != track.optString("id")) return false
+
+    player.removeListener(this)
+    player.release()
+    player = preload
+    preparedPlayer = null
+    currentSource = preparedSource
+    currentTrackId = preparedTrackId
+    preparedSource = null
+    preparedTrackId = null
+    player.addListener(this)
+    mediaSession.setPlayer(createSessionPlayer(player))
+    seekLocally(positionSeconds)
+    player.playWhenReady = autoPlay
+    return true
   }
 
   private fun handleScheduledState(payload: JSONObject?, shouldPlay: Boolean) {
@@ -415,7 +473,9 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       player.setPlaybackSpeed(1f)
       smoothedDriftSeconds = 0.0
     } else if (absoluteDrift >= DRIFT_DEAD_ZONE_SECONDS) {
-      player.setPlaybackSpeed((1f - (smoothedDriftSeconds * DRIFT_RATE_KP)).coerceIn(1f - MAX_RATE_ADJUSTMENT, 1f + MAX_RATE_ADJUSTMENT))
+      val targetSpeed = (1.0 - smoothedDriftSeconds * DRIFT_RATE_KP)
+        .coerceIn(1.0 - MAX_RATE_ADJUSTMENT, 1.0 + MAX_RATE_ADJUSTMENT)
+      player.setPlaybackSpeed(targetSpeed.toFloat())
     } else {
       player.setPlaybackSpeed(1f)
     }
@@ -500,6 +560,11 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   private fun releaseSession() {
     pendingPlayback?.let(handler::removeCallbacks)
     pendingPlayback = null
+    preparedPlayer?.release()
+    preparedPlayer = null
+    preparedSource = null
+    preparedTrackId = null
+    preparedRevision = -1L
     roomStateRecovery?.let(handler::removeCallbacks)
     roomStateRecovery = null
     socket?.emit(EVENT_ROOM_LEAVE)
@@ -576,12 +641,6 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     when (playbackState) {
       Player.STATE_READY -> {
         sendPlaybackEvent("load", duration = player.duration.coerceAtLeast(0))
-        if (preparedRevision == latestPlaybackRevision && currentTrackId != null) {
-          socket?.emit(EVENT_PLAYER_READY, JSONObject().apply {
-            put("trackId", currentTrackId)
-            put("playbackRevision", preparedRevision)
-          })
-        }
       }
       Player.STATE_ENDED -> if (!suppressEnded) {
         sendPlaybackEvent("end")
@@ -643,6 +702,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     socket?.off()
     mediaSession.release()
     player.release()
+    preparedPlayer?.release()
     super.onDestroy()
   }
 
@@ -728,7 +788,8 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     private const val DRIFT_DEAD_ZONE_SECONDS = 0.03
     private const val DRIFT_HARD_SEEK_SECONDS = 0.2
     private const val DRIFT_RATE_KP = 0.25
-    private const val MAX_RATE_ADJUSTMENT = 0.02f
+    private const val DRIFT_SMOOTH_ALPHA = 0.2
+    private const val MAX_RATE_ADJUSTMENT = 0.02
     private const val MAX_SYNC_NETWORK_DELAY_S = 5.0
 
     @Volatile var snapshot = PlaybackSnapshot()
