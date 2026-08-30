@@ -57,6 +57,9 @@ jobs:
         if: failure()
         working-directory: packages/android
         run: |
+          grep -E '(^e: |error: |AAPT: error)' android-build.log | while IFS= read -r line; do
+            echo "::error::$line"
+          done || true
           {
             echo '## Android build failure'
             echo '```text'
