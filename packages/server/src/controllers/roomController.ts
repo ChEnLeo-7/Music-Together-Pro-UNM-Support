@@ -45,7 +45,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         })
         return
       }
-      const { nickname, roomName, password } = parsed.data
+      const { nickname, roomName, password, playbackCapable } = parsed.data
 
       // Auto-leave any previous room before creating a new one
       handleLeave(io, socket, 'auto-leave before create', true)
@@ -56,12 +56,14 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         roomName,
         password,
         socket.data.identityUserId,
+        playbackCapable,
       )
 
       socket.leave('lobby')
       socket.join(room.id)
       socket.emit(EVENTS.ROOM_CREATED, { roomId: room.id, userId: user.id })
       socket.emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(room, { includeQueue: true }))
+      roomService.emitConductorLeases(io, room)
 
       roomService.broadcastRoomList(io)
     } catch (err) {
@@ -81,7 +83,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         })
         return
       }
-      const { roomId, nickname, password, rejoinToken } = parsed.data
+      const { roomId, nickname, password, rejoinToken, playbackCapable } = parsed.data
 
       // Validate join request (password, rejoin scenarios) 鈥?pure business logic
       const validation = roomService.validateJoinRequest(
@@ -107,7 +109,13 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         handleLeave(io, socket, 'auto-leave before join', true)
       }
 
-      const result = roomService.joinRoom(socket.id, roomId, nickname.trim(), socket.data.identityUserId)
+      const result = roomService.joinRoom(
+        socket.id,
+        roomId,
+        nickname.trim(),
+        socket.data.identityUserId,
+        playbackCapable,
+      )
       if (!result) {
         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.JOIN_FAILED, message: '鍔犲叆鎴块棿澶辫触' })
         return
@@ -126,7 +134,11 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         socket.to(roomId).emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(updatedRoom))
       }
       if (validation.grant) {
-        socket.emit(EVENTS.ROOM_REJOIN_TOKEN, { roomId, token: validation.grant.token, expiresAt: validation.grant.expiresAt })
+        socket.emit(EVENTS.ROOM_REJOIN_TOKEN, {
+          roomId,
+          token: validation.grant.token,
+          expiresAt: validation.grant.expiresAt,
+        })
       }
       if (updatedRoom.chatHistoryForNewUsers || hadMemberRecord) {
         socket.emit(EVENTS.CHAT_HISTORY, chatService.getHistory(roomId))
@@ -138,6 +150,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       playerService.syncPlaybackToSocket(io, socket, roomId, updatedRoom).catch((err) => {
         logger.error('syncPlaybackToSocket failed', err, { roomId })
       })
+      roomService.emitConductorLeases(io, updatedRoom)
 
       // Send active vote state if one is in progress
       const activeVote = voteService.getActiveVote(roomId)
@@ -265,7 +278,10 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       const { userId, role } = parsed.data
       const result = roomService.setUserRole(ctx.roomId, userId, role)
       if (!result.success) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.SET_ROLE_FAILED, message: '鏃犳硶璁剧疆璇ョ敤鎴风殑瑙掕壊' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, {
+          code: ERROR_CODE.SET_ROLE_FAILED,
+          message: '鏃犳硶璁剧疆璇ョ敤鎴风殑瑙掕壊',
+        })
         return
       }
 
@@ -338,11 +354,15 @@ function handleLeave(io: TypedServer, socket: TypedSocket, reason?: string, revo
 
   // Stale socket cleanup (e.g. page refresh) should only remove this socket
   // from the Socket.IO room; the user remains present via another socket.
-  if (staleSocketOnly) return
+  if (staleSocketOnly) {
+    if (room) roomService.emitConductorLeases(io, room)
+    return
+  }
 
   io.to(roomId).emit(EVENTS.ROOM_USER_LEFT, user)
   if (room) {
     io.to(roomId).emit(EVENTS.ROOM_STATE, roomService.toPublicRoomState(room))
+    roomService.emitConductorLeases(io, room)
   }
 
   // System message for user left (server-authoritative)

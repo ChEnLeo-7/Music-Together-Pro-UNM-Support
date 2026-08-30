@@ -24,6 +24,12 @@ export function isServerAdminUser(userId: string): boolean {
   return userRepo.isServerAdmin(userId)
 }
 
+export function emitConductorLeases(io: TypedServer, room: RoomData): void {
+  for (const socketId of roomRepo.getSocketIdsForRoom(room.id)) {
+    io.to(socketId).emit('player:lease', { active: socketId === room.conductorSocketId })
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Room role invariant + conductor election
 // ---------------------------------------------------------------------------
@@ -49,7 +55,8 @@ function setRoleIfChanged(user: User, role: UserRole): boolean {
 function resolvePersistentProfile(userId: string, nickname: string): { nickname: string; avatarUrl: string | null } {
   const trimmed = nickname.trim()
   const existing = userRepo.ensure(userId, { nickname: trimmed })
-  const updated = trimmed && trimmed !== existing.nickname ? userRepo.updateProfile(userId, { nickname: trimmed }) : existing
+  const updated =
+    trimmed && trimmed !== existing.nickname ? userRepo.updateProfile(userId, { nickname: trimmed }) : existing
   return {
     nickname: updated?.nickname || trimmed || userId,
     avatarUrl: updated?.avatarUrl ?? null,
@@ -111,12 +118,23 @@ function reconcileRoomRoles(room: RoomData): boolean {
  * 若 conductor 变更且正在播放，刷新 playState 时间戳以确保
  * 新 conductor 的首次 report 不被 validateConductorReport 拒绝。
  */
-function electConductor(room: RoomData): boolean {
+function electConductor(room: RoomData, preferredSocketId?: string): boolean {
   const prev = room.hostId
   const onlineUsers = getOnlineUsers(room)
   const candidate =
     onlineUsers.find((u) => u.role === 'owner') ?? onlineUsers.find((u) => u.role === 'admin') ?? onlineUsers[0]
   room.hostId = candidate?.id ?? room.hostId
+
+  const leaseMapping = room.conductorSocketId ? roomRepo.getSocketMapping(room.conductorSocketId) : undefined
+  const leaseValid = leaseMapping?.roomId === room.id && leaseMapping.userId === room.hostId
+  const preferredIsCapable = preferredSocketId ? roomRepo.isSocketPlaybackCapable(preferredSocketId) : false
+  if (!leaseValid || (preferredIsCapable && preferredSocketId !== room.conductorSocketId)) {
+    const preferredMapping = preferredSocketId ? roomRepo.getSocketMapping(preferredSocketId) : undefined
+    room.conductorSocketId =
+      preferredMapping?.roomId === room.id && preferredMapping.userId === room.hostId
+        ? preferredSocketId
+        : (roomRepo.getPlaybackSocketIdForUser(room.id, room.hostId) ?? undefined)
+  }
 
   if (room.hostId !== prev) {
     if (room.playState.isPlaying) {
@@ -141,12 +159,19 @@ export function createRoom(
   roomName?: string,
   password?: string | null,
   persistentUserId?: string,
+  playbackCapable = false,
 ): { room: RoomData; user: User } {
   const roomId = nanoid(6).toUpperCase()
   const userId = persistentUserId || socketId
   const profile = resolvePersistentProfile(userId, nickname)
 
-  const user: User = { id: userId, nickname: profile.nickname, avatarUrl: profile.avatarUrl, role: 'owner', online: true }
+  const user: User = {
+    id: userId,
+    nickname: profile.nickname,
+    avatarUrl: profile.avatarUrl,
+    role: 'owner',
+    online: true,
+  }
 
   const room: RoomData = {
     id: roomId,
@@ -155,6 +180,7 @@ export function createRoom(
     passwordVersion: password === undefined || password === null ? 0 : 1,
     creatorId: userId,
     hostId: userId,
+    conductorSocketId: socketId,
     adminUserIds: new Set(),
     hiddenMemberUserIds: new Set(),
     temporaryAdminUserId: null,
@@ -170,6 +196,7 @@ export function createRoom(
       isPlaying: false,
       currentTime: 0,
       serverTimestamp: Date.now(),
+      playbackRevision: 0,
     },
     playMode: 'loop-all',
     unmServerUrl: '',
@@ -177,7 +204,7 @@ export function createRoom(
 
   roomRepo.set(roomId, room)
   chatRepo.createRoom(roomId)
-  roomRepo.setSocketMapping(socketId, roomId, userId)
+  roomRepo.setSocketMapping(socketId, roomId, userId, playbackCapable)
 
   logger.info(`Room created: ${roomId} by ${profile.nickname}`, { roomId })
   return { room, user }
@@ -196,6 +223,7 @@ export function joinRoom(
   roomId: string,
   nickname: string,
   persistentUserId?: string,
+  playbackCapable = false,
 ): { room: RoomData; user: User; hostChanged: boolean; roleChanged: boolean; hadMemberRecord: boolean } | null {
   const room = roomRepo.get(roomId)
   if (!room) return null
@@ -223,9 +251,9 @@ export function joinRoom(
     existing.avatarUrl = profile.avatarUrl
     existing.role = resolveRole()
     existing.online = true
-    roomRepo.setSocketMapping(socketId, roomId, userId)
+    roomRepo.setSocketMapping(socketId, roomId, userId, playbackCapable)
     const roleChanged = reconcileRoomRoles(room)
-    const hostChanged = electConductor(room)
+    const hostChanged = electConductor(room, socketId)
     if (room.permanent) persistentRoomRepo.save(room)
     return { room, user: existing, hostChanged, roleChanged, hadMemberRecord }
   }
@@ -234,12 +262,12 @@ export function joinRoom(
   const role = resolveRole()
   const user: User = { id: userId, nickname: profile.nickname, avatarUrl: profile.avatarUrl, role, online: true }
   room.users.push(user)
-  roomRepo.setSocketMapping(socketId, roomId, userId)
+  roomRepo.setSocketMapping(socketId, roomId, userId, playbackCapable)
 
   // Reconcile roles first so owner/admin returning clears any temporary admin.
   const roleChanged = reconcileRoomRoles(room)
   // Re-elect conductor (owner joining takes priority over current conductor)
-  const hostChanged = electConductor(room)
+  const hostChanged = electConductor(room, socketId)
   if (room.permanent) persistentRoomRepo.save(room)
 
   logger.info(`User ${profile.nickname} joined room ${roomId} as ${role}`, { roomId })
@@ -272,13 +300,20 @@ export function leaveRoom(
   // (e.g. page refresh — new socket joined before old socket disconnected),
   // only clean up the stale mapping without removing the user from the room.
   if (roomRepo.hasOtherSocketForUser(roomId, userId, socketId)) {
+    const releasedLease = room.conductorSocketId === socketId
     roomRepo.deleteSocketMapping(socketId)
+    if (releasedLease) {
+      room.conductorSocketId = undefined
+      electConductor(room)
+    }
     logger.info(`Stale disconnect for user ${userId} in room ${roomId} — newer socket exists`, { roomId })
     return { roomId, user, room, hostChanged: false, roleChanged: false, voteUpdated: false, staleSocketOnly: true }
   }
 
   user.online = false
   roomRepo.deleteSocketMapping(socketId)
+
+  if (room.conductorSocketId === socketId) room.conductorSocketId = undefined
 
   // If room is empty, schedule deletion after grace period
   if (getOnlineUsers(room).length === 0) {

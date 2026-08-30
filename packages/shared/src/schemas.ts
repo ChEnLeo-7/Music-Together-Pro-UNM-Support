@@ -15,6 +15,7 @@ export const roomCreateSchema = z.object({
   nickname: z.string().min(1, '昵称不能为空').max(LIMITS.NICKNAME_MAX_LENGTH, '昵称过长'),
   roomName: z.string().max(LIMITS.ROOM_NAME_MAX_LENGTH, '房间名过长').optional(),
   password: roomPasswordSchema.optional(),
+  playbackCapable: z.boolean().optional(),
 })
 
 export const roomJoinSchema = z.object({
@@ -22,6 +23,7 @@ export const roomJoinSchema = z.object({
   nickname: z.string().min(1, '昵称不能为空'),
   password: roomPasswordSchema.optional(),
   rejoinToken: z.string().min(1).max(500).optional(),
+  playbackCapable: z.boolean().optional(),
 })
 
 export const audioQualitySchema = z.union([
@@ -80,6 +82,21 @@ export const playerSeekSchema = z.object({
 export const playerSyncSchema = z.object({
   currentTime: z.number().finite().nonnegative(),
   hostServerTime: z.number().finite().positive().optional(),
+  trackId: z.string().max(200).optional(),
+  playbackRevision: z.number().int().nonnegative().optional(),
+})
+
+export const playerNextSchema = z
+  .object({
+    reason: z.literal('ended').optional(),
+    trackId: z.string().max(200).optional(),
+    playbackRevision: z.number().int().nonnegative().optional(),
+  })
+  .optional()
+
+export const playerReadySchema = z.object({
+  trackId: z.string().min(1).max(200),
+  playbackRevision: z.number().int().nonnegative(),
 })
 
 export const playerSetModeSchema = z.object({

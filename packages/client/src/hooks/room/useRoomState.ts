@@ -3,8 +3,16 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { useRoomStore } from '@/stores/roomStore'
 import { storage } from '@/lib/storage'
 import { resetAllRoomState } from '@/lib/resetStores'
+import { releaseNativePlayback } from '@/lib/nativePlayback'
 import { ERROR_CODE, EVENTS } from '@music-together/shared'
-import type { AudioQuality, RoomAutoFallbackEvent, RoomState, SourcePriority, User, UserRole } from '@music-together/shared'
+import type {
+  AudioQuality,
+  RoomAutoFallbackEvent,
+  RoomState,
+  SourcePriority,
+  User,
+  UserRole,
+} from '@music-together/shared'
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -86,49 +94,53 @@ export function useRoomState() {
 
     const onRoomDissolved = (data: { roomId: string }) => {
       storage.clearRejoinToken(data.roomId)
+      releaseNativePlayback()
       resetAllRoomState()
-       toast.info(t('roomDissolvedNotice'))
+      toast.info(t('roomDissolvedNotice'))
       navigateRef.current('/', { replace: true })
     }
 
-     const sourceLabel = (source: 'netease' | 'tencent') => t(source)
+    const sourceLabel = (source: 'netease' | 'tencent') => t(source)
 
     const onAutoFallback = (data: RoomAutoFallbackEvent) => {
       const id = `auto-fallback:${data.attemptId}`
-       const from = sourceLabel(data.fromSource)
-       const to = sourceLabel(data.toSource)
+      const from = sourceLabel(data.fromSource)
+      const to = sourceLabel(data.toSource)
 
       if (data.status === 'trying') {
         const reasonLabel =
           data.reasonType === 'VIP_REQUIRED'
-             ? t('fallbackVip')
+            ? t('fallbackVip')
             : data.reasonType === 'COPYRIGHT_RESTRICTED'
-               ? t('fallbackCopyright')
+              ? t('fallbackCopyright')
               : data.reasonType === 'NO_RESOURCE'
-                 ? t('fallbackNoResource')
+                ? t('fallbackNoResource')
                 : data.reasonType === 'TIMEOUT'
-                   ? t('fallbackTimeout')
-                   : t('fallbackUnavailable')
+                  ? t('fallbackTimeout')
+                  : t('fallbackUnavailable')
 
-         toast.loading(t('sourceFallbackTrying', { from, reason: reasonLabel, to }), { id })
+        toast.loading(t('sourceFallbackTrying', { from, reason: reasonLabel, to }), { id })
         return
       }
 
       if (data.status === 'success') {
-         toast.success(t('sourceFallbackSuccess', { to, track: data.trackTitle }), { id })
+        toast.success(t('sourceFallbackSuccess', { to, track: data.trackTitle }), { id })
         return
       }
 
       // failed
       type ReasonType = NonNullable<RoomAutoFallbackEvent['reasonType']>
       const reasonMap: Partial<Record<ReasonType, string>> = {
-         VIP_REQUIRED: t('fallbackVip'),
-         COPYRIGHT_RESTRICTED: t('fallbackCopyright'),
-         NO_RESOURCE: t('fallbackNoResource'),
-         TIMEOUT: t('fallbackTimeout'),
+        VIP_REQUIRED: t('fallbackVip'),
+        COPYRIGHT_RESTRICTED: t('fallbackCopyright'),
+        NO_RESOURCE: t('fallbackNoResource'),
+        TIMEOUT: t('fallbackTimeout'),
       }
       const reasonText = data.reasonType ? (reasonMap[data.reasonType] ?? null) : null
-       toast.error(t('sourceFallbackFailed', { track: data.trackTitle, reason: reasonText ? `（${reasonText}）` : '' }), { id })
+      toast.error(
+        t('sourceFallbackFailed', { track: data.trackTitle, reason: reasonText ? `（${reasonText}）` : '' }),
+        { id },
+      )
     }
 
     const onError = (error: { code: string; message: string }) => {
@@ -142,7 +154,7 @@ export function useRoomState() {
         return
       }
 
-       toast.error(getLocalizedError(error, t))
+      toast.error(getLocalizedError(error, t))
       if (error.code === ERROR_CODE.ROOM_NOT_FOUND) {
         navigateRef.current('/', { replace: true })
       }

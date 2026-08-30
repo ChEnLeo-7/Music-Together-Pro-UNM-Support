@@ -5,13 +5,18 @@ import {
   defineAbilityFor,
   playerSeekSchema,
   playerSetModeSchema,
+  playerNextSchema,
+  playerReadySchema,
   playerSyncSchema,
+  queueAddSchema,
 } from '@music-together/shared'
 import * as z from 'zod/v4'
 import type { TypedServer, TypedSocket } from '../middleware/types.js'
+import type { Track } from '@music-together/shared'
 import { createWithPermission } from '../middleware/withControl.js'
 import { createWithRoom } from '../middleware/withRoom.js'
 import { checkSocketRateLimit } from '../middleware/socketRateLimiter.js'
+import { RateLimiterMemory } from 'rate-limiter-flexible'
 import { roomRepo } from '../repositories/roomRepository.js'
 import * as playerService from '../services/playerService.js'
 import * as roomService from '../services/roomService.js'
@@ -26,6 +31,17 @@ const playerPlaySchema = z
   })
   .passthrough()
 
+const realtimeEventLimiter = new RateLimiterMemory({ points: 40, duration: 5 })
+
+async function checkRealtimeRateLimit(socket: TypedSocket): Promise<boolean> {
+  try {
+    await realtimeEventLimiter.consume(socket.data.identityUserId ?? socket.id)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
   const withPermission = createWithPermission(io)
 
@@ -33,14 +49,19 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
     EVENTS.PLAYER_PLAY,
     withPermission('play', 'Player', async (ctx, data) => {
       if (!(await checkSocketRateLimit(ctx.socket))) return
-      const track = data?.track ?? ctx.room.currentTrack ?? ctx.room.queue[0]
-      if (!track) return
       const parsed = playerPlaySchema.safeParse(data ?? {})
       if (!parsed.success) return
+      const suppliedTrack = data?.track ? queueAddSchema.safeParse({ track: data.track }) : null
+      if (suppliedTrack && !suppliedTrack.success) return
+      const track = suppliedTrack?.success
+        ? (ctx.room.queue.find((queued) => queued.id === suppliedTrack.data.track.id) ??
+          (ctx.room.currentTrack?.id === suppliedTrack.data.track.id ? ctx.room.currentTrack : undefined))
+        : (ctx.room.currentTrack ?? ctx.room.queue[0])
+      if (!track) return
 
       // Resume: same track already loaded and has stream URL → keep position
       if (!data?.track && ctx.room.currentTrack?.id === track.id && ctx.room.currentTrack?.streamUrl) {
-        playerService.resumeTrack(ctx.io, ctx.roomId, ctx.socket)
+        await playerService.resumeTrack(ctx.io, ctx.roomId, ctx.socket)
         return
       }
 
@@ -54,17 +75,25 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
 
   socket.on(
     EVENTS.PLAYER_PAUSE,
-    withPermission('pause', 'Player', (ctx) => {
-      playerService.pauseTrack(ctx.io, ctx.roomId, ctx.socket)
+    withPermission('pause', 'Player', async (ctx) => {
+      await playerService.pauseTrack(ctx.io, ctx.roomId, ctx.socket)
     }),
   )
 
+  socket.on(EVENTS.PLAYER_READY, (raw) => {
+    const parsed = playerReadySchema.safeParse(raw)
+    if (!parsed.success) return
+    const mapping = roomRepo.getSocketMapping(socket.id)
+    if (!mapping || !roomRepo.isSocketPlaybackCapable(socket.id)) return
+    playerService.markPlaybackReady(mapping.roomId, socket.id, parsed.data.trackId, parsed.data.playbackRevision)
+  })
+
   socket.on(
     EVENTS.PLAYER_SEEK,
-    withPermission('seek', 'Player', (ctx, data) => {
+    withPermission('seek', 'Player', async (ctx, data) => {
       const parsed = playerSeekSchema.safeParse(data)
       if (!parsed.success) return
-      playerService.seekTrack(ctx.io, ctx.roomId, parsed.data.currentTime, ctx.socket)
+      await playerService.seekTrack(ctx.io, ctx.roomId, parsed.data.currentTime, ctx.socket)
     }),
   )
 
@@ -73,7 +102,9 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
   const withRoom = createWithRoom(io)
   socket.on(
     EVENTS.PLAYER_NEXT,
-    withRoom(async (ctx) => {
+    withRoom(async (ctx, raw) => {
+      const parsed = playerNextSchema.safeParse(raw)
+      if (!parsed.success) return
       if (ctx.user.id !== ctx.room.hostId) {
         const ability = defineAbilityFor(ctx.user.role)
         if (!ability.can('next', 'Player')) {
@@ -83,6 +114,11 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
           })
           return
         }
+      }
+      if (parsed.data?.reason === 'ended') {
+        if (ctx.room.conductorSocketId && ctx.room.conductorSocketId !== ctx.socket.id) return
+        if (parsed.data.trackId !== ctx.room.currentTrack?.id) return
+        if (parsed.data.playbackRevision !== ctx.room.playState.playbackRevision) return
       }
       await playerService.playNextTrackInRoom(ctx.io, ctx.roomId, ctx.room.playMode)
     }),
@@ -112,16 +148,21 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
   // ---------------------------------------------------------------------------
   // NTP clock synchronisation – reply instantly with server time
   // ---------------------------------------------------------------------------
-  socket.on(EVENTS.NTP_PING, (data) => {
+  socket.on(EVENTS.NTP_PING, async (data) => {
     try {
+      const serverReceiveTime = Date.now()
+      if (!(await checkRealtimeRateLimit(socket))) return
       // Store client-reported RTT for adaptive scheduling delay
       if (data?.lastRttMs != null && data.lastRttMs > 0 && data.lastRttMs <= 10_000) {
         roomRepo.setSocketRTT(socket.id, data.lastRttMs)
       }
 
+      const serverSendTime = Date.now()
       socket.emit(EVENTS.NTP_PONG, {
         clientPingId: data?.clientPingId ?? 0,
-        serverTime: Date.now(),
+        serverTime: serverSendTime,
+        serverReceiveTime,
+        serverSendTime,
       })
     } catch (err) {
       logger.error('NTP_PING handler error', err, { socketId: socket.id })
@@ -130,8 +171,9 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
 
   // Conductor reports real playback position (keeps server-side playState accurate
   // for mid-song joiners and reconnection recovery — no forwarding to clients)
-  socket.on(EVENTS.PLAYER_SYNC, (raw) => {
+  socket.on(EVENTS.PLAYER_SYNC, async (raw) => {
     try {
+      if (!(await checkRealtimeRateLimit(socket))) return
       const parsed = playerSyncSchema.safeParse(raw)
       if (!parsed.success) return
       const { currentTime } = parsed.data
@@ -142,6 +184,14 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
       if (!room) return
       // Only accept reports from the conductor
       if (room.hostId !== mapping.userId) return
+      if (room.conductorSocketId && room.conductorSocketId !== socket.id) return
+      if (parsed.data.trackId !== undefined && parsed.data.trackId !== room.currentTrack?.id) return
+      if (
+        parsed.data.playbackRevision !== undefined &&
+        parsed.data.playbackRevision !== room.playState.playbackRevision
+      ) {
+        return
+      }
 
       // Reject stale reports from a sleeping conductor: if the reported position is
       // far behind the server's estimate, the conductor likely just woke from sleep
@@ -173,8 +223,9 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
     }
   })
 
-  socket.on(EVENTS.PLAYER_SYNC_REQUEST, () => {
+  socket.on(EVENTS.PLAYER_SYNC_REQUEST, async () => {
     try {
+      if (!(await checkRealtimeRateLimit(socket))) return
       const mapping = roomRepo.getSocketMapping(socket.id)
       if (!mapping) return
       const room = roomRepo.get(mapping.roomId)
@@ -184,6 +235,8 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
         currentTime: estimateCurrentTime(mapping.roomId),
         isPlaying: room.playState.isPlaying,
         serverTimestamp: Date.now(),
+        playbackRevision: room.playState.playbackRevision,
+        trackId: room.currentTrack?.id,
       })
     } catch (err) {
       logger.error('PLAYER_SYNC_REQUEST handler error', err, {

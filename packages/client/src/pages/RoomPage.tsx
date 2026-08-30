@@ -28,6 +28,7 @@ import { AbilityProvider } from '@/providers/AbilityProvider'
 import { useClockSync } from '@/hooks/useClockSync'
 import { storage } from '@/lib/storage'
 import { getLocalizedError, useI18n } from '@/lib/i18n'
+import { getNativePlaybackBridge } from '@/lib/nativePlayback'
 
 /** Invisible component that runs NTP clock-sync only while in a room. */
 function ClockSyncRunner() {
@@ -79,12 +80,15 @@ export default function RoomPage() {
   const [mobileChatMetrics, setMobileChatMetrics] = useState({ bottom: 0, height: 0 })
   const mobileChatDialogRef = useRef<HTMLDivElement>(null)
 
-  const closeOtherOverlays = useCallback((except: 'search' | 'queue' | 'settings' | 'chat') => {
-    if (except !== 'search') setSearchOpen(false)
-    if (except !== 'queue') setQueueOpen(false)
-    if (except !== 'settings') setSettingsOpen(false)
-    if (except !== 'chat') setChatOpen(false)
-  }, [setChatOpen])
+  const closeOtherOverlays = useCallback(
+    (except: 'search' | 'queue' | 'settings' | 'chat') => {
+      if (except !== 'search') setSearchOpen(false)
+      if (except !== 'queue') setQueueOpen(false)
+      if (except !== 'settings') setSettingsOpen(false)
+      if (except !== 'chat') setChatOpen(false)
+    },
+    [setChatOpen],
+  )
 
   // Fallback password dialog state (edge case: password changed after pre-check)
   const [passwordNeeded, setPasswordNeeded] = useState(false)
@@ -123,7 +127,7 @@ export default function RoomPage() {
 
         if (!res.ok) {
           // Room not found
-           toast.error(t('roomNotFound'))
+          toast.error(t('roomNotFound'))
           navigate('/', { replace: true })
           return
         }
@@ -185,6 +189,7 @@ export default function RoomPage() {
         nickname,
         password: passwordRef.current || undefined,
         rejoinToken: storage.getRejoinToken(roomId) ?? undefined,
+        playbackCapable: !getNativePlaybackBridge(),
       })
     }
     if (room) {
@@ -205,11 +210,11 @@ export default function RoomPage() {
         if (roomId) storage.clearRejoinToken(roomId)
         passwordRef.current = undefined
         setPasswordNeeded(true)
-         setPasswordError(error.code === ERROR_CODE.WRONG_PASSWORD ? t('wrongPassword') : null)
+        setPasswordError(error.code === ERROR_CODE.WRONG_PASSWORD ? t('wrongPassword') : null)
         setPasswordLoading(false)
       } else if (error.code === ERROR_CODE.RATE_LIMITED) {
         setPasswordLoading(false)
-         toast.error(getLocalizedError(error, t))
+        toast.error(getLocalizedError(error, t))
       }
     }
 
@@ -246,6 +251,7 @@ export default function RoomPage() {
         roomId,
         nickname,
         password,
+        playbackCapable: !getNativePlaybackBridge(),
       })
     },
     [socket, roomId],
@@ -455,11 +461,7 @@ export default function RoomPage() {
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
       >
-        <InteractionGate
-          onStart={handleGateStart}
-          roomName={roomInfo?.name}
-          hasPassword={requiresPasswordInput}
-        />
+        <InteractionGate onStart={handleGateStart} roomName={roomInfo?.name} hasPassword={requiresPasswordInput} />
       </motion.div>
     )
   }
@@ -475,9 +477,18 @@ export default function RoomPage() {
       >
         <div className="flex h-dvh flex-col bg-background">
           <RoomHeader
-            onOpenSearch={() => { closeOtherOverlays('search'); setSearchOpen(true) }}
-            onOpenSettings={() => { closeOtherOverlays('settings'); setSettingsOpen(true) }}
-            onOpenMembers={() => { closeOtherOverlays('settings'); handleOpenMembers() }}
+            onOpenSearch={() => {
+              closeOtherOverlays('search')
+              setSearchOpen(true)
+            }}
+            onOpenSettings={() => {
+              closeOtherOverlays('settings')
+              setSettingsOpen(true)
+            }}
+            onOpenMembers={() => {
+              closeOtherOverlays('settings')
+              handleOpenMembers()
+            }}
             onLeaveRoom={handleLeaveRoom}
           />
 
@@ -489,8 +500,14 @@ export default function RoomPage() {
                 onSeek={seek}
                 onNext={next}
                 onPrev={prev}
-                onOpenChat={() => { closeOtherOverlays('chat'); toggleChat() }}
-                onOpenQueue={() => { closeOtherOverlays('queue'); setQueueOpen(true) }}
+                onOpenChat={() => {
+                  closeOtherOverlays('chat')
+                  toggleChat()
+                }}
+                onOpenQueue={() => {
+                  closeOtherOverlays('queue')
+                  setQueueOpen(true)
+                }}
                 chatUnreadCount={chatUnreadCount}
                 onFullscreenChange={setPlayerFullscreen}
                 fullscreenSignal={fullscreenSignal}

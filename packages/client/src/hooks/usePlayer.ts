@@ -31,10 +31,8 @@ export function usePlayer() {
   const t = useI18n((s) => s.t)
   const room = useRoomStore((s) => s.room)
   const loadingRef = useRef<{ trackId: string; ts: number; serverTimestamp: number } | null>(null)
-  // Set by recovery effect to signal onPlayerPlay that this track was already
-  // loaded by reconnect recovery — the subsequent PLAYER_PLAY from
-  // syncPlaybackToSocket should be skipped to avoid a double-load.
-  const recoveredTrackIdRef = useRef<string | null>(null)
+  const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const preparedRef = useRef<{ trackId: string; playbackRevision: number } | null>(null)
 
   const next = useCallback(() => socket.emit(EVENTS.PLAYER_NEXT), [socket])
 
@@ -45,7 +43,11 @@ export function usePlayer() {
     const { room } = useRoomStore.getState()
     const myId = storage.getUserId()
     if (room?.hostId === myId) {
-      socket.emit(EVENTS.PLAYER_NEXT)
+      socket.emit(EVENTS.PLAYER_NEXT, {
+        reason: 'ended',
+        trackId: room.currentTrack?.id,
+        playbackRevision: room.playState.playbackRevision,
+      })
     }
   }, [socket])
 
@@ -59,7 +61,7 @@ export function usePlayer() {
         streamQuality: undefined,
         availableStreamQualities: undefined,
       }
-       toast.warning(t('dolbyUnavailable'))
+      toast.warning(t('dolbyUnavailable'))
       socket.emit(EVENTS.PLAYER_PLAY, {
         track: retryTrack,
         audioQuality: 999,
@@ -67,14 +69,15 @@ export function usePlayer() {
       })
       return true
     },
-     [socket, t],
+    [socket, t],
   )
 
   const { howlRef, soundIdRef, loadTrack, localSeek } = useHowl(autoNext, recoverFromLoadFailure)
   const { fetchLyric } = useLyric()
 
-  // Connect sync (handles SEEK, PAUSE, RESUME + conductor reporting)
-  usePlayerSync(howlRef, soundIdRef)
+  // Android's Native PlaybackService owns playback synchronization. The
+  // WebView remains a UI/control surface on that platform.
+  usePlayerSync(howlRef, soundIdRef, !getNativePlaybackBridge())
 
   useEffect(() => {
     if (!room || !getNativePlaybackBridge()) return
@@ -91,7 +94,10 @@ export function usePlayer() {
   useEffect(() => {
     const onDisconnect = () => {
       loadingRef.current = null
-      recoveredTrackIdRef.current = null
+      if (recoveryTimerRef.current) {
+        clearTimeout(recoveryTimerRef.current)
+        recoveryTimerRef.current = null
+      }
     }
     socket.on('disconnect', onDisconnect)
     return () => {
@@ -103,7 +109,35 @@ export function usePlayer() {
   const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    const onPlayerPrepare = (data: { track: Track; playbackRevision: number }) => {
+      if (getNativePlaybackBridge()) return
+      preparedRef.current = { trackId: data.track.id, playbackRevision: data.playbackRevision }
+      loadTrack(data.track, 0, false)
+      fetchLyric(data.track)
+
+      const started = Date.now()
+      const reportReady = () => {
+        if (preparedRef.current?.playbackRevision !== data.playbackRevision) return
+        if ((howlRef.current?.duration() ?? 0) > 0 || Date.now() - started >= 1_000) {
+          socket.emit(EVENTS.PLAYER_READY, {
+            trackId: data.track.id,
+            playbackRevision: data.playbackRevision,
+          })
+          return
+        }
+        setTimeout(reportReady, 50)
+      }
+      setTimeout(reportReady, 50)
+    }
+
     const onPlayerPlay = (data: { track: Track; playState: ScheduledPlayState }) => {
+      const currentRevision = useRoomStore.getState().room?.playState.playbackRevision ?? -1
+      if (data.playState.playbackRevision < currentRevision) return
+
+      if (recoveryTimerRef.current) {
+        clearTimeout(recoveryTimerRef.current)
+        recoveryTimerRef.current = null
+      }
       // Deduplicate: ignore if the same track with the same serverTimestamp
       // was requested within the dedup window.  Comparing serverTimestamp
       // ensures that a legitimate replay of the same track (e.g. loop mode)
@@ -116,24 +150,6 @@ export function usePlayer() {
       ) {
         return
       }
-      // Recovery already loaded this track (reconnect: ROOM_STATE → recovery
-      // loadTrack → PLAYER_PLAY from syncPlaybackToSocket).  The serverTimestamp
-      // differs (syncPlaybackToSocket computes a new scheduleTime) so the normal
-      // dedup above doesn't catch it.  Skip the redundant load but update
-      // roomStore with the authoritative scheduled playState.
-      if (recoveredTrackIdRef.current === data.track.id) {
-        recoveredTrackIdRef.current = null
-        loadingRef.current = { trackId: data.track.id, ts: now, serverTimestamp: data.playState.serverTimestamp }
-        useRoomStore.getState().updateRoom({
-          currentTrack: data.track,
-          playState: {
-            isPlaying: data.playState.isPlaying,
-            currentTime: data.playState.currentTime,
-            serverTimestamp: data.playState.serverTimestamp,
-          },
-        })
-        return
-      }
       loadingRef.current = { trackId: data.track.id, ts: now, serverTimestamp: data.playState.serverTimestamp }
 
       // Keep roomStore in sync so recovery effect sees the correct currentTrack
@@ -143,6 +159,7 @@ export function usePlayer() {
           isPlaying: data.playState.isPlaying,
           currentTime: data.playState.currentTime,
           serverTimestamp: data.playState.serverTimestamp,
+          playbackRevision: data.playState.playbackRevision,
         },
       })
 
@@ -172,8 +189,18 @@ export function usePlayer() {
         if (playTimerRef.current) clearTimeout(playTimerRef.current)
         playTimerRef.current = setTimeout(() => {
           playTimerRef.current = null
-          loadTrack(data.track, 0, data.playState.isPlaying)
-          fetchLyric(data.track)
+          const prepared = preparedRef.current
+          if (
+            prepared?.trackId === data.track.id &&
+            prepared.playbackRevision === data.playState.playbackRevision &&
+            howlRef.current
+          ) {
+            preparedRef.current = null
+            if (data.playState.isPlaying) soundIdRef.current = howlRef.current.play()
+          } else {
+            loadTrack(data.track, 0, data.playState.isPlaying)
+            fetchLyric(data.track)
+          }
         }, delay)
       } else {
         // Mid-song join or currentTime > 0: load immediately and seek to
@@ -195,11 +222,13 @@ export function usePlayer() {
     }
 
     socket.on(EVENTS.PLAYER_PLAY, onPlayerPlay)
+    socket.on(EVENTS.PLAYER_PREPARE, onPlayerPrepare)
     socket.on(EVENTS.PLAYER_PAUSE, cancelPendingPlay)
     socket.on(EVENTS.PLAYER_SEEK, cancelPendingPlay)
 
     return () => {
       socket.off(EVENTS.PLAYER_PLAY, onPlayerPlay)
+      socket.off(EVENTS.PLAYER_PREPARE, onPlayerPrepare)
       socket.off(EVENTS.PLAYER_PAUSE, cancelPendingPlay)
       socket.off(EVENTS.PLAYER_SEEK, cancelPendingPlay)
       if (playTimerRef.current) {
@@ -220,6 +249,10 @@ export function usePlayer() {
       // When room becomes null (disconnect), reset flag so next reconnect can recover
       if (!room) {
         hasRecovered = false
+        if (recoveryTimerRef.current) {
+          clearTimeout(recoveryTimerRef.current)
+          recoveryTimerRef.current = null
+        }
         return
       }
 
@@ -228,8 +261,12 @@ export function usePlayer() {
       const roomTrack = room.currentTrack
 
       // Server has cleared the track (queue empty / cleared) — reset client
-      if (!roomTrack && playerTrack) {
+      if (!roomTrack && (playerTrack || howlRef.current)) {
         hasRecovered = true
+        if (recoveryTimerRef.current) {
+          clearTimeout(recoveryTimerRef.current)
+          recoveryTimerRef.current = null
+        }
         if (howlRef.current) {
           try {
             howlRef.current.unload()
@@ -249,22 +286,25 @@ export function usePlayer() {
         // call triggers this subscription synchronously before loadTrack runs,
         // so playerTrack/howlRef are still stale. Checking loadingRef avoids
         // a redundant double-load.
-        // However, if howlRef is null despite loadingRef pointing to this track,
-        // the previous loadTrack failed (e.g. !streamUrl) and we should retry.
-        if (loadingRef.current?.trackId === roomTrack.id && howlRef.current) return
+        if (loadingRef.current?.trackId === roomTrack.id || recoveryTimerRef.current) return
 
-        hasRecovered = true
-        // Cancel any pending scheduled load from onPlayerPlay to prevent
-        // a second loadTrack call when the timer fires after recovery.
-        if (playTimerRef.current) {
-          clearTimeout(playTimerRef.current)
-          playTimerRef.current = null
-        }
-        const ps = room.playState
-        const elapsed = ps.isPlaying ? (getServerTime() - ps.serverTimestamp) / 1000 : 0
-        recoveredTrackIdRef.current = roomTrack.id
-        loadTrack(roomTrack, ps.currentTime + Math.max(0, elapsed), ps.isPlaying)
-        fetchLyric(roomTrack)
+        // ROOM_STATE is sent immediately before the scheduled PLAYER_PLAY on
+        // join/reconnect. Wait for that event so recovery cannot start early.
+        recoveryTimerRef.current = setTimeout(() => {
+          recoveryTimerRef.current = null
+          const latestRoom = useRoomStore.getState().room
+          if (!latestRoom?.currentTrack?.streamUrl || howlRef.current) return
+          hasRecovered = true
+          const ps = latestRoom.playState
+          const elapsed = ps.isPlaying ? (getServerTime() - ps.serverTimestamp) / 1000 : 0
+          loadingRef.current = {
+            trackId: latestRoom.currentTrack.id,
+            ts: Date.now(),
+            serverTimestamp: ps.serverTimestamp,
+          }
+          loadTrack(latestRoom.currentTrack, ps.currentTime + Math.max(0, elapsed), ps.isPlaying)
+          fetchLyric(latestRoom.currentTrack)
+        }, 1_500)
       }
     }
 
@@ -273,7 +313,13 @@ export function usePlayer() {
 
     // Subscribe for future changes (covers reconnect where ROOM_STATE arrives later)
     const unsubscribe = useRoomStore.subscribe(recover)
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      if (recoveryTimerRef.current) {
+        clearTimeout(recoveryTimerRef.current)
+        recoveryTimerRef.current = null
+      }
+    }
     // `socket` intentionally excluded — effect subscribes to roomStore, not socket directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadTrack, fetchLyric])

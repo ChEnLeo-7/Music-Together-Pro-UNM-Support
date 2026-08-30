@@ -22,6 +22,9 @@ export const EVENTS = {
 
   // Player controls
   PLAYER_PLAY: 'player:play',
+  PLAYER_PREPARE: 'player:prepare',
+  PLAYER_READY: 'player:ready',
+  PLAYER_LEASE: 'player:lease',
   PLAYER_PAUSE: 'player:pause',
   PLAYER_RESUME: 'player:resume',
   PLAYER_SEEK: 'player:seek',

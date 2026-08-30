@@ -1,4 +1,13 @@
-import type { AudioQuality, ChatMessage, PlayMode, PlayState, RoomListItem, SourcePriority, Track, User } from '@music-together/shared'
+import type {
+  AudioQuality,
+  ChatMessage,
+  PlayMode,
+  PlayState,
+  RoomListItem,
+  SourcePriority,
+  Track,
+  User,
+} from '@music-together/shared'
 import type { EncryptedRoomCredential } from '../services/roomCredentialService.js'
 
 /** 服务端内部房间数据模型。凭据绝不能通过普通房间状态下发。 */
@@ -10,6 +19,8 @@ export interface RoomData {
   /** 房间创建者 ID（永久不变，创建者为 owner，加入时自动成为 conductor） */
   creatorId: string
   hostId: string
+  /** Socket lease that is currently allowed to report playback position/end. */
+  conductorSocketId?: string
   /** 持久化 admin 用户 ID 集合（离开/回来自动恢复 admin） */
   adminUserIds: Set<string>
   /** 房主隐藏的历史成员记录；用户重新加入时自动移除 */
@@ -41,7 +52,7 @@ export interface RoomRepository {
   getAll(): ReadonlyMap<string, RoomData>
   getAllIds(): string[]
   getAllAsList(): RoomListItem[]
-  setSocketMapping(socketId: string, roomId: string, userId: string): void
+  setSocketMapping(socketId: string, roomId: string, userId: string, playbackCapable?: boolean): void
   getSocketMapping(socketId: string): SocketMapping | undefined
   deleteSocketMapping(socketId: string): void
   getSocketIdsForRoom(roomId: string): string[]
@@ -49,6 +60,9 @@ export interface RoomRepository {
   hasOtherSocketForUser(roomId: string, userId: string, excludeSocketId: string): boolean
   /** 根据 roomId + userId 查找对应的 socketId（用于定向发送） */
   getSocketIdForUser(roomId: string, userId: string): string | null
+  getPlaybackSocketIdForUser(roomId: string, userId: string): string | null
+  getPlaybackSocketIdsForRoom(roomId: string): string[]
+  isSocketPlaybackCapable(socketId: string): boolean
   /** Store a smoothed RTT measurement for a given socket */
   setSocketRTT(socketId: string, rttMs: number): void
   /** Retrieve the current smoothed RTT for a socket (default 0) */

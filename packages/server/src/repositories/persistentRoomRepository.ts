@@ -169,14 +169,15 @@ export const persistentRoomRepo = {
       if (presentCredentialParts !== 0 && presentCredentialParts !== credentialParts.length) {
         throw new Error(`Room ${row.id} has a corrupted encrypted password credential`)
       }
-      const credential = presentCredentialParts === credentialParts.length
-        ? {
-            ciphertext: row.password_ciphertext!,
-            nonce: row.password_nonce!,
-            tag: row.password_tag!,
-            keyVersion: row.password_key_version!,
-          }
-        : null
+      const credential =
+        presentCredentialParts === credentialParts.length
+          ? {
+              ciphertext: row.password_ciphertext!,
+              nonce: row.password_nonce!,
+              tag: row.password_tag!,
+              keyVersion: row.password_key_version!,
+            }
+          : null
 
       return {
         id: row.id,
@@ -185,6 +186,7 @@ export const persistentRoomRepo = {
         passwordVersion: row.password_version ?? 0,
         creatorId: row.creator_id,
         hostId: row.creator_id,
+        conductorSocketId: undefined,
         adminUserIds: new Set(settings.adminUserIds ?? []),
         hiddenMemberUserIds,
         temporaryAdminUserId: null,
@@ -200,6 +202,7 @@ export const persistentRoomRepo = {
           isPlaying: false,
           currentTime: 0,
           serverTimestamp: Date.now(),
+          playbackRevision: 0,
         },
         playMode: settings.playMode ?? 'loop-all',
         unmServerUrl: settings.unmServerUrl ?? '',

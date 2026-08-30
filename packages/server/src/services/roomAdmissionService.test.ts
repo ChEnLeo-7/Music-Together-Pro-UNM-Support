@@ -17,6 +17,7 @@ function protectedRoom(): RoomData {
     passwordVersion: 1,
     creatorId: 'owner',
     hostId: 'owner',
+    conductorSocketId: 'socket-owner',
     adminUserIds: new Set(['admin']),
     hiddenMemberUserIds: new Set(),
     temporaryAdminUserId: null,
@@ -32,13 +33,17 @@ function protectedRoom(): RoomData {
     ],
     queue: [],
     currentTrack: null,
-    playState: { isPlaying: false, currentTime: 0, serverTimestamp: Date.now() },
+    playState: { isPlaying: false, currentTime: 0, serverTimestamp: Date.now(), playbackRevision: 0 },
     playMode: 'loop-all',
     unmServerUrl: '',
   }
 }
 
-function authorize(room: RoomData, userId: string, input: { password?: string; grantToken?: string; sessionId?: string } = {}) {
+function authorize(
+  room: RoomData,
+  userId: string,
+  input: { password?: string; grantToken?: string; sessionId?: string } = {},
+) {
   return authorizeRoomJoin({
     room,
     userId,

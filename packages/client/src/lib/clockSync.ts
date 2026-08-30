@@ -158,7 +158,12 @@ export function recordPing(): number {
  * Process a pong response from the server.
  * Returns the computed RTT so the caller can forward it to the server.
  */
-export function processPong(clientPingId: number, serverTime: number): number | null {
+export function processPong(
+  clientPingId: number,
+  serverTime: number,
+  serverReceiveTime?: number,
+  serverSendTime?: number,
+): number | null {
   const ping = pending.get(clientPingId)
   if (!ping) return null
   pending.delete(clientPingId)
@@ -169,10 +174,17 @@ export function processPong(clientPingId: number, serverTime: number): number | 
   if (rttMs < 0 || rttMs > 10_000) return null
 
   const now = Date.now()
-  const oneWay = rttMs / 2
-  const offsetMs = serverTime - (ping.localTime + oneWay)
+  const serverProcessingMs =
+    serverReceiveTime !== undefined && serverSendTime !== undefined
+      ? Math.max(0, serverSendTime - serverReceiveTime)
+      : 0
+  const networkRttMs = Math.max(0, rttMs - serverProcessingMs)
+  const offsetMs =
+    serverReceiveTime !== undefined && serverSendTime !== undefined
+      ? (serverReceiveTime - ping.localTime + (serverSendTime - now)) / 2
+      : serverTime - (ping.localTime + networkRttMs / 2)
 
-  samples.push({ rttMs, offsetMs, timestamp: now })
+  samples.push({ rttMs: networkRttMs, offsetMs, timestamp: now })
   // Keep sliding window bounded
   if (samples.length > NTP.MAX_MEASUREMENTS) {
     samples.shift()
@@ -189,7 +201,7 @@ export function processPong(clientPingId: number, serverTime: number): number | 
     calibrated = true
   }
 
-  return rttMs
+  return networkRttMs
 }
 
 /** Reset all state (useful on disconnect). */
