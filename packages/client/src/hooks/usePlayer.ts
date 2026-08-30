@@ -32,7 +32,11 @@ export function usePlayer() {
   const room = useRoomStore((s) => s.room)
   const loadingRef = useRef<{ trackId: string; ts: number; serverTimestamp: number } | null>(null)
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const preparedRef = useRef<{ trackId: string; playbackRevision: number } | null>(null)
+  const preparedRef = useRef<{
+    trackId: string
+    playbackRevision: number
+    audio: HTMLAudioElement
+  } | null>(null)
 
   const next = useCallback(() => socket.emit(EVENTS.PLAYER_NEXT), [socket])
 
@@ -111,14 +115,17 @@ export function usePlayer() {
   useEffect(() => {
     const onPlayerPrepare = (data: { track: Track; playbackRevision: number }) => {
       if (getNativePlaybackBridge()) return
-      preparedRef.current = { trackId: data.track.id, playbackRevision: data.playbackRevision }
-      loadTrack(data.track, 0, false)
+      preparedRef.current?.audio.removeAttribute('src')
+      const audio = new Audio()
+      audio.preload = 'auto'
+      audio.src = data.track.streamUrl?.startsWith('/') ? `${SERVER_URL}${data.track.streamUrl}` : (data.track.streamUrl ?? '')
+      preparedRef.current = { trackId: data.track.id, playbackRevision: data.playbackRevision, audio }
       fetchLyric(data.track)
 
       const started = Date.now()
       const reportReady = () => {
         if (preparedRef.current?.playbackRevision !== data.playbackRevision) return
-        if ((howlRef.current?.duration() ?? 0) > 0 || Date.now() - started >= 1_000) {
+        if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA || Date.now() - started >= 1_000) {
           socket.emit(EVENTS.PLAYER_READY, {
             trackId: data.track.id,
             playbackRevision: data.playbackRevision,
@@ -127,6 +134,7 @@ export function usePlayer() {
         }
         setTimeout(reportReady, 50)
       }
+      audio.load()
       setTimeout(reportReady, 50)
     }
 
@@ -189,18 +197,10 @@ export function usePlayer() {
         if (playTimerRef.current) clearTimeout(playTimerRef.current)
         playTimerRef.current = setTimeout(() => {
           playTimerRef.current = null
-          const prepared = preparedRef.current
-          if (
-            prepared?.trackId === data.track.id &&
-            prepared.playbackRevision === data.playState.playbackRevision &&
-            howlRef.current
-          ) {
-            preparedRef.current = null
-            if (data.playState.isPlaying) soundIdRef.current = howlRef.current.play()
-          } else {
-            loadTrack(data.track, 0, data.playState.isPlaying)
-            fetchLyric(data.track)
-          }
+          preparedRef.current?.audio.removeAttribute('src')
+          preparedRef.current = null
+          loadTrack(data.track, 0, data.playState.isPlaying)
+          fetchLyric(data.track)
         }, delay)
       } else {
         // Mid-song join or currentTime > 0: load immediately and seek to
@@ -241,14 +241,14 @@ export function usePlayer() {
   // Recovery: auto-sync player state from room state when desync is detected
   // (e.g. after HMR resets stores, or reconnection where PLAYER_PLAY was missed)
   useEffect(() => {
-    let hasRecovered = false
+    let recoveredRevision = -1
 
     const recover = () => {
       const { room } = useRoomStore.getState()
 
       // When room becomes null (disconnect), reset flag so next reconnect can recover
       if (!room) {
-        hasRecovered = false
+        recoveredRevision = -1
         if (recoveryTimerRef.current) {
           clearTimeout(recoveryTimerRef.current)
           recoveryTimerRef.current = null
@@ -256,13 +256,12 @@ export function usePlayer() {
         return
       }
 
-      if (hasRecovered) return
       const playerTrack = usePlayerStore.getState().currentTrack
       const roomTrack = room.currentTrack
 
       // Server has cleared the track (queue empty / cleared) — reset client
       if (!roomTrack && (playerTrack || howlRef.current)) {
-        hasRecovered = true
+        recoveredRevision = room.playState.playbackRevision
         if (recoveryTimerRef.current) {
           clearTimeout(recoveryTimerRef.current)
           recoveryTimerRef.current = null
@@ -280,6 +279,8 @@ export function usePlayer() {
         return
       }
 
+      if (recoveredRevision === room.playState.playbackRevision) return
+
       // Server has track but client doesn't (HMR reset / missed PLAYER_PLAY)
       if (roomTrack?.streamUrl && (!playerTrack || !howlRef.current)) {
         // Skip if onPlayerPlay is already handling this track — its updateRoom()
@@ -294,8 +295,8 @@ export function usePlayer() {
           recoveryTimerRef.current = null
           const latestRoom = useRoomStore.getState().room
           if (!latestRoom?.currentTrack?.streamUrl || howlRef.current) return
-          hasRecovered = true
           const ps = latestRoom.playState
+          recoveredRevision = ps.playbackRevision
           const elapsed = ps.isPlaying ? (getServerTime() - ps.serverTimestamp) / 1000 : 0
           loadingRef.current = {
             trackId: latestRoom.currentTrack.id,

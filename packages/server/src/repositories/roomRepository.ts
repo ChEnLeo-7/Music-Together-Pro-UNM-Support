@@ -122,7 +122,7 @@ export class InMemoryRoomRepository implements RoomRepository {
       const mapping = this.socketToRoom.get(sid)
       if (mapping?.userId === userId && this.isSocketPlaybackCapable(sid)) return sid
     }
-    return this.getSocketIdForUser(roomId, userId)
+    return null
   }
 
   getPlaybackSocketIdsForRoom(roomId: string): string[] {
