@@ -1,4 +1,5 @@
 import { storage } from '@/lib/storage'
+import { getNativePlaybackBridge } from '@/lib/nativePlayback'
 import { SERVER_URL } from '@/lib/config'
 import { useSocketContext } from '@/providers/SocketProvider'
 import { useLobbyStore } from '@/stores/lobbyStore'
@@ -52,7 +53,12 @@ export function useLobby() {
 
   const createRoom = useCallback(
     (nickname: string, roomName?: string, password?: string) => {
-      socket.emit(EVENTS.ROOM_CREATE, { nickname, roomName, password })
+      socket.emit(EVENTS.ROOM_CREATE, {
+        nickname,
+        roomName,
+        password,
+        playbackCapable: !getNativePlaybackBridge(),
+      })
     },
     [socket],
   )
@@ -65,6 +71,7 @@ export function useLobby() {
         nickname,
         password,
         rejoinToken: rejoinToken ?? undefined,
+        playbackCapable: !getNativePlaybackBridge(),
       })
     },
     [socket],

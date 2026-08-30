@@ -6,6 +6,7 @@ export class InMemoryRoomRepository implements RoomRepository {
   private socketToRoom = new Map<string, SocketMapping>()
   /** Smoothed RTT per socket (ms).  Cleaned up together with socket mapping. */
   private socketRTT = new Map<string, number>()
+  private socketPlaybackCapability = new Map<string, boolean>()
   /** Reverse index: roomId → Set of socketIds.  Keeps getP90RTT O(room sockets) instead of O(all sockets). */
   private roomToSockets = new Map<string, Set<string>>()
 
@@ -46,7 +47,7 @@ export class InMemoryRoomRepository implements RoomRepository {
       }))
   }
 
-  setSocketMapping(socketId: string, roomId: string, userId: string): void {
+  setSocketMapping(socketId: string, roomId: string, userId: string, playbackCapable = false): void {
     // Remove from previous room's reverse index (if socket was mapped before)
     const prev = this.socketToRoom.get(socketId)
     if (prev) {
@@ -58,6 +59,7 @@ export class InMemoryRoomRepository implements RoomRepository {
     }
 
     this.socketToRoom.set(socketId, { roomId, userId })
+    this.socketPlaybackCapability.set(socketId, playbackCapable)
 
     // Add to new room's reverse index
     let socketSet = this.roomToSockets.get(roomId)
@@ -85,6 +87,7 @@ export class InMemoryRoomRepository implements RoomRepository {
 
     this.socketToRoom.delete(socketId)
     this.socketRTT.delete(socketId)
+    this.socketPlaybackCapability.delete(socketId)
   }
 
   getSocketIdsForRoom(roomId: string): string[] {
@@ -110,6 +113,24 @@ export class InMemoryRoomRepository implements RoomRepository {
       if (mapping && mapping.userId === userId && mapping.roomId === roomId) return sid
     }
     return null
+  }
+
+  getPlaybackSocketIdForUser(roomId: string, userId: string): string | null {
+    const sockets = this.roomToSockets.get(roomId)
+    if (!sockets) return null
+    for (const sid of sockets) {
+      const mapping = this.socketToRoom.get(sid)
+      if (mapping?.userId === userId && this.isSocketPlaybackCapable(sid)) return sid
+    }
+    return this.getSocketIdForUser(roomId, userId)
+  }
+
+  getPlaybackSocketIdsForRoom(roomId: string): string[] {
+    return this.getSocketIdsForRoom(roomId).filter((socketId) => this.isSocketPlaybackCapable(socketId))
+  }
+
+  isSocketPlaybackCapable(socketId: string): boolean {
+    return this.socketPlaybackCapability.get(socketId) ?? false
   }
 
   setSocketRTT(socketId: string, rttMs: number): void {

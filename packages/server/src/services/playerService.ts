@@ -1,4 +1,13 @@
-import type { AudioQuality, MusicSource, PlayMode, PlayState, ScheduledPlayState, SourcePriority, StreamSource, Track } from '@music-together/shared'
+import type {
+  AudioQuality,
+  MusicSource,
+  PlayMode,
+  PlayState,
+  ScheduledPlayState,
+  SourcePriority,
+  StreamSource,
+  Track,
+} from '@music-together/shared'
 import { EVENTS, ERROR_CODE, NTP } from '@music-together/shared'
 import { roomRepo } from '../repositories/roomRepository.js'
 import { nanoid } from 'nanoid'
@@ -19,6 +28,10 @@ import type { TypedServer, TypedSocket } from '../middleware/types.js'
 // ---------------------------------------------------------------------------
 
 const playMutexes = new Map<string, Promise<unknown>>()
+const pendingPrepares = new Map<
+  string,
+  { trackId: string; revision: number; waiting: Set<string>; resolve: () => void; timer: ReturnType<typeof setTimeout> }
+>()
 
 // ---------------------------------------------------------------------------
 // Auto fallback cooldown (prevents repeated attempts / ping-pong)
@@ -74,6 +87,34 @@ function scheduled(ps: PlayState, roomId: string, scheduleTime?: number): Schedu
   return { ...ps, serverTimeToExecute: scheduleTime ?? getScheduleTime(roomId) }
 }
 
+function nextPlaybackRevision(room: RoomData): number {
+  return room.playState.playbackRevision + 1
+}
+
+async function waitForPlaybackReady(io: TypedServer, room: RoomData, track: Track, revision: number): Promise<void> {
+  const waiting = new Set(roomRepo.getPlaybackSocketIdsForRoom(room.id))
+  if (waiting.size === 0) return
+
+  io.to(room.id).emit(EVENTS.PLAYER_PREPARE, { track, playbackRevision: revision })
+  await new Promise<void>((resolve) => {
+    const finish = () => {
+      const pending = pendingPrepares.get(room.id)
+      if (pending?.timer) clearTimeout(pending.timer)
+      pendingPrepares.delete(room.id)
+      resolve()
+    }
+    const timer = setTimeout(finish, 1_200)
+    pendingPrepares.set(room.id, { trackId: track.id, revision, waiting, resolve: finish, timer })
+  })
+}
+
+export function markPlaybackReady(roomId: string, socketId: string, trackId: string, revision: number): void {
+  const pending = pendingPrepares.get(roomId)
+  if (!pending || pending.trackId !== trackId || pending.revision !== revision) return
+  pending.waiting.delete(socketId)
+  if (pending.waiting.size === 0) pending.resolve()
+}
+
 // ---------------------------------------------------------------------------
 // Audio quality fallback
 // ---------------------------------------------------------------------------
@@ -125,7 +166,11 @@ function normalizeSourcePriority(sourcePriority: SourcePriority): SourcePriority
   return sourcePriority
 }
 
-function getPlatformRequestQuality(sourcePriority: SourcePriority, requestedQuality: AudioQuality, hasVipCookie: boolean): AudioQuality {
+function getPlatformRequestQuality(
+  sourcePriority: SourcePriority,
+  requestedQuality: AudioQuality,
+  hasVipCookie: boolean,
+): AudioQuality {
   if (sourcePriority === 'unm-only') return 320
   if (sourcePriority !== 'smart' && sourcePriority !== 'unm-first') return requestedQuality
   if (hasVipCookie) return requestedQuality
@@ -142,11 +187,17 @@ function getFallbackQualities(requestedQuality: AudioQuality, availableQualities
   const requestedRank = rankQuality(requestedQuality)
   return available
     .filter((quality) => rankQuality(quality) >= requestedRank)
-      .sort((a, b) => rankQuality(a) - rankQuality(b))
+    .sort((a, b) => rankQuality(a) - rankQuality(b))
 }
 
-function getNeteaseFallbackQualities(requestedQuality: AudioQuality, availableQualities?: AudioQuality[]): AudioQuality[] {
-  return getFallbackQualities(requestedQuality, availableQualities?.length ? availableQualities : NETEASE_AVAILABLE_QUALITY_FALLBACK)
+function getNeteaseFallbackQualities(
+  requestedQuality: AudioQuality,
+  availableQualities?: AudioQuality[],
+): AudioQuality[] {
+  return getFallbackQualities(
+    requestedQuality,
+    availableQualities?.length ? availableQualities : NETEASE_AVAILABLE_QUALITY_FALLBACK,
+  )
 }
 
 function getSupportedPlatformQuality(
@@ -187,10 +238,7 @@ async function resolveStreamUrl(
     source === 'netease' && options.unmMode !== 'only'
       ? getNeteaseFallbackQualities(bitrate, availableQualities)
       : [bitrate]
-  const candidates =
-    options.preferRequestedQuality
-      ? [bitrate]
-      : fallbackCandidates
+  const candidates = options.preferRequestedQuality ? [bitrate] : fallbackCandidates
   const tried = new Set<string>()
 
   for (const quality of candidates) {
@@ -202,7 +250,8 @@ async function resolveStreamUrl(
       return {
         url: url.url,
         streamSource: url.source,
-        streamQuality: url.source === 'unm' && !UNM_AVAILABLE_QUALITIES.includes(quality) ? 999 : url.quality ?? quality,
+        streamQuality:
+          url.source === 'unm' && !UNM_AVAILABLE_QUALITIES.includes(quality) ? 999 : (url.quality ?? quality),
         availableStreamQualities: url.source === 'unm' ? UNM_AVAILABLE_QUALITIES : availableQualities,
       }
     }
@@ -299,7 +348,10 @@ async function resolveStreamByPolicy(
       urlId,
       attempt.quality,
       cookie,
-      { unmMode: attempt.unmMode, preferRequestedQuality: options.preferRequestedQuality && attempt.route === 'platform' },
+      {
+        unmMode: attempt.unmMode,
+        preferRequestedQuality: options.preferRequestedQuality && attempt.route === 'platform',
+      },
       attempt.route === 'platform' ? availableQualities : undefined,
     )
     if (stream) {
@@ -344,7 +396,12 @@ interface PlayTrackOptions {
   forceRefreshStream?: boolean
 }
 
-export function playTrackInRoom(io: TypedServer, roomId: string, track: Track, options: PlayTrackOptions = {}): Promise<boolean> {
+export function playTrackInRoom(
+  io: TypedServer,
+  roomId: string,
+  track: Track,
+  options: PlayTrackOptions = {},
+): Promise<boolean> {
   return withPlayMutex(roomId, () => _playTrackInRoom(io, roomId, track, options))
 }
 
@@ -361,7 +418,12 @@ export function autoPlayIfEmpty(io: TypedServer, roomId: string, track: Track): 
   })
 }
 
-async function _playTrackInRoom(io: TypedServer, roomId: string, track: Track, options: PlayTrackOptions = {}): Promise<boolean> {
+async function _playTrackInRoom(
+  io: TypedServer,
+  roomId: string,
+  track: Track,
+  options: PlayTrackOptions = {},
+): Promise<boolean> {
   const room = roomRepo.get(roomId)
   if (!room) return false
 
@@ -595,17 +657,31 @@ async function _playTrackInRoom(io: TypedServer, roomId: string, track: Track, o
     }
   }
 
+  // Stream resolution is asynchronous. The room may have been dissolved or
+  // replaced while the provider was running, so never write stale playback
+  // state back into a detached room object.
+  const currentRoom = roomRepo.get(roomId)
+  if (!currentRoom || currentRoom !== room) return false
+
   // Update room state — align serverTimestamp with the scheduled execution time
   // so that estimateCurrentTime() is accurate before the first conductor report.
   const previousTrackId = room.currentTrack?.id
   const previousIsPlaying = room.playState.isPlaying
-  const resumeTime = options.forceRefreshStream && previousIsPlaying && previousTrackId === track.id ? Math.max(0, estimateCurrentTime(roomId)) : 0
+  const resumeTime =
+    options.forceRefreshStream && previousIsPlaying && previousTrackId === track.id
+      ? Math.max(0, estimateCurrentTime(roomId))
+      : 0
+  const revision = nextPlaybackRevision(room)
+  await waitForPlaybackReady(io, room, resolved, revision)
+  if (roomRepo.get(roomId) !== room) return false
+
   room.currentTrack = resolved
   const scheduleTime = getScheduleTime(roomId)
   room.playState = {
     isPlaying: true,
     currentTime: resumeTime,
     serverTimestamp: scheduleTime,
+    playbackRevision: revision,
   }
 
   io.to(roomId).emit(EVENTS.PLAYER_PLAY, {
@@ -625,30 +701,59 @@ async function _playTrackInRoom(io: TypedServer, roomId: string, track: Track, o
   return true
 }
 
-export function resumeTrack(io: TypedServer, roomId: string, _initiatorSocket?: TypedSocket): void {
+export function resumeTrack(io: TypedServer, roomId: string, _initiatorSocket?: TypedSocket): Promise<void> {
+  return withPlayMutex(roomId, async () => resumeTrackLocked(io, roomId))
+}
+
+function resumeTrackLocked(io: TypedServer, roomId: string): void {
   const room = roomRepo.get(roomId)
   if (!room || !room.currentTrack) return
+  if (room.playState.isPlaying) return
 
   const scheduleTime = getScheduleTime(roomId)
-  room.playState = { ...room.playState, isPlaying: true, serverTimestamp: scheduleTime }
+  room.playState = {
+    ...room.playState,
+    isPlaying: true,
+    serverTimestamp: scheduleTime,
+    playbackRevision: nextPlaybackRevision(room),
+  }
   // All clients (including initiator) must execute at the same scheduled moment
   io.to(roomId).emit(EVENTS.PLAYER_RESUME, { playState: scheduled(room.playState, roomId, scheduleTime) })
 }
 
-export function pauseTrack(io: TypedServer, roomId: string, _initiatorSocket?: TypedSocket): void {
+export function pauseTrack(io: TypedServer, roomId: string, _initiatorSocket?: TypedSocket): Promise<void> {
+  return withPlayMutex(roomId, async () => pauseTrackLocked(io, roomId))
+}
+
+function pauseTrackLocked(io: TypedServer, roomId: string): void {
   const room = roomRepo.get(roomId)
   if (!room || !room.currentTrack) return
+  if (!room.playState.isPlaying) return
 
   const scheduleTime = getScheduleTime(roomId)
   const scheduleDelay = room.playState.isPlaying ? (scheduleTime - Date.now()) / 1000 : 0
   const pauseTime = estimateCurrentTime(roomId) + scheduleDelay
   const snapshotTime = room.currentTrack.duration > 0 ? Math.min(room.currentTrack.duration, pauseTime) : pauseTime
-  room.playState = { isPlaying: false, currentTime: snapshotTime, serverTimestamp: scheduleTime }
+  room.playState = {
+    isPlaying: false,
+    currentTime: snapshotTime,
+    serverTimestamp: scheduleTime,
+    playbackRevision: nextPlaybackRevision(room),
+  }
   // All clients must pause at the same scheduled moment
   io.to(roomId).emit(EVENTS.PLAYER_PAUSE, { playState: scheduled(room.playState, roomId, scheduleTime) })
 }
 
-export function seekTrack(io: TypedServer, roomId: string, currentTime: number, _initiatorSocket?: TypedSocket): void {
+export function seekTrack(
+  io: TypedServer,
+  roomId: string,
+  currentTime: number,
+  _initiatorSocket?: TypedSocket,
+): Promise<void> {
+  return withPlayMutex(roomId, async () => seekTrackLocked(io, roomId, currentTime))
+}
+
+function seekTrackLocked(io: TypedServer, roomId: string, currentTime: number): void {
   const room = roomRepo.get(roomId)
   if (!room || !room.currentTrack) return
 
@@ -659,6 +764,7 @@ export function seekTrack(io: TypedServer, roomId: string, currentTime: number, 
     ...room.playState,
     currentTime: boundedTime,
     serverTimestamp: room.playState.isPlaying ? scheduleTime : Date.now(),
+    playbackRevision: nextPlaybackRevision(room),
   }
   // All clients must seek at the same scheduled moment
   io.to(roomId).emit(EVENTS.PLAYER_SEEK, { playState: scheduled(room.playState, roomId, scheduleTime) })
@@ -667,7 +773,12 @@ export function seekTrack(io: TypedServer, roomId: string, currentTime: number, 
 export function updatePlayState(roomId: string, update: Partial<PlayState>): void {
   const room = roomRepo.get(roomId)
   if (room) {
-    room.playState = { ...room.playState, ...update, serverTimestamp: Date.now() }
+    room.playState = {
+      ...room.playState,
+      ...update,
+      serverTimestamp: Date.now(),
+      playbackRevision: nextPlaybackRevision(room),
+    }
   }
 }
 
@@ -679,6 +790,7 @@ export function setCurrentTrack(roomId: string, track: Track | null): void {
       isPlaying: track !== null,
       currentTime: 0,
       serverTimestamp: Date.now(),
+      playbackRevision: nextPlaybackRevision(room),
     }
   }
 }
@@ -690,13 +802,12 @@ export function setCurrentTrack(roomId: string, track: Track | null): void {
  */
 export function stopPlayback(io: TypedServer, roomId: string): void {
   setCurrentTrack(roomId, null)
-  io.to(roomId).emit(EVENTS.PLAYER_PAUSE, {
-    playState: { isPlaying: false, currentTime: 0, serverTimestamp: Date.now(), serverTimeToExecute: Date.now() },
-  })
   const room = roomRepo.get(roomId)
-  if (room) {
-    io.to(roomId).emit(EVENTS.ROOM_STATE, toPublicRoomState(room))
-  }
+  if (!room) return
+  io.to(roomId).emit(EVENTS.PLAYER_PAUSE, {
+    playState: scheduled(room.playState, roomId, room.playState.serverTimestamp),
+  })
+  io.to(roomId).emit(EVENTS.ROOM_STATE, toPublicRoomState(room))
   broadcastRoomList(io)
 }
 
@@ -820,6 +931,7 @@ export async function syncPlaybackToSocket(
         isPlaying: shouldAutoPlay,
         currentTime: snapshotCurrentTime + delaySec,
         serverTimestamp: scheduleTime,
+        playbackRevision: room.playState.playbackRevision,
         serverTimeToExecute: scheduleTime,
       },
     })
@@ -851,6 +963,11 @@ export function cleanupRoom(roomId: string): void {
   lastNextTimestamp.delete(roomId)
   conductorRejectCount.delete(roomId)
   playMutexes.delete(roomId)
+  const pending = pendingPrepares.get(roomId)
+  if (pending) {
+    clearTimeout(pending.timer)
+    pending.resolve()
+  }
 }
 
 /**

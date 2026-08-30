@@ -63,7 +63,11 @@ function clamp(value: number, limit: number): number {
  * If a browser speed plugin (e.g. Global Speed) overrides the rate,
  * rate correction is automatically disabled and only hard seek is used.
  */
-export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef: RefObject<number | undefined>) {
+export function usePlayerSync(
+  howlRef: RefObject<AudioEngine | null>,
+  soundIdRef: RefObject<number | undefined>,
+  enabled = true,
+) {
   const { socket } = useSocketContext()
   const setCurrentTime = usePlayerStore((s) => s.setCurrentTime)
 
@@ -87,6 +91,19 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
   const trackStartTimeRef = useRef(0)
   // Consecutive hard-seek triggers — require HARD_SEEK_CONFIRM_COUNT before actually seeking
   const hardSeekCountRef = useRef(0)
+  const leaseKnownRef = useRef(false)
+  const leaseActiveRef = useRef(false)
+
+  useEffect(() => {
+    const onLease = (data: { active: boolean }) => {
+      leaseKnownRef.current = true
+      leaseActiveRef.current = data.active
+    }
+    socket.on(EVENTS.PLAYER_LEASE, onLease)
+    return () => {
+      socket.off(EVENTS.PLAYER_LEASE, onLease)
+    }
+  }, [socket])
 
   const clearScheduled = () => {
     if (scheduledTimerRef.current) {
@@ -99,8 +116,11 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
   // Scheduled action handlers
   // -----------------------------------------------------------------------
   useEffect(() => {
+    if (!enabled) return
     // -- SEEK ---------------------------------------------------------------
     const onSeek = (data: { playState: ScheduledPlayState }) => {
+      const currentRevision = useRoomStore.getState().room?.playState.playbackRevision ?? -1
+      if (data.playState.playbackRevision < currentRevision) return
       clearScheduled()
       const id = ++actionIdRef.current
       const delay = scheduleDelay(data.playState.serverTimeToExecute)
@@ -125,6 +145,7 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
             isPlaying: data.playState.isPlaying,
             currentTime: data.playState.currentTime,
             serverTimestamp: data.playState.serverTimestamp,
+            playbackRevision: data.playState.playbackRevision,
           },
         })
       }, delay)
@@ -132,6 +153,8 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
 
     // -- PAUSE --------------------------------------------------------------
     const onPause = (data: { playState: ScheduledPlayState }) => {
+      const currentRevision = useRoomStore.getState().room?.playState.playbackRevision ?? -1
+      if (data.playState.playbackRevision < currentRevision) return
       clearScheduled()
       const id = ++actionIdRef.current
       const delay = scheduleDelay(data.playState.serverTimeToExecute)
@@ -155,6 +178,7 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
             isPlaying: data.playState.isPlaying,
             currentTime: data.playState.currentTime,
             serverTimestamp: data.playState.serverTimestamp,
+            playbackRevision: data.playState.playbackRevision,
           },
         })
       }, delay)
@@ -162,6 +186,8 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
 
     // -- RESUME -------------------------------------------------------------
     const onResume = (data: { playState: ScheduledPlayState }) => {
+      const currentRevision = useRoomStore.getState().room?.playState.playbackRevision ?? -1
+      if (data.playState.playbackRevision < currentRevision) return
       clearScheduled()
       const id = ++actionIdRef.current
       const delay = scheduleDelay(data.playState.serverTimeToExecute)
@@ -188,6 +214,7 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
             isPlaying: data.playState.isPlaying,
             currentTime: data.playState.currentTime,
             serverTimestamp: data.playState.serverTimestamp,
+            playbackRevision: data.playState.playbackRevision,
           },
         })
       }, delay)
@@ -209,7 +236,13 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
     }
 
     // -- SYNC RESPONSE (proportional drift correction + EMA smoothing) ------
-    const onSyncResponse = (data: { currentTime: number; isPlaying: boolean; serverTimestamp: number }) => {
+    const onSyncResponse = (data: {
+      currentTime: number
+      isPlaying: boolean
+      serverTimestamp: number
+      playbackRevision: number
+      trackId?: string
+    }) => {
       if (!howlRef.current) return
       if (!howlRef.current.playing()) return
 
@@ -217,8 +250,10 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
       // correction to avoid a feedback loop where server estimate (based on
       // host reports) pulls the conductor forward/backward.
       const { room: syncRoom } = useRoomStore.getState()
+      if (!syncRoom || data.playbackRevision !== syncRoom.playState.playbackRevision) return
+      if (data.trackId !== undefined && data.trackId !== syncRoom.currentTrack?.id) return
       const myId = storage.getUserId()
-      if (syncRoom?.hostId === myId) return
+      if (leaseKnownRef.current ? leaseActiveRef.current : syncRoom?.hostId === myId) return
 
       // Grace period after new track: skip rate micro-adjustments
       // (estimateCurrentTime is unreliable until conductor submits at least
@@ -328,22 +363,24 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
       socket.off(EVENTS.PLAYER_PLAY, onPlay)
       socket.off(EVENTS.PLAYER_SYNC_RESPONSE, onSyncResponse)
     }
-  }, [socket, howlRef, soundIdRef, setCurrentTime])
+  }, [socket, howlRef, soundIdRef, setCurrentTime, enabled])
 
   // -----------------------------------------------------------------------
   // Periodic sync request (client-initiated drift correction).
   // Host skips: it is the authoritative source and reports its own position.
   // -----------------------------------------------------------------------
   useEffect(() => {
+    if (!enabled) return
     const interval = setInterval(() => {
       const { room: r2 } = useRoomStore.getState()
       const myId = storage.getUserId()
-      if (r2?.hostId !== myId) {
+      const isConductor = leaseKnownRef.current ? leaseActiveRef.current : r2?.hostId === myId
+      if (!isConductor) {
         socket.emit(EVENTS.PLAYER_SYNC_REQUEST)
       }
     }, SYNC_REQUEST_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [socket])
+  }, [socket, enabled])
 
   // -----------------------------------------------------------------------
   // Conductor progress reporting (keeps server-side playState accurate for
@@ -352,15 +389,19 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
   // then slows to the normal interval (5s) to reduce overhead.
   // -----------------------------------------------------------------------
   useEffect(() => {
+    if (!enabled) return
     let timerId: ReturnType<typeof setTimeout> | null = null
 
     const report = () => {
       const { room } = useRoomStore.getState()
       const myId = storage.getUserId()
-      if (room?.hostId === myId && howlRef.current?.playing()) {
+      const isConductor = leaseKnownRef.current ? leaseActiveRef.current : room?.hostId === myId
+      if (room && isConductor && howlRef.current?.playing()) {
         socket.emit(EVENTS.PLAYER_SYNC, {
           currentTime: howlRef.current.seek() as number,
           hostServerTime: getServerTime(),
+          trackId: room.currentTrack?.id,
+          playbackRevision: room.playState.playbackRevision,
         })
       }
       // Schedule next report — fast if within the initial window, slow otherwise
@@ -376,10 +417,13 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
       if (document.visibilityState !== 'visible') return
       const { room: r } = useRoomStore.getState()
       const myId = storage.getUserId()
-      if (r?.hostId === myId && howlRef.current?.playing()) {
+      const isConductor = leaseKnownRef.current ? leaseActiveRef.current : r?.hostId === myId
+      if (r && isConductor && howlRef.current?.playing()) {
         socket.emit(EVENTS.PLAYER_SYNC, {
           currentTime: howlRef.current.seek() as number,
           hostServerTime: getServerTime(),
+          trackId: r.currentTrack?.id,
+          playbackRevision: r.playState.playbackRevision,
         })
       }
     }
@@ -391,5 +435,5 @@ export function usePlayerSync(howlRef: RefObject<AudioEngine | null>, soundIdRef
       if (timerId) clearTimeout(timerId)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [socket, howlRef])
+  }, [socket, howlRef, enabled])
 }

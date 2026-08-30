@@ -22,8 +22,13 @@ export function useClockSync(): void {
     switchedRef.current = false
 
     // --- Pong handler ---
-    const onPong = (data: { clientPingId: number; serverTime: number }) => {
-      processPong(data.clientPingId, data.serverTime)
+    const onPong = (data: {
+      clientPingId: number
+      serverTime: number
+      serverReceiveTime?: number
+      serverSendTime?: number
+    }) => {
+      processPong(data.clientPingId, data.serverTime, data.serverReceiveTime, data.serverSendTime)
 
       // Switch from fast to slow interval once — only on first calibration
       if (!switchedRef.current && isCalibrated() && intervalRef.current !== null) {

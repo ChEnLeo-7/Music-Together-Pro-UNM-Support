@@ -42,13 +42,26 @@ export interface ServerToClientEvents {
   [EVENTS.ROOM_ROLE_CHANGED]: (data: { userId: string; role: UserRole }) => void
 
   [EVENTS.PLAYER_PLAY]: (data: { track: Track; playState: ScheduledPlayState }) => void
+  [EVENTS.PLAYER_PREPARE]: (data: { track: Track; playbackRevision: number }) => void
+  [EVENTS.PLAYER_LEASE]: (data: { active: boolean }) => void
   [EVENTS.PLAYER_PAUSE]: (data: { playState: ScheduledPlayState }) => void
   [EVENTS.PLAYER_RESUME]: (data: { playState: ScheduledPlayState }) => void
   [EVENTS.PLAYER_SEEK]: (data: { playState: ScheduledPlayState }) => void
-  [EVENTS.PLAYER_SYNC_RESPONSE]: (data: { currentTime: number; isPlaying: boolean; serverTimestamp: number }) => void
+  [EVENTS.PLAYER_SYNC_RESPONSE]: (data: {
+    currentTime: number
+    isPlaying: boolean
+    serverTimestamp: number
+    playbackRevision: number
+    trackId?: string
+  }) => void
 
   // NTP clock sync
-  [EVENTS.NTP_PONG]: (data: { clientPingId: number; serverTime: number }) => void
+  [EVENTS.NTP_PONG]: (data: {
+    clientPingId: number
+    serverTime: number
+    serverReceiveTime?: number
+    serverSendTime?: number
+  }) => void
 
   [EVENTS.QUEUE_UPDATED]: (data: { queue: Track[] }) => void
 
@@ -76,8 +89,19 @@ export interface ServerToClientEvents {
 
 /** 客户端 → 服务端 事件接口 */
 export interface ClientToServerEvents {
-  [EVENTS.ROOM_CREATE]: (data: { nickname: string; roomName?: string; password?: string }) => void
-  [EVENTS.ROOM_JOIN]: (data: { roomId: string; nickname: string; password?: string; rejoinToken?: string }) => void
+  [EVENTS.ROOM_CREATE]: (data: {
+    nickname: string
+    roomName?: string
+    password?: string
+    playbackCapable?: boolean
+  }) => void
+  [EVENTS.ROOM_JOIN]: (data: {
+    roomId: string
+    nickname: string
+    password?: string
+    rejoinToken?: string
+    playbackCapable?: boolean
+  }) => void
   [EVENTS.ROOM_LEAVE]: () => void
   [EVENTS.ROOM_DISSOLVE]: () => void
   [EVENTS.ROOM_REFRESH]: () => void
@@ -94,12 +118,23 @@ export interface ClientToServerEvents {
   [EVENTS.ROOM_SET_ROLE]: (data: { userId: string; role: 'admin' | 'member' }) => void
   [EVENTS.ROOM_HIDE_MEMBER]: (data: { userId: string }) => void
 
-  [EVENTS.PLAYER_PLAY]: (data?: { track?: Track; audioQuality?: AudioQuality; sourcePriority?: SourcePriority; forceRefreshStream?: boolean }) => void
+  [EVENTS.PLAYER_PLAY]: (data?: {
+    track?: Track
+    audioQuality?: AudioQuality
+    sourcePriority?: SourcePriority
+    forceRefreshStream?: boolean
+  }) => void
+  [EVENTS.PLAYER_READY]: (data: { trackId: string; playbackRevision: number }) => void
   [EVENTS.PLAYER_PAUSE]: () => void
   [EVENTS.PLAYER_SEEK]: (data: { currentTime: number }) => void
-  [EVENTS.PLAYER_NEXT]: () => void
+  [EVENTS.PLAYER_NEXT]: (data?: { reason?: 'ended'; trackId?: string; playbackRevision?: number }) => void
   [EVENTS.PLAYER_PREV]: () => void
-  [EVENTS.PLAYER_SYNC]: (data: { currentTime: number; hostServerTime?: number }) => void
+  [EVENTS.PLAYER_SYNC]: (data: {
+    currentTime: number
+    hostServerTime?: number
+    trackId?: string
+    playbackRevision?: number
+  }) => void
   [EVENTS.PLAYER_SYNC_REQUEST]: () => void
   [EVENTS.PLAYER_SET_MODE]: (data: { mode: PlayMode }) => void
 
