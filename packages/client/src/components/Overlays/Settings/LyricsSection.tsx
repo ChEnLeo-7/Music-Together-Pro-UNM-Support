@@ -4,18 +4,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
-import { useAccountStore } from '@/stores/accountStore'
-import { useRoomStore } from '@/stores/roomStore'
+import { useContext } from 'react'
+import { AbilityContext } from '@/providers/AbilityProvider'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { SettingRow } from './SettingRow'
 
-const BETA_BADGE = <span className="rounded bg-yellow-400/20 px-1 py-0.5 text-[10px] font-semibold leading-none text-yellow-600">Beta</span>
+const BETA_BADGE = (
+  <span className="rounded bg-yellow-400/20 px-1 py-0.5 text-[10px] font-semibold leading-none text-yellow-600">
+    Beta
+  </span>
+)
 
 export function LyricsSection() {
   const s = useSettingsStore()
-  const isRoomAdmin = useRoomStore((state) => state.currentUser?.role === 'owner' || state.currentUser?.role === 'admin')
-  const isServerAdmin = useAccountStore((state) => state.me?.role === 'admin')
-  const canManageRoom = isRoomAdmin || isServerAdmin
+  const ability = useContext(AbilityContext)
+  const canSeek = ability.can('seek', 'Player')
 
   return (
     <div className="space-y-6">
@@ -56,7 +59,10 @@ export function LyricsSection() {
           description="当前歌词行在视口中的锚定方式"
           onReset={s.lyricAlignAnchor !== s.lyricAlignAnchorDefault ? s.resetLyricAlignAnchor : undefined}
         >
-          <Select value={s.lyricAlignAnchor} onValueChange={(v) => s.setLyricAlignAnchor(v as 'top' | 'center' | 'bottom')}>
+          <Select
+            value={s.lyricAlignAnchor}
+            onValueChange={(v) => s.setLyricAlignAnchor(v as 'top' | 'center' | 'bottom')}
+          >
             <SelectTrigger className="w-28">
               <SelectValue />
             </SelectTrigger>
@@ -88,12 +94,14 @@ export function LyricsSection() {
         <h3 className="text-base font-semibold">歌词动画</h3>
         <Separator className="mt-2 mb-4" />
 
-        {canManageRoom && (
+        {canSeek && (
           <SettingRow
             label="点击歌词跳转"
             labelExtra={BETA_BADGE}
             description="开启后点击歌词会跳转播放，可能出现滚动动画异常"
-            onReset={s.lyricClickSeekEnabled !== s.lyricClickSeekEnabledDefault ? s.resetLyricClickSeekEnabled : undefined}
+            onReset={
+              s.lyricClickSeekEnabled !== s.lyricClickSeekEnabledDefault ? s.resetLyricClickSeekEnabled : undefined
+            }
           >
             <Switch checked={s.lyricClickSeekEnabled} onCheckedChange={s.setLyricClickSeekEnabled} />
           </SettingRow>
@@ -155,7 +163,11 @@ export function LyricsSection() {
         <SettingRow
           label="翻译字体大小"
           description="翻译歌词相对主歌词的字号比例，范围 10-200"
-          onReset={s.lyricTranslationFontSize !== s.lyricTranslationFontSizeDefault ? s.resetLyricTranslationFontSize : undefined}
+          onReset={
+            s.lyricTranslationFontSize !== s.lyricTranslationFontSizeDefault
+              ? s.resetLyricTranslationFontSize
+              : undefined
+          }
         >
           <NumericInput value={s.lyricTranslationFontSize} onChange={s.setLyricTranslationFontSize} />
         </SettingRow>
