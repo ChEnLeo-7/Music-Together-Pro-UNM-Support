@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="app_name">Music Together</string>
-  <string name="server_title">连接 Music Together</string>
-  <string name="server_description">输入要连接的 Music Together 服务器地址。应用会记住此地址，并在下次启动时自动填入。</string>
+  <string name="server_eyebrow">MUSIC TOGETHER</string>
+  <string name="server_title">连接到你的音乐空间</string>
+  <string name="server_description">输入自托管服务器地址，即可加入房间并在后台继续播放。</string>
   <string name="server_address_label">服务器地址</string>
-  <string name="server_address_hint">例如：https://music.example.com</string>
-  <string name="server_connect">连接服务器</string>
+  <string name="server_address_hint">https://music.example.com</string>
+  <string name="server_address_helper">支持 HTTP 或 HTTPS；未填写协议时默认使用 HTTP</string>
+  <string name="server_connect">继续</string>
   <string name="server_invalid">请输入有效的 HTTP 或 HTTPS 服务器地址</string>
-  <string name="server_privacy">登录信息仅保存在此设备对应服务器的 WebView 中。</string>
+  <string name="server_privacy_title">数据留在此设备</string>
+  <string name="server_privacy">服务器地址和登录状态仅保存在此设备，不会发送到其他服务。</string>
   <string name="playback_channel_name">音乐播放</string>
   <string name="playback_channel_description">在后台继续播放 Music Together 房间音乐</string>
   <string name="playback_notification_title">Music Together</string>
