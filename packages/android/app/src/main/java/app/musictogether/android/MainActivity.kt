@@ -305,7 +305,7 @@ class MainActivity : ComponentActivity() {
 
   private fun setSafeContent(content: View) {
     val root = FrameLayout(this).apply {
-      setBackgroundColor(Color.rgb(9, 9, 11))
+      setBackgroundColor(Color.rgb(20, 18, 24))
       addView(content, FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
         FrameLayout.LayoutParams.MATCH_PARENT,
