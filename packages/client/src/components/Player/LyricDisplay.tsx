@@ -1,12 +1,30 @@
 import { usePlayerStore } from '@/stores/playerStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useSocketContext } from '@/providers/SocketProvider'
+import { AbilityContext } from '@/providers/AbilityProvider'
 import { cn } from '@/lib/utils'
 import type { LyricLine as AMLLLyricLine, LyricLineMouseEvent } from '@applemusic-like-lyrics/core'
 import { EVENTS } from '@music-together/shared'
 import '@applemusic-like-lyrics/core/style.css'
 import { LyricPlayer, type LyricPlayerRef } from '@applemusic-like-lyrics/react'
-import { useCallback, useEffect, useMemo, useRef, type PointerEvent, type TouchEvent } from 'react'
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type TouchEvent,
+} from 'react'
+import {
+  getActiveLineIndices,
+  mergeLrcTextByTime,
+  parseLrcTimeline,
+  toAmllTimeline,
+  type LrcTimelineEntry,
+} from '@/lib/lyricTimeline'
 
 const FULL_SIZE_STYLE = { width: '100%', height: '100%' } as const
 const SEEK_HIGHLIGHT_EPSILON_MS = 8
@@ -31,107 +49,31 @@ interface LyricPlayerViewProps {
   onLyricLineClick?: (event: LyricLineMouseEvent) => void
 }
 
-interface LyricLine {
-  time: number
-  text: string
-  translation?: string
-}
-
 interface AmllInternalPlayer {
-  bufferedLines?: Set<number>
-  scrollToIndex?: number
   currentLyricLineObjects?: Array<{ getElement: () => HTMLElement }>
 }
 
-function getActiveLineIndex(lines: AMLLLyricLine[], timeMs: number) {
-  let activeIndex = -1
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startTime > timeMs) break
-    activeIndex = i
-  }
-  return activeIndex
-}
-
-function parseLRC(lrc: string): { time: number; text: string }[] {
-  const lines: { time: number; text: string }[] = []
-  // Supports [mm:ss], [mm:ss.x], [mm:ss.xx], [mm:ss.xxx]
-  const regex = /\[(\d{2}):(\d{2})(?:\.(\d{1,3}))?\](.*)/g
-  let match
-
-  while ((match = regex.exec(lrc)) !== null) {
-    const minutes = parseInt(match[1], 10)
-    const seconds = parseInt(match[2], 10)
-    const ms = match[3] ? parseInt(match[3].padEnd(3, '0'), 10) : 0
-    const time = minutes * 60 + seconds + ms / 1000
-    const text = match[4].trim()
-    if (text) {
-      lines.push({ time, text })
-    }
-  }
-
-  return lines.sort((a, b) => a.time - b.time)
-}
-
-function mergeLyrics(original: string, translated: string): LyricLine[] {
-  const origLines = parseLRC(original)
+function mergeLyrics(original: string, translated: string): LrcTimelineEntry[] {
+  const origLines = parseLrcTimeline(original)
   if (origLines.length === 0) return []
 
-  const result: LyricLine[] = origLines.map((l) => ({ ...l }))
+  const result: LrcTimelineEntry[] = origLines.map((line) => ({ ...line }))
 
   if (!translated) return result
 
-  const transLines = parseLRC(translated)
+  const transLines = parseLrcTimeline(translated)
   if (transLines.length === 0) return result
 
-  const transMap = new Map<number, string>()
-  for (const tl of transLines) {
-    transMap.set(Math.round(tl.time * 10) / 10, tl.text)
-  }
-
-  for (const line of result) {
-    const key = Math.round(line.time * 10) / 10
-    const exact = transMap.get(key)
-    if (exact) {
-      line.translation = exact
-      continue
-    }
-    for (let offset = 1; offset <= 5; offset++) {
-      const near =
-        transMap.get(Math.round((line.time + offset * 0.1) * 10) / 10) ??
-        transMap.get(Math.round((line.time - offset * 0.1) * 10) / 10)
-      if (near) {
-        line.translation = near
-        break
-      }
-    }
-  }
+  mergeLrcTextByTime(
+    result,
+    (line) => line.timeMs,
+    translated,
+    (line, text) => {
+      line.translation = text
+    },
+  )
 
   return result
-}
-
-/** 将自有 LRC 解析结果转为 AMLL LyricLine 格式 */
-function toAMLLLines(lines: LyricLine[]): AMLLLyricLine[] {
-  return lines.map((line, i, arr) => {
-    const startMs = Math.round(line.time * 1000)
-    const endMs = Math.round((arr[i + 1]?.time ?? line.time + 5) * 1000)
-    return {
-      words: [
-        {
-          word: line.text,
-          startTime: startMs,
-          endTime: endMs,
-          romanWord: '',
-          obscene: false,
-        },
-      ],
-      translatedLyric: line.translation ?? '',
-      romanLyric: '',
-      startTime: startMs,
-      endTime: endMs,
-      isBG: false,
-      isDuet: false,
-    }
-  })
 }
 
 function LyricPlayerView({
@@ -149,20 +91,12 @@ function LyricPlayerView({
   onLyricLineClick,
 }: LyricPlayerViewProps) {
   const lyricDisplayTimeMs = usePlayerStore((s) => s.lyricDisplayTimeMs)
-  const frozenTimeRef = useRef(lyricDisplayTimeMs)
   const shouldFreezeTime = lyricMotionSuspended || lyricFrameSuspended
-  if (!shouldFreezeTime) frozenTimeRef.current = lyricDisplayTimeMs
-  const displayedTimeMs = shouldFreezeTime ? frozenTimeRef.current : lyricDisplayTimeMs
-  const springOffActiveLineIndex = useMemo(
-    () => (!enableSpring ? getActiveLineIndex(amllLines, displayedTimeMs) : -1),
+  const displayedTimeMs = lyricDisplayTimeMs
+  const springOffActiveLineKey = useMemo(
+    () => (!enableSpring ? getActiveLineIndices(amllLines, displayedTimeMs).join(',') : ''),
     [amllLines, displayedTimeMs, enableSpring],
   )
-
-  useEffect(() => {
-    const player = lyricPlayerRef.current?.lyricPlayer
-    if (!player) return
-    player.setCurrentTime(displayedTimeMs, true)
-  }, [displayedTimeMs, lyricPlayerRef])
 
   useEffect(() => {
     const player = lyricPlayerRef.current?.lyricPlayer
@@ -183,22 +117,36 @@ function LyricPlayerView({
       clearClasses()
       return
     }
+    let pendingFrame: number | null = null
     const applyClasses = () => {
+      pendingFrame = null
       const objects = (player as unknown as AmllInternalPlayer).currentLyricLineObjects
-      const elements = objects?.map((line) => line.getElement()).filter((el): el is HTMLElement => el instanceof HTMLElement) ?? []
+      const elements =
+        objects?.map((line) => line.getElement()).filter((el): el is HTMLElement => el instanceof HTMLElement) ?? []
+      const activeIndices = new Set(
+        springOffActiveLineKey
+          .split(',')
+          .filter(Boolean)
+          .map((index) => Number.parseInt(index, 10)),
+      )
       elements.forEach((element, index) => {
-        element.classList.toggle(SPRING_OFF_CURRENT_CLASS, index === springOffActiveLineIndex)
-        element.classList.toggle(SPRING_OFF_INACTIVE_CLASS, index !== springOffActiveLineIndex)
+        element.classList.toggle(SPRING_OFF_CURRENT_CLASS, activeIndices.has(index))
+        element.classList.toggle(SPRING_OFF_INACTIVE_CLASS, !activeIndices.has(index))
       })
     }
+    const scheduleApply = () => {
+      if (pendingFrame !== null) return
+      pendingFrame = requestAnimationFrame(applyClasses)
+    }
     applyClasses()
-    const observer = new MutationObserver(() => requestAnimationFrame(applyClasses))
+    const observer = new MutationObserver(scheduleApply)
     observer.observe(player as unknown as Node, { childList: true })
     return () => {
       observer.disconnect()
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)
       clearClasses()
     }
-  }, [enableSpring, lyricPlayerRef, springOffActiveLineIndex])
+  }, [amllLines, enableSpring, lyricPlayerRef, springOffActiveLineKey])
 
   return (
     <LyricPlayer
@@ -222,6 +170,7 @@ function LyricPlayerView({
 
 export function LyricDisplay() {
   const { socket } = useSocketContext()
+  const ability = useContext(AbilityContext)
   const lyric = usePlayerStore((s) => s.lyric)
   const tlyric = usePlayerStore((s) => s.tlyric)
   const lyricLoading = usePlayerStore((s) => s.lyricLoading)
@@ -234,6 +183,11 @@ export function LyricDisplay() {
   const enableScale = useSettingsStore((s) => s.lyricEnableScale)
   const hidePassedLines = useSettingsStore((s) => s.lyricHidePassedLines)
   const clickSeekEnabled = useSettingsStore((s) => s.lyricClickSeekEnabled)
+  const clickSeekActive = clickSeekEnabled && ability.can('seek', 'Player')
+  const clickSeekActiveRef = useRef(clickSeekActive)
+  useEffect(() => {
+    clickSeekActiveRef.current = clickSeekActive
+  }, [clickSeekActive])
   const fontWeight = useSettingsStore((s) => s.lyricFontWeight)
   const fontSize = useSettingsStore((s) => s.lyricFontSize)
   const translationFontSize = useSettingsStore((s) => s.lyricTranslationFontSize)
@@ -244,7 +198,7 @@ export function LyricDisplay() {
 
   // LRC 解析（仅在没有 TTML 时使用）
   const lrcLines = useMemo(() => mergeLyrics(lyric, tlyric), [lyric, tlyric])
-  const lrcAmllLines = useMemo(() => toAMLLLines(lrcLines), [lrcLines])
+  const lrcAmllLines = useMemo(() => toAmllTimeline(lrcLines), [lrcLines])
 
   // TTML 优先，LRC 回退
   const amllLines = ttmlLines ?? lrcAmllLines
@@ -256,6 +210,22 @@ export function LyricDisplay() {
   const pendingAlignFrameRef = useRef<number | null>(null)
   const lastPointerEventAtRef = useRef(0)
   const lastSeekRef = useRef<{ lineIndex: number; at: number } | null>(null)
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+  const keyboardLineIndexRef = useRef(-1)
+
+  useEffect(() => {
+    keyboardLineIndexRef.current = -1
+  }, [amllLines])
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setPrefersReducedMotion(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  const effectiveEnableSpring = enableSpring && !prefersReducedMotion
 
   useEffect(() => {
     const container = amllContainerRef.current
@@ -265,9 +235,11 @@ export function LyricDisplay() {
       container.querySelectorAll('.amll-lyric-player > *').forEach((line) => {
         const lineEl = line as HTMLElement
         lineEl.classList.remove('mt-lyric-line-hidden')
-        Array.from(line.children).slice(1).forEach((node) => {
-          ;(node as HTMLElement).classList.remove('mt-lyric-subline-hidden')
-        })
+        Array.from(line.children)
+          .slice(1)
+          .forEach((node) => {
+            ;(node as HTMLElement).classList.remove('mt-lyric-subline-hidden')
+          })
       })
     }
 
@@ -285,9 +257,11 @@ export function LyricDisplay() {
       const opacity = Number.parseFloat(mainLineEl?.style.opacity ?? '')
       const lineHidden = Number.isFinite(opacity) && opacity <= HIDDEN_LINE_OPACITY
       lineEl.classList.toggle('mt-lyric-line-hidden', lineHidden)
-      Array.from(line.children).slice(1).forEach((node) => {
-        ;(node as HTMLElement).classList.toggle('mt-lyric-subline-hidden', lineHidden)
-      })
+      Array.from(line.children)
+        .slice(1)
+        .forEach((node) => {
+          ;(node as HTMLElement).classList.toggle('mt-lyric-subline-hidden', lineHidden)
+        })
     }
 
     const syncSubLineVisibility = () => {
@@ -337,6 +311,12 @@ export function LyricDisplay() {
     pendingTouchSeekTimerRef.current = null
   }, [])
 
+  useEffect(() => {
+    if (clickSeekActive) return
+    touchStartRef.current = null
+    clearPendingTouchSeek()
+  }, [clearPendingTouchSeek, clickSeekActive])
+
   const getLineIndexFromTarget = useCallback((target: EventTarget | null) => {
     const element = target instanceof HTMLElement ? target : null
     const objects = (lyricPlayerRef.current?.lyricPlayer as unknown as AmllInternalPlayer | undefined)
@@ -353,28 +333,22 @@ export function LyricDisplay() {
     [getLineIndexFromTarget],
   )
 
-  const alignPlayerToLine = useCallback((lineIndex: number, timeMs: number) => {
+  const alignPlayerToLine = useCallback((timeMs: number) => {
     const player = lyricPlayerRef.current?.lyricPlayer
     if (!player) return
-    const internal = player as unknown as AmllInternalPlayer
-    internal.scrollToIndex = lineIndex
-    internal.bufferedLines?.clear()
-    internal.bufferedLines?.add(lineIndex)
     player.setCurrentTime(timeMs, true)
-    internal.scrollToIndex = lineIndex
-    internal.bufferedLines?.clear()
-    internal.bufferedLines?.add(lineIndex)
     player.resetScroll()
     void player.calcLayout(true)
   }, [])
 
   const seekToLineIndex = useCallback(
     (lineIndex: number) => {
-      if (!clickSeekEnabled) return
+      if (!clickSeekActiveRef.current) return
       if (amllLines.length === 0) return
       const targetIndex = Math.min(amllLines.length - 1, Math.max(0, lineIndex))
       const now = Date.now()
-      if (lastSeekRef.current?.lineIndex === targetIndex && now - lastSeekRef.current.at < DUPLICATE_SEEK_SUPPRESS_MS) return
+      if (lastSeekRef.current?.lineIndex === targetIndex && now - lastSeekRef.current.at < DUPLICATE_SEEK_SUPPRESS_MS)
+        return
       lastSeekRef.current = { lineIndex: targetIndex, at: now }
 
       const lyricTargetMs = Math.max(0, amllLines[targetIndex].startTime)
@@ -383,7 +357,7 @@ export function LyricDisplay() {
 
       const playerState = usePlayerStore.getState()
       playerState.suppressNextRemoteSeek(1000, displayTargetTime)
-      alignPlayerToLine(targetIndex, displayTargetMs)
+      alignPlayerToLine(displayTargetMs)
       if (playerState.localSeek) {
         playerState.localSeek(displayTargetTime)
       } else {
@@ -392,17 +366,17 @@ export function LyricDisplay() {
       if (pendingAlignFrameRef.current !== null) cancelAnimationFrame(pendingAlignFrameRef.current)
       pendingAlignFrameRef.current = requestAnimationFrame(() => {
         pendingAlignFrameRef.current = null
-        alignPlayerToLine(targetIndex, displayTargetMs)
+        alignPlayerToLine(displayTargetMs)
       })
 
       socket.emit(EVENTS.PLAYER_SEEK, { currentTime: displayTargetTime })
     },
-    [alignPlayerToLine, amllLines, clickSeekEnabled, socket],
+    [alignPlayerToLine, amllLines, socket],
   )
 
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      if (!clickSeekEnabled || event.pointerType === 'mouse') return
+      if (!clickSeekActive || event.pointerType === 'mouse') return
       lastPointerEventAtRef.current = Date.now()
       touchStartRef.current = {
         x: event.clientX,
@@ -410,12 +384,12 @@ export function LyricDisplay() {
         lineIndex: getLineIndexAtPoint(event.clientX, event.clientY),
       }
     },
-    [clickSeekEnabled, getLineIndexAtPoint],
+    [clickSeekActive, getLineIndexAtPoint],
   )
 
   const handlePointerUp = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      if (!clickSeekEnabled || event.pointerType === 'mouse') return
+      if (!clickSeekActive || event.pointerType === 'mouse') return
       lastPointerEventAtRef.current = Date.now()
       const start = touchStartRef.current
       touchStartRef.current = null
@@ -430,12 +404,12 @@ export function LyricDisplay() {
         seekToLineIndex(start.lineIndex)
       }, 80)
     },
-    [clearPendingTouchSeek, clickSeekEnabled, getLineIndexAtPoint, seekToLineIndex],
+    [clearPendingTouchSeek, clickSeekActive, getLineIndexAtPoint, seekToLineIndex],
   )
 
   const handleTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!clickSeekEnabled || Date.now() - lastPointerEventAtRef.current < 500) return
+      if (!clickSeekActive || Date.now() - lastPointerEventAtRef.current < 500) return
       const touch = event.touches.item(0)
       if (!touch) return
       touchStartRef.current = {
@@ -444,12 +418,12 @@ export function LyricDisplay() {
         lineIndex: getLineIndexAtPoint(touch.clientX, touch.clientY),
       }
     },
-    [clickSeekEnabled, getLineIndexAtPoint],
+    [clickSeekActive, getLineIndexAtPoint],
   )
 
   const handleTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!clickSeekEnabled || Date.now() - lastPointerEventAtRef.current < 500) return
+      if (!clickSeekActive || Date.now() - lastPointerEventAtRef.current < 500) return
       const start = touchStartRef.current
       touchStartRef.current = null
       const touch = event.changedTouches.item(0)
@@ -464,15 +438,40 @@ export function LyricDisplay() {
         seekToLineIndex(start.lineIndex)
       }, 80)
     },
-    [clearPendingTouchSeek, clickSeekEnabled, getLineIndexAtPoint, seekToLineIndex],
+    [clearPendingTouchSeek, clickSeekActive, getLineIndexAtPoint, seekToLineIndex],
   )
 
   const handleLyricClick = useCallback(
     (event: LyricLineMouseEvent) => {
       clearPendingTouchSeek()
-      if (clickSeekEnabled) seekToLineIndex(event.lineIndex)
+      if (clickSeekActive) seekToLineIndex(event.lineIndex)
     },
-    [clearPendingTouchSeek, clickSeekEnabled, seekToLineIndex],
+    [clearPendingTouchSeek, clickSeekActive, seekToLineIndex],
+  )
+
+  const cancelTap = useCallback(() => {
+    touchStartRef.current = null
+    clearPendingTouchSeek()
+  }, [clearPendingTouchSeek])
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (!clickSeekActive || amllLines.length === 0) return
+      const active = getActiveLineIndices(amllLines, usePlayerStore.getState().lyricDisplayTimeMs)[0] ?? 0
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault()
+        const base = keyboardLineIndexRef.current >= 0 ? keyboardLineIndexRef.current : active
+        keyboardLineIndexRef.current = Math.max(
+          0,
+          Math.min(amllLines.length - 1, base + (event.key === 'ArrowUp' ? -1 : 1)),
+        )
+        alignPlayerToLine(amllLines[keyboardLineIndexRef.current].startTime)
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        seekToLineIndex(keyboardLineIndexRef.current >= 0 ? keyboardLineIndexRef.current : active)
+      }
+    },
+    [alignPlayerToLine, amllLines, clickSeekActive, seekToLineIndex],
   )
 
   if (!hasLyrics) {
@@ -488,9 +487,19 @@ export function LyricDisplay() {
       ref={amllContainerRef}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
+      onPointerCancel={cancelTap}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      className={cn('amll-container h-full w-full cursor-pointer', !enableSpring && 'amll-spring-off')}
+      onTouchCancel={cancelTap}
+      onKeyDown={handleKeyDown}
+      tabIndex={clickSeekActive ? 0 : undefined}
+      role={clickSeekActive ? 'application' : undefined}
+      aria-label={clickSeekActive ? '歌词，使用上下方向键选择，回车跳转' : undefined}
+      className={cn(
+        'amll-container h-full w-full',
+        clickSeekActive && 'cursor-pointer',
+        !effectiveEnableSpring && 'amll-spring-off',
+      )}
       style={
         {
           fontWeight,
@@ -504,15 +513,15 @@ export function LyricDisplay() {
         amllLines={amllLines}
         alignAnchor={alignAnchor}
         alignPosition={alignPosition}
-        enableSpring={enableSpring}
-        enableBlur={enableBlur}
-        enableScale={enableScale}
+        enableSpring={effectiveEnableSpring}
+        enableBlur={enableBlur && !prefersReducedMotion}
+        enableScale={enableScale && !prefersReducedMotion}
         hidePassedLines={hidePassedLines}
         isPlaying={isPlaying}
         lyricMotionSuspended={lyricMotionSuspended}
         lyricFrameSuspended={lyricFrameSuspended}
         lyricPlayerRef={lyricPlayerRef}
-        onLyricLineClick={clickSeekEnabled ? handleLyricClick : undefined}
+        onLyricLineClick={clickSeekActive ? handleLyricClick : undefined}
       />
     </div>
   )
