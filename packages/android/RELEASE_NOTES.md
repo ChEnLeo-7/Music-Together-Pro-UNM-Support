@@ -2,6 +2,13 @@
 
 本版本提供使用持久正式密钥签名的 Android Release APK，可覆盖安装后续版本。
 
+### 本次更新
+
+- 网页重载后继续恢复正在播放歌曲的服务端时间位置，暂停歌曲保持暂停位置。
+- 修复 Android 调整进度时进度条短暂跳回旧位置的问题。
+- Android 播放器支持隐藏状态栏和导航栏的沉浸式全屏。
+- 移动端封面切换歌词时，标题和作者使用平滑的 Apple 风格非线性动效。
+
 ### 安全与可靠性
 
 - 原生 Bridge 只连接用户在 Activity 中确认的服务器，页面无法指定 Cookie 域或 Socket.IO 目标。
@@ -26,6 +33,11 @@
 This release provides an Android Release APK signed with a persistent production key, enabling in-place upgrades for future releases.
 
 ### Security and reliability
+
+- Reload recovery resumes from the server-authoritative position, while paused tracks remain paused at their saved position.
+- Fixed the Android progress bar briefly jumping back to the previous position during a seek.
+- Added immersive player fullscreen that hides the status and navigation bars.
+- Added a smooth Apple-style nonlinear title and artist transition when switching between cover and lyrics on mobile.
 
 - The native bridge only connects to the server approved in the Activity; pages can no longer choose the Cookie domain or Socket.IO target.
 - Fixed rejoin-token contention between the WebView and native playback service in password-protected rooms.
