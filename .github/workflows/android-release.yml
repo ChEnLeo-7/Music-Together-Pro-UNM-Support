@@ -62,6 +62,8 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
       - name: Test Android sync and compile debug variant
         working-directory: packages/android
+        env:
+          GRADLE_OPTS: "-Xmx2g -XX:MaxMetaspaceSize=768m -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process"
         run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --max-workers=2
 
   release:
@@ -98,7 +100,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process
+          GRADLE_OPTS: "-Xmx2g -XX:MaxMetaspaceSize=768m -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process"
         run: gradle :app:testReleaseUnitTest :app:assembleRelease --no-daemon --max-workers=2 --stacktrace
 
       - name: Name release APK
