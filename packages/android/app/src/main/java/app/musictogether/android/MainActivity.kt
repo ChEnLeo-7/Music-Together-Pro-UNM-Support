@@ -57,7 +57,13 @@ class MainActivity : ComponentActivity() {
   @SuppressLint("SetJavaScriptEnabled")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    showServerPicker()
+    val savedUrl = savedInstanceState?.getString(STATE_URL)
+    val savedServer = getSharedPreferences(PREFERENCES, MODE_PRIVATE).getString(SERVER_URL, null)
+    if (!savedUrl.isNullOrBlank() && !savedServer.isNullOrBlank()) {
+      openServer(savedServer, savedUrl)
+    } else {
+      showServerPicker()
+    }
 
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
@@ -71,7 +77,7 @@ class MainActivity : ComponentActivity() {
     })
   }
 
-  private fun openServer(serverUrl: String) {
+  private fun openServer(serverUrl: String, initialUrl: String = serverUrl) {
     getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(SERVER_URL, serverUrl).apply()
     requestNotificationPermission()
     webView?.destroy()
@@ -81,32 +87,19 @@ class MainActivity : ComponentActivity() {
       settings.mediaPlaybackRequiresUserGesture = false
       settings.userAgentString = "${settings.userAgentString} MusicTogetherAndroid/1"
       webViewClient = object : WebViewClient() {
-        private var trusted = Uri.parse(serverUrl)
-        private var initialNavigation = true
+        private val trusted = Uri.parse(serverUrl)
 
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
           val target = request?.url ?: return true
           if (!request.isForMainFrame) return false
-          val sameOrigin = sameOrigin(target, trusted)
-          if (sameOrigin) return false
-          if (target.isHttpOrHttps() && (initialNavigation || request.isRedirect)) {
-            trusted = target
-            return false
-          }
+          if (sameOrigin(target, trusted)) return false
           runCatching { startActivity(Intent(Intent.ACTION_VIEW, target)) }
           return true
         }
-
-        override fun onPageFinished(view: WebView?, url: String?) {
-          super.onPageFinished(view, url)
-          val finalUri = url?.let(Uri::parse)
-          if (finalUri?.isHttpOrHttps() == true) trusted = finalUri
-          initialNavigation = false
-        }
       }
       webChromeClient = WebChromeClient()
-      addJavascriptInterface(PlaybackBridge(this@MainActivity), "MusicTogetherAndroid")
-      loadUrl(serverUrl)
+      addJavascriptInterface(PlaybackBridge(this@MainActivity, serverUrl), "MusicTogetherAndroid")
+      loadUrl(if (sameOrigin(Uri.parse(initialUrl), Uri.parse(serverUrl))) initialUrl else serverUrl)
     }
     setSafeContent(webView ?: return)
   }
@@ -269,10 +262,21 @@ class MainActivity : ComponentActivity() {
       IntentFilter(PlaybackService.ACTION_PLAYBACK_EVENT),
       ContextCompat.RECEIVER_NOT_EXPORTED,
     )
+    dispatchPlaybackSnapshot()
+  }
+
+  private fun dispatchPlaybackSnapshot() {
+    val payload = JSONObject(PlaybackService.snapshot.toJson()).put("type", "snapshot").toString()
+    webView?.post {
+      webView?.evaluateJavascript(
+        "window.dispatchEvent(new CustomEvent('music-together-native-playback',{detail:$payload}))",
+        null,
+      )
+    }
   }
 
   override fun onStop() {
-    unregisterReceiver(playbackEvents)
+    runCatching { unregisterReceiver(playbackEvents) }
     super.onStop()
   }
 
@@ -346,13 +350,18 @@ class MainActivity : ComponentActivity() {
     ViewCompat.requestApplyInsets(root)
   }
 
-  private inner class PlaybackBridge(private val context: Context) {
+  private inner class PlaybackBridge(
+    private val context: Context,
+    private val approvedServerUrl: String,
+  ) {
     @JavascriptInterface
     fun configureSession(config: String) {
-      val json = JSONObject(config)
-      val cookie = CookieManager.getInstance().getCookie(json.getString("serverUrl")) ?: ""
+      val json = runCatching { JSONObject(config) }.getOrNull() ?: return
+      if (!json.has("roomId") || !json.has("userId") || !json.has("nickname")) return
+      json.put("serverUrl", approvedServerUrl)
+      val cookie = CookieManager.getInstance().getCookie(approvedServerUrl) ?: ""
       send(PlaybackService.ACTION_CONFIGURE) {
-        putExtra(PlaybackService.EXTRA_CONFIG, config)
+        putExtra(PlaybackService.EXTRA_CONFIG, json.toString())
         putExtra(PlaybackService.EXTRA_COOKIE, cookie)
       }
     }
@@ -381,6 +390,7 @@ class MainActivity : ComponentActivity() {
     }
     @JavascriptInterface fun getRate(): Double = PlaybackService.snapshot.rate.toDouble()
     @JavascriptInterface fun getTrackId(): String = PlaybackService.snapshot.trackId
+    @JavascriptInterface fun getPlaybackSnapshot(): String = PlaybackService.snapshot.toJson()
     @JavascriptInterface fun releaseSource(source: String) = send(PlaybackService.ACTION_RELEASE_SOURCE) {
       putExtra(PlaybackService.EXTRA_SOURCE, source)
     }

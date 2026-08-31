@@ -4,7 +4,6 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { usePlayerStore } from '@/stores/playerStore'
 import { useRoomStore } from '@/stores/roomStore'
 import { useSocketContext } from '@/providers/SocketProvider'
 import type { MusicSource, Track } from '@music-together/shared'
@@ -16,6 +15,7 @@ import { AbilityContext } from '@/providers/AbilityProvider'
 import { ArrowUpToLine, ChevronDown, ChevronUp, ListX, Music, Play, Search, Trash2, User, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
+import { PLATFORM_SHORT_LABELS } from '@/lib/platform'
 
 const EMPTY_QUEUE: Track[] = []
 const DESKTOP_ROW_HEIGHT = 64
@@ -154,11 +154,11 @@ const QueueItem = memo(function QueueItem({
           {track.source && SOURCE_STYLE[track.source] && (
             <span
               className={cn(
-                'absolute -bottom-1 -right-1 rounded px-0.5 text-[8px] font-bold leading-tight ring-1',
+                'absolute -bottom-1 -right-1 whitespace-nowrap rounded px-0.5 text-[8px] font-bold leading-tight ring-1',
                 SOURCE_STYLE[track.source].className,
               )}
             >
-              {t(SOURCE_STYLE[track.source].labelKey)}
+              {PLATFORM_SHORT_LABELS[track.source]}
             </span>
           )}
         </div>
@@ -219,7 +219,7 @@ const QueueItem = memo(function QueueItem({
 export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQueue, onClearQueue }: QueueDrawerProps) {
   const t = useI18n((s) => s.t)
   const queue = useRoomStore((s) => s.room?.queue ?? EMPTY_QUEUE)
-  const currentTrack = usePlayerStore((s) => s.currentTrack)
+  const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   const { socket } = useSocketContext()
   const isMobile = useIsMobile()
   const hasHover = useHasHover()

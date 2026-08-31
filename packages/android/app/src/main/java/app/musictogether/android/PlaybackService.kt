@@ -32,7 +32,16 @@ data class PlaybackSnapshot(
   val volume: Float = 0.8f,
   val rate: Float = 1f,
   val trackId: String = "",
-)
+) {
+  fun toJson(): String = JSONObject().apply {
+    put("position", positionMs / 1000.0)
+    put("duration", durationMs / 1000.0)
+    put("isPlaying", isPlaying)
+    put("volume", volume)
+    put("rate", rate)
+    put("trackId", trackId)
+  }.toString()
+}
 
 class PlaybackService : MediaSessionService(), Player.Listener {
   private lateinit var player: ExoPlayer
@@ -63,9 +72,9 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   private var serverAnchorTime = 0L
   private var monotonicAnchorTime = 0L
   private var lastServerTime = 0L
-  private var mediaSessionSeekPending = false
   private var smoothedDriftSeconds = 0.0
   private var lastNtpRefreshAt = 0L
+  private var lastNtpRttMs = 0L
   private val syncTicker = object : Runnable {
     override fun run() {
       val config = sessionConfig
@@ -88,51 +97,6 @@ class PlaybackService : MediaSessionService(), Player.Listener {
         }
       }
       handler.postDelayed(this, SYNC_INTERVAL_MS)
-    }
-  }
-
-  private val mediaSessionCallback = object : MediaSession.Callback {
-    override fun onPlayerCommandRequest(
-      session: MediaSession,
-      controller: MediaSession.ControllerInfo,
-      playerCommand: Int,
-    ): Int {
-      when (playerCommand) {
-        Player.COMMAND_PLAY_PAUSE -> {
-          emitRoomCommand(if (player.playWhenReady || player.isPlaying) EVENT_PLAYER_PAUSE else EVENT_PLAYER_PLAY)
-          return Player.COMMAND_INVALID
-        }
-        Player.COMMAND_SEEK_TO_NEXT,
-        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-        -> {
-          emitRoomCommand(EVENT_PLAYER_NEXT)
-          return Player.COMMAND_INVALID
-        }
-        Player.COMMAND_SEEK_TO_PREVIOUS,
-        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-        -> {
-          emitRoomCommand(EVENT_PLAYER_PREV)
-          return Player.COMMAND_INVALID
-        }
-      }
-      if (playerCommand == Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM ||
-        playerCommand == Player.COMMAND_SEEK_IN_CURRENT_WINDOW ||
-        playerCommand == Player.COMMAND_SEEK_BACK ||
-        playerCommand == Player.COMMAND_SEEK_FORWARD
-      ) {
-        mediaSessionSeekPending = true
-      }
-      return playerCommand
-    }
-
-    override fun onPlayerInteractionFinished(
-      session: MediaSession,
-      controller: MediaSession.ControllerInfo,
-      playerCommands: Player.Commands,
-    ) {
-      if (!mediaSessionSeekPending) return
-      mediaSessionSeekPending = false
-      emitRoomSeek(player.currentPosition / 1000.0)
     }
   }
 
@@ -166,6 +130,10 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (intent?.action == null) {
+      if (sessionConfig == null) stopSelf(startId)
+      return START_NOT_STICKY
+    }
     when (intent?.action) {
       ACTION_CONFIGURE -> configure(
         intent.getStringExtra(EXTRA_CONFIG).orEmpty(),
@@ -188,7 +156,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       ACTION_RELEASE_SESSION -> releaseSession()
     }
     updateSnapshot()
-    return START_STICKY
+    return START_NOT_STICKY
   }
 
   private fun configure(rawConfig: String, cookie: String) {
@@ -253,7 +221,10 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     val activeSocket = socket ?: return
     val id = ++ntpPingId
     ntpPings[id] = SystemClock.elapsedRealtime() to System.currentTimeMillis()
-    activeSocket.emit(EVENT_NTP_PING, JSONObject().put("clientPingId", id))
+    activeSocket.emit(EVENT_NTP_PING, JSONObject().apply {
+      put("clientPingId", id)
+      if (lastNtpRttMs > 0) put("lastRttMs", lastNtpRttMs)
+    })
   }
 
   private fun handleNtpPong(payload: JSONObject?) {
@@ -262,6 +233,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     val receivedAt = SystemClock.elapsedRealtime()
     val rtt = receivedAt - sent.first
     if (rtt !in 0..MAX_NTP_RTT_MS) return
+    lastNtpRttMs = rtt
     val serverResponse = payload.optLong("serverTime")
     val serverReceive = payload.optLong("serverReceiveTime", 0L)
     val serverSend = payload.optLong("serverSendTime", 0L)
@@ -381,7 +353,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   private fun prepareTrack(track: JSONObject, revision: Long) {
     val source = resolveSource(track.optString("streamUrl"))
     if (source.isBlank()) return
-    preparedPlayer?.release()
+    releasePreparedPlayer()
     preparedSource = source
     preparedTrackId = track.optString("id")
     preparedPlayer = ExoPlayer.Builder(this).build().also { preload ->
@@ -395,7 +367,14 @@ class PlaybackService : MediaSessionService(), Player.Listener {
           })
         }
       })
-      preload.setMediaItem(MediaItem.Builder().setUri(source).setMediaId(preparedTrackId.orEmpty()).build())
+      val metadata = parseMetadata(track.toString())
+      preload.volume = player.volume
+      preload.setPlaybackSpeed(player.playbackParameters.speed)
+      preload.setMediaItem(MediaItem.Builder()
+        .setUri(source)
+        .setMediaId(preparedTrackId.orEmpty())
+        .setMediaMetadata(metadata.mediaMetadata)
+        .build())
       preload.prepare()
       preload.playWhenReady = false
     }
@@ -408,8 +387,13 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     autoPlay: Boolean,
   ): Boolean {
     val preload = preparedPlayer ?: return false
-    if (preparedRevision != revision || preparedTrackId != track.optString("id")) return false
+    if (preparedRevision != revision || preparedTrackId != track.optString("id")) {
+      releasePreparedPlayer()
+      return false
+    }
 
+    val volume = player.volume
+    val rate = player.playbackParameters.speed
     player.removeListener(this)
     player.release()
     player = preload
@@ -419,6 +403,8 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     preparedSource = null
     preparedTrackId = null
     player.addListener(this)
+    player.volume = volume
+    player.setPlaybackSpeed(rate)
     mediaSession.setPlayer(createSessionPlayer(player))
     seekLocally(positionSeconds)
     player.playWhenReady = autoPlay
@@ -462,23 +448,26 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       smoothedDriftSeconds = 0.0
       return
     }
-    val expected = payload.optDouble("currentTime", 0.0) + if (serverIsPlaying) {
-      ((serverTime() - payload.optLong("serverTimestamp")) / 1000.0).coerceIn(0.0, MAX_SYNC_NETWORK_DELAY_S)
-    } else 0.0
-    val drift = player.currentPosition / 1000.0 - expected
-    smoothedDriftSeconds = DRIFT_SMOOTH_ALPHA * drift + (1 - DRIFT_SMOOTH_ALPHA) * smoothedDriftSeconds
-    val absoluteDrift = kotlin.math.abs(smoothedDriftSeconds)
-    if (absoluteDrift >= DRIFT_HARD_SEEK_SECONDS) {
-      seekLocally(expected)
-      player.setPlaybackSpeed(1f)
-      smoothedDriftSeconds = 0.0
-    } else if (absoluteDrift >= DRIFT_DEAD_ZONE_SECONDS) {
-      val targetSpeed = (1.0 - smoothedDriftSeconds * DRIFT_RATE_KP)
-        .coerceIn(1.0 - MAX_RATE_ADJUSTMENT, 1.0 + MAX_RATE_ADJUSTMENT)
-      player.setPlaybackSpeed(targetSpeed.toFloat())
-    } else {
-      player.setPlaybackSpeed(1f)
-    }
+    val expected = PlaybackSyncMath.expectedPosition(
+      payload.optDouble("currentTime", 0.0),
+      payload.optLong("serverTimestamp"),
+      serverTime(),
+      serverIsPlaying,
+      MAX_SYNC_NETWORK_DELAY_S,
+    )
+    val correction = PlaybackSyncMath.correction(
+      player.currentPosition / 1000.0,
+      expected,
+      smoothedDriftSeconds,
+      DRIFT_SMOOTH_ALPHA,
+      DRIFT_DEAD_ZONE_SECONDS,
+      DRIFT_HARD_SEEK_SECONDS,
+      DRIFT_RATE_KP,
+      MAX_RATE_ADJUSTMENT,
+    )
+    smoothedDriftSeconds = correction.nextSmoothedDriftSeconds
+    correction.seekToSeconds?.let(::seekLocally)
+    player.setPlaybackSpeed(correction.playbackRate)
   }
 
   private fun acceptRevision(revision: Long): Boolean {
@@ -494,17 +483,45 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     pendingPlayback = Runnable {
       pendingPlayback = null
       if (revision != latestPlaybackRevision || pendingRevision != revision) return@Runnable
+      if (!isClockCalibrated()) {
+        scheduleWhenClockReady(serverTimeToExecute, revision, action)
+        return@Runnable
+      }
       val remaining = serverTimeToExecute - serverTime()
       if (remaining > 0) {
         scheduleAt(serverTimeToExecute, revision, action)
         return@Runnable
       }
       action()
-    }.also { handler.postDelayed(it, (serverTimeToExecute - serverTime()).coerceAtLeast(0L)) }
+    }.also {
+      val delay = if (isClockCalibrated()) (serverTimeToExecute - serverTime()).coerceAtLeast(0L) else 0L
+      handler.postDelayed(it, delay)
+    }
   }
 
-  private fun seekLocally(positionSeconds: Double) {
-    player.seekTo((positionSeconds * 1000).toLong().coerceAtLeast(0))
+  private fun scheduleWhenClockReady(serverTimeToExecute: Long, revision: Long, action: () -> Unit) {
+    val startedAt = SystemClock.elapsedRealtime()
+    fun retry() {
+      if (revision != latestPlaybackRevision || pendingRevision != revision) return
+      if (isClockCalibrated()) {
+        scheduleAt(serverTimeToExecute, revision, action)
+      } else if (SystemClock.elapsedRealtime() - startedAt >= NTP_CALIBRATION_GRACE_MS) {
+        pendingPlayback = null
+        action()
+      } else {
+        pendingPlayback = Runnable(::retry).also { handler.postDelayed(it, NTP_CALIBRATION_RETRY_MS) }
+      }
+    }
+    retry()
+  }
+
+  private fun isClockCalibrated() = serverAnchorTime != 0L && monotonicAnchorTime != 0L
+
+  private fun seekLocally(positionSeconds: Double, notifyWeb: Boolean = false) {
+    val positionMs = (positionSeconds * 1000).toLong().coerceAtLeast(0)
+    player.seekTo(positionMs)
+    updateSnapshot()
+    if (notifyWeb) sendPlaybackEvent("seek", position = positionMs)
   }
 
   private fun loadTrack(track: JSONObject, positionSeconds: Double, autoPlay: Boolean) {
@@ -529,7 +546,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   ) {
     if (source.isBlank()) return
     if (source == currentSource) {
-      if (positionSeconds > 0) player.seekTo((positionSeconds * 1000).toLong())
+      if (positionSeconds > 0) seekLocally(positionSeconds)
       if (autoPlay) player.play()
       return
     }
@@ -555,16 +572,20 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     // WebView may unload a stale wrapper after the service has already received
     // the next track over its own socket. Never release the newer native source.
     if (source.isNotBlank() && source != currentSource) return
+    pendingPlayback?.let(handler::removeCallbacks)
+    pendingPlayback = null
+    player.stop()
+    player.clearMediaItems()
+    currentSource = null
+    currentTrackId = null
+    updateSnapshot()
+    stopForeground(STOP_FOREGROUND_REMOVE)
   }
 
   private fun releaseSession() {
     pendingPlayback?.let(handler::removeCallbacks)
     pendingPlayback = null
-    preparedPlayer?.release()
-    preparedPlayer = null
-    preparedSource = null
-    preparedTrackId = null
-    preparedRevision = -1L
+    releasePreparedPlayer()
     roomStateRecovery?.let(handler::removeCallbacks)
     roomStateRecovery = null
     socket?.emit(EVENT_ROOM_LEAVE)
@@ -580,11 +601,20 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     monotonicAnchorTime = 0
     lastServerTime = 0
     smoothedDriftSeconds = 0.0
+    lastNtpRttMs = 0
     player.stop()
     player.clearMediaItems()
     stopForeground(STOP_FOREGROUND_REMOVE)
     updateSnapshot()
     stopSelf()
+  }
+
+  private fun releasePreparedPlayer() {
+    preparedPlayer?.release()
+    preparedPlayer = null
+    preparedSource = null
+    preparedTrackId = null
+    preparedRevision = -1L
   }
 
   private fun normalizeMimeType(value: String): String? = when {
@@ -631,7 +661,12 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     ))
     .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+    .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+    .setPublicVersion(NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+      .setSmallIcon(R.drawable.ic_notification)
+      .setContentTitle(getString(R.string.playback_notification_title))
+      .setContentText(getString(R.string.playback_notification_connecting))
+      .build())
     .setOnlyAlertOnce(true)
     .setOngoing(true)
     .build()
@@ -671,12 +706,18 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     sendPlaybackEvent("error", message = error.message)
   }
 
-  private fun sendPlaybackEvent(type: String, duration: Long? = null, message: String? = null) {
+  private fun sendPlaybackEvent(
+    type: String,
+    duration: Long? = null,
+    position: Long? = null,
+    message: String? = null,
+  ) {
     val payload = JSONObject().apply {
       put("type", type)
       put("source", currentSource)
       put("trackId", currentTrackId)
       duration?.let { put("duration", it / 1000.0) }
+      position?.let { put("position", it / 1000.0) }
       message?.let { put("message", it) }
     }
     sendBroadcast(Intent(ACTION_PLAYBACK_EVENT).setPackage(packageName).putExtra(EXTRA_EVENT, payload.toString()))
@@ -791,6 +832,8 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     private const val DRIFT_SMOOTH_ALPHA = 0.2
     private const val MAX_RATE_ADJUSTMENT = 0.02
     private const val MAX_SYNC_NETWORK_DELAY_S = 5.0
+    private const val NTP_CALIBRATION_GRACE_MS = 2_000L
+    private const val NTP_CALIBRATION_RETRY_MS = 50L
 
     @Volatile var snapshot = PlaybackSnapshot()
   }

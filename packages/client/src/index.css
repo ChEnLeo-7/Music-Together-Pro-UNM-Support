@@ -168,11 +168,11 @@
 /* ===== AMLL Lyric Player overrides ===== */
 .amll-container {
   color: var(--foreground);
-  opacity: 0.9;
+  opacity: 1;
 }
 
-/* 翻译歌词子行（lyricSubLine 中第一个） */
-.amll-container [class*='lyricSubLine']:first-of-type {
+/* AMLL 固定按主歌词、翻译、罗马音的顺序创建三个子行。 */
+.amll-container [class*='lyricMainLine'] + [class*='lyricSubLine'] {
   font-size: max(var(--amll-translated-font-size, 0.65em), 10px) !important;
 }
 
@@ -197,29 +197,4 @@
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
-}
-
-.amll-container.amll-spring-off .mt-lyric-inactive:not(.mt-lyric-line-hidden) {
-  opacity: 0.24 !important;
-  filter: none !important;
-}
-
-.amll-container.amll-spring-off .mt-lyric-current:not(.mt-lyric-line-hidden) {
-  opacity: 1 !important;
-  filter: none !important;
-}
-
-.amll-container.amll-spring-off .mt-lyric-inactive:not(.mt-lyric-line-hidden) [class*='lyricSubLine'],
-.amll-container.amll-spring-off .mt-lyric-inactive:not(.mt-lyric-line-hidden) [class*='romanWord'] {
-  opacity: 0.32 !important;
-}
-
-.amll-container.amll-spring-off .mt-lyric-current:not(.mt-lyric-line-hidden) [class*='lyricSubLine'],
-.amll-container.amll-spring-off .mt-lyric-current:not(.mt-lyric-line-hidden) [class*='romanWord'] {
-  opacity: 0.68 !important;
-}
-
-.amll-container .mt-lyric-subline-hidden {
-  opacity: 0 !important;
-  visibility: hidden !important;
 }

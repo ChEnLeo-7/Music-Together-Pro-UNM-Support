@@ -302,6 +302,7 @@ export function usePlayerSync(
         // Confirmed: large sustained drift — hard seek
         hardSeekCountRef.current = 0
         howlRef.current.seek(expectedTime)
+        setCurrentTime(expectedTime)
         if (howlRef.current.rate() !== 1) howlRef.current.rate(1)
         smoothedDriftRef.current = 0
         emaColdStartRef.current = true

@@ -139,7 +139,7 @@ export function useMediaSession({ play, pause, next, prev, seek }: MediaSessionC
   }, [canPlay, canSeek, canNext, canPrev, canVote, startVote])
 
   // Metadata — current track info for the OS notification bar.
-  const currentTrack = usePlayerStore((s) => s.currentTrack)
+  const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
     const ms = navigator.mediaSession

@@ -8,6 +8,7 @@ import { SERVER_URL } from '@/lib/config'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { usePlayerStore } from '@/stores/playerStore'
+import { useRoomStore } from '@/stores/roomStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 import { BackgroundRender } from '@applemusic-like-lyrics/react'
@@ -77,7 +78,7 @@ export function AudioPlayer({
   onFullscreenChange,
   fullscreenSignal,
 }: AudioPlayerProps) {
-  const currentTrack = usePlayerStore((s) => s.currentTrack)
+  const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   const setLyricFrameSuspended = usePlayerStore((s) => s.setLyricFrameSuspended)
   const { activeVote, castVote, startVote } = useVote()
   const bgFps = useSettingsStore((s) => s.bgFps)
@@ -207,7 +208,6 @@ export function AudioPlayer({
   const songInfoProps = {
     onOpenChat: runWithInteraction(onOpenChat),
     chatUnreadCount,
-    disableLayoutAnimation: false,
   } as const
   const disableMobileLayoutAnimation = false
 

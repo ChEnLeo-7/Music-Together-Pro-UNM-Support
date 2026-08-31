@@ -13,7 +13,6 @@ import { getAudioQualityOptionsForSource, platformLabel, sourceToPriority } from
 import { getMedianRTT } from '@/lib/clockSync'
 import { PLATFORM_ACTIVE, PLATFORM_TEXT } from '@/lib/platform'
 import { useSocketContext } from '@/providers/SocketProvider'
-import { usePlayerStore } from '@/stores/playerStore'
 import { useAccountStore } from '@/stores/accountStore'
 import { useRoomStore } from '@/stores/roomStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -47,7 +46,9 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
   const userCount = useRoomStore((s) => s.room?.users.filter((user) => user.online !== false).length ?? 0)
   const audioQuality = useRoomStore((s) => s.room?.currentTrack?.streamQuality ?? s.room?.audioQuality)
   const availableStreamQualities = useRoomStore((s) => s.room?.currentTrack?.availableStreamQualities)
-  const streamSource = usePlayerStore((s) => (s.currentTrack?.streamSource ?? s.currentTrack?.source) as StreamSource | undefined)
+  const streamSource = useRoomStore(
+    (s) => (s.room?.currentTrack?.streamSource ?? s.room?.currentTrack?.source) as StreamSource | undefined,
+  )
   const hideSourcePill = useSettingsStore((s) => s.hidePlayerQualityButton)
   const auth = useAuth()
   const { socket, isConnected } = useSocketContext()

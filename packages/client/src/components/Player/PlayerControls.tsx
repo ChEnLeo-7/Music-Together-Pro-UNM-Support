@@ -10,7 +10,10 @@ import type { PlayMode, VoteAction } from '@music-together/shared'
 import { EVENTS, TIMING } from '@music-together/shared'
 import { ArrowRightToLine, ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { memo, useContext, useEffect, useRef, useState } from 'react'
+import { memo, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+
+/** Must match SongInfoBar so both modules scale identically with the cover. */
+const DESIGN_WIDTH = 300
 
 const PLAY_MODE_CYCLE: PlayMode[] = ['sequential', 'loop-all', 'loop-one', 'shuffle']
 
@@ -44,7 +47,7 @@ export const PlayerControls = memo(function PlayerControls({
   const isPlaying = usePlayerStore((s) => s.isPlaying)
   const currentTime = usePlayerStore((s) => s.currentTime)
   const duration = usePlayerStore((s) => s.duration)
-  const currentTrack = usePlayerStore((s) => s.currentTrack)
+  const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   const queueLength = useRoomStore((s) => s.room?.queue?.length ?? 0)
   const playMode = useRoomStore((s) => s.room?.playMode ?? 'sequential')
   const ability = useContext(AbilityContext)
@@ -59,7 +62,22 @@ export const PlayerControls = memo(function PlayerControls({
   const seekDurationRef = useRef(0)
   const cooldownTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const playCooldownTimer = useRef<ReturnType<typeof setTimeout>>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLDivElement>(null)
   const disabled = !currentTrack
+
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current
+    const inner = innerRef.current
+    if (!wrapper || !inner) return
+    const update = () => {
+      inner.style.setProperty('zoom', String(wrapper.clientWidth / DESIGN_WIDTH))
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [])
 
   // Clean up cooldown timers on unmount
   useEffect(() => {
@@ -112,8 +130,8 @@ export const PlayerControls = memo(function PlayerControls({
   const ModeIcon = modeConfig.icon
 
   return (
-    <div className="w-full">
-      <div className="flex w-full flex-col gap-6">
+    <div ref={wrapperRef} className="w-full">
+      <div ref={innerRef} className="flex flex-col gap-6" style={{ width: DESIGN_WIDTH }}>
         {/* 1. Progress bar */}
         <div className="flex w-full flex-col gap-1">
           <Slider

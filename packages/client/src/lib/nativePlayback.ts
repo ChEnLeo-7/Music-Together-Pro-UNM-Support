@@ -1,11 +1,24 @@
 import type { Track } from '@music-together/shared'
 
 export interface NativePlaybackEvent {
-  type: 'load' | 'play' | 'pause' | 'end' | 'error'
+  type: 'load' | 'play' | 'pause' | 'seek' | 'snapshot' | 'end' | 'error'
   trackId?: string
   source?: string
   duration?: number
+  position?: number
   message?: string
+  isPlaying?: boolean
+  volume?: number
+  rate?: number
+}
+
+export interface NativePlaybackSnapshot {
+  position: number
+  duration: number
+  isPlaying: boolean
+  volume: number
+  rate: number
+  trackId: string
 }
 
 interface NativePlaybackBridge {
@@ -22,6 +35,7 @@ interface NativePlaybackBridge {
   setRate(rate: number): void
   getRate(): number
   getTrackId(): string
+  getPlaybackSnapshot(): string
   releaseSource(source: string): void
   releaseSession(): void
 }
@@ -39,7 +53,6 @@ export function getNativePlaybackBridge(): NativePlaybackBridge | null {
 }
 
 export function configureNativePlayback(config: {
-  serverUrl: string
   roomId: string
   userId: string
   nickname: string

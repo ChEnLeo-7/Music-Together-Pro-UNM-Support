@@ -4,10 +4,10 @@ import { Slider } from '@/components/ui/slider'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { MarqueeText } from '@/components/ui/marquee-text'
 import { usePlayerStore } from '@/stores/playerStore'
+import { useRoomStore } from '@/stores/roomStore'
 import { MessageSquare, Volume2, VolumeX } from 'lucide-react'
 import { motion } from 'motion/react'
 import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { LAYOUT_TRANSITION, SPRING } from './constants'
 
 /** Must match PlayerControls.DESIGN_WIDTH so zoom factors are identical */
 const DESIGN_WIDTH = 300
@@ -60,11 +60,10 @@ function VolumeControl({
 interface SongInfoBarProps {
   onOpenChat: () => void
   chatUnreadCount: number
-  disableLayoutAnimation?: boolean
 }
 
-export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCount, disableLayoutAnimation = false }: SongInfoBarProps) {
-  const currentTrack = usePlayerStore((s) => s.currentTrack)
+export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCount }: SongInfoBarProps) {
+  const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   const volume = usePlayerStore((s) => s.volume)
   const setVolume = usePlayerStore((s) => s.setVolume)
   const prevVolumeRef = useRef(0.8)
@@ -97,25 +96,15 @@ export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCou
   return (
     <div ref={wrapperRef} className="w-full">
       <div ref={innerRef} className="flex w-full items-end gap-2" style={{ width: DESIGN_WIDTH }}>
-        {/* Left: song title + artist — layoutId pairs with NowPlaying compact for shared animation */}
-        <motion.div layoutId={disableLayoutAnimation ? undefined : 'song-info'} transition={LAYOUT_TRANSITION} className="min-w-0 flex-1">
-          <motion.div
-            initial={{ fontSize: 18 }}
-            animate={{ fontSize: 20 }}
-            transition={SPRING}
-            className="font-bold leading-tight text-white/90"
-          >
+        {/* Left: static layout matches the controls and avoids nested layout/font animations. */}
+        <div className="min-w-0 flex-1">
+          <div className="text-xl font-bold leading-tight text-white/90">
             <MarqueeText>{currentTrack?.title ?? '暂无歌曲'}</MarqueeText>
-          </motion.div>
-          <motion.div
-            initial={{ fontSize: 16 }}
-            animate={{ fontSize: 14 }}
-            transition={SPRING}
-            className="text-white/50"
-          >
+          </div>
+          <div className="text-sm text-white/50">
             <MarqueeText>{currentTrack ? currentTrack.artist.join(' / ') : '点击搜索添加歌曲到队列'}</MarqueeText>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
 
         {/* Right-bottom: volume + chat buttons (always visible, aligned to bottom) */}
         <div className="flex shrink-0 items-center">

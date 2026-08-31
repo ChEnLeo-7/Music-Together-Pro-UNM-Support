@@ -2,9 +2,10 @@ import { create } from 'zustand'
 import type { Track } from '@music-together/shared'
 import type { LyricLine as AMLLLyricLine } from '@applemusic-like-lyrics/core'
 import { storage } from '@/lib/storage'
+import { publishLyricTime } from '@/lib/lyricClock'
 
 interface PlayerStore {
-  currentTrack: Track | null
+  loadedTrack: Track | null
   isPlaying: boolean
   currentTime: number
   lyricDisplayTimeMs: number
@@ -21,9 +22,9 @@ interface PlayerStore {
   syncDrift: number
   localSeek: ((time: number) => void) | null
 
-  setCurrentTrack: (track: Track | null) => void
+  setLoadedTrack: (track: Track | null) => void
   setIsPlaying: (playing: boolean) => void
-  setCurrentTime: (time: number) => void
+  setCurrentTime: (time: number, isSeek?: boolean) => void
   setLyricDisplayTimeMs: (timeMs: number) => void
   setLyricMotionSuspended: (suspended: boolean) => void
   setLyricFrameSuspended: (suspended: boolean) => void
@@ -39,7 +40,7 @@ interface PlayerStore {
 }
 
 export const usePlayerStore = create<PlayerStore>((set) => ({
-  currentTrack: null,
+  loadedTrack: null,
   isPlaying: false,
   currentTime: 0,
   lyricDisplayTimeMs: 0,
@@ -56,9 +57,13 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
   syncDrift: 0,
   localSeek: null,
 
-  setCurrentTrack: (track) => set({ currentTrack: track }),
+  setLoadedTrack: (track) => set({ loadedTrack: track }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
-  setCurrentTime: (time) => set({ currentTime: time, lyricDisplayTimeMs: Math.round(time * 1000) }),
+  setCurrentTime: (time, isSeek = true) => {
+    const timeMs = Math.round(time * 1000)
+    publishLyricTime(timeMs, isSeek)
+    set({ currentTime: time, lyricDisplayTimeMs: timeMs })
+  },
   setLyricDisplayTimeMs: (timeMs) => set({ lyricDisplayTimeMs: Math.max(0, Math.round(timeMs)) }),
   setLyricMotionSuspended: (suspended) => set({ lyricMotionSuspended: suspended }),
   setLyricFrameSuspended: (suspended) => set({ lyricFrameSuspended: suspended }),
@@ -74,9 +79,10 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
   setLyricLoading: (loading) => set({ lyricLoading: loading }),
   setSyncDrift: (drift) => set({ syncDrift: drift }),
   setLocalSeek: (seek) => set({ localSeek: seek }),
-  reset: () =>
+  reset: () => {
+    publishLyricTime(0, true)
     set({
-      currentTrack: null,
+      loadedTrack: null,
       isPlaying: false,
       currentTime: 0,
       lyricDisplayTimeMs: 0,
@@ -90,5 +96,6 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
       ttmlLines: null,
       lyricLoading: false,
       syncDrift: 0,
-    }),
+    })
+  },
 }))

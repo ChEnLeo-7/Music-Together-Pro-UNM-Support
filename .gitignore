@@ -14,3 +14,5 @@ Thumbs.db
 /packages/android/.gradle/
 /packages/android/local.properties
 /packages/android/app/build/
+*.jks
+*.keystore

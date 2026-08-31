@@ -3,6 +3,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useSocketContext } from '@/providers/SocketProvider'
 import { AbilityContext } from '@/providers/AbilityProvider'
 import { cn } from '@/lib/utils'
+import { getLyricTime, subscribeLyricTime } from '@/lib/lyricClock'
 import type { LyricLine as AMLLLyricLine, LyricLineMouseEvent } from '@applemusic-like-lyrics/core'
 import { EVENTS } from '@music-together/shared'
 import '@applemusic-like-lyrics/core/style.css'
@@ -15,8 +16,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
-  type PointerEvent,
-  type TouchEvent,
 } from 'react'
 import {
   getActiveLineIndices,
@@ -28,11 +27,7 @@ import {
 
 const FULL_SIZE_STYLE = { width: '100%', height: '100%' } as const
 const SEEK_HIGHLIGHT_EPSILON_MS = 8
-const HIDDEN_LINE_OPACITY = 0.01
-const TAP_MOVE_TOLERANCE_PX = 10
 const DUPLICATE_SEEK_SUPPRESS_MS = 600
-const SPRING_OFF_CURRENT_CLASS = 'mt-lyric-current'
-const SPRING_OFF_INACTIVE_CLASS = 'mt-lyric-inactive'
 
 interface LyricPlayerViewProps {
   amllLines: AMLLLyricLine[]
@@ -47,10 +42,6 @@ interface LyricPlayerViewProps {
   lyricFrameSuspended: boolean
   lyricPlayerRef: React.RefObject<LyricPlayerRef | null>
   onLyricLineClick?: (event: LyricLineMouseEvent) => void
-}
-
-interface AmllInternalPlayer {
-  currentLyricLineObjects?: Array<{ getElement: () => HTMLElement }>
 }
 
 function mergeLyrics(original: string, translated: string): LrcTimelineEntry[] {
@@ -90,70 +81,49 @@ function LyricPlayerView({
   lyricPlayerRef,
   onLyricLineClick,
 }: LyricPlayerViewProps) {
-  const lyricDisplayTimeMs = usePlayerStore((s) => s.lyricDisplayTimeMs)
   const shouldFreezeTime = lyricMotionSuspended || lyricFrameSuspended
-  const displayedTimeMs = lyricDisplayTimeMs
-  const springOffActiveLineKey = useMemo(
-    () => (!enableSpring ? getActiveLineIndices(amllLines, displayedTimeMs).join(',') : ''),
-    [amllLines, displayedTimeMs, enableSpring],
-  )
 
   useEffect(() => {
     const player = lyricPlayerRef.current?.lyricPlayer
     if (!player) return
+    player.setCurrentTime(getLyricTime().timeMs, true)
     void player.calcLayout(true)
   }, [amllLines, alignAnchor, alignPosition, hidePassedLines, lyricPlayerRef])
 
   useEffect(() => {
-    const player = lyricPlayerRef.current?.lyricPlayer
-    if (!player) return
-    const clearClasses = () => {
-      const objects = (player as unknown as AmllInternalPlayer).currentLyricLineObjects
-      objects?.forEach((line) => {
-        line.getElement().classList.remove(SPRING_OFF_CURRENT_CLASS, SPRING_OFF_INACTIVE_CLASS)
+    if (shouldFreezeTime) return
+
+    let attachFrame: number | null = null
+    let unsubscribe: (() => void) | null = null
+    let disposed = false
+
+    const attachClock = () => {
+      if (disposed) return
+      const player = lyricPlayerRef.current?.lyricPlayer
+      if (!player) {
+        attachFrame = requestAnimationFrame(attachClock)
+        return
+      }
+
+      const latest = getLyricTime()
+      player.setCurrentTime(latest.timeMs, true)
+      unsubscribe = subscribeLyricTime(({ timeMs, isSeek }) => {
+        player.setCurrentTime(timeMs, isSeek)
       })
     }
-    if (enableSpring) {
-      clearClasses()
-      return
-    }
-    let pendingFrame: number | null = null
-    const applyClasses = () => {
-      pendingFrame = null
-      const objects = (player as unknown as AmllInternalPlayer).currentLyricLineObjects
-      const elements =
-        objects?.map((line) => line.getElement()).filter((el): el is HTMLElement => el instanceof HTMLElement) ?? []
-      const activeIndices = new Set(
-        springOffActiveLineKey
-          .split(',')
-          .filter(Boolean)
-          .map((index) => Number.parseInt(index, 10)),
-      )
-      elements.forEach((element, index) => {
-        element.classList.toggle(SPRING_OFF_CURRENT_CLASS, activeIndices.has(index))
-        element.classList.toggle(SPRING_OFF_INACTIVE_CLASS, !activeIndices.has(index))
-      })
-    }
-    const scheduleApply = () => {
-      if (pendingFrame !== null) return
-      pendingFrame = requestAnimationFrame(applyClasses)
-    }
-    applyClasses()
-    const observer = new MutationObserver(scheduleApply)
-    observer.observe(player as unknown as Node, { childList: true })
+
+    attachClock()
     return () => {
-      observer.disconnect()
-      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)
-      clearClasses()
+      disposed = true
+      if (attachFrame !== null) cancelAnimationFrame(attachFrame)
+      unsubscribe?.()
     }
-  }, [amllLines, enableSpring, lyricPlayerRef, springOffActiveLineKey])
+  }, [lyricPlayerRef, shouldFreezeTime])
 
   return (
     <LyricPlayer
       ref={lyricPlayerRef}
       lyricLines={amllLines}
-      currentTime={displayedTimeMs}
-      isSeeking={!isPlaying || lyricMotionSuspended}
       playing={isPlaying && !shouldFreezeTime}
       alignAnchor={alignAnchor}
       alignPosition={hidePassedLines ? Math.max(0, alignPosition - 0.16) : alignPosition}
@@ -204,11 +174,6 @@ export function LyricDisplay() {
   const amllLines = ttmlLines ?? lrcAmllLines
   const hasLyrics = ttmlLines ? ttmlLines.length > 0 : lrcLines.length > 0
   const lyricPlayerRef = useRef<LyricPlayerRef | null>(null)
-  const amllContainerRef = useRef<HTMLDivElement | null>(null)
-  const touchStartRef = useRef<{ x: number; y: number; lineIndex: number } | null>(null)
-  const pendingTouchSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingAlignFrameRef = useRef<number | null>(null)
-  const lastPointerEventAtRef = useRef(0)
   const lastSeekRef = useRef<{ lineIndex: number; at: number } | null>(null)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
   const keyboardLineIndexRef = useRef(-1)
@@ -226,112 +191,6 @@ export function LyricDisplay() {
   }, [])
 
   const effectiveEnableSpring = enableSpring && !prefersReducedMotion
-
-  useEffect(() => {
-    const container = amllContainerRef.current
-    if (!container) return
-
-    const clearSubLineVisibility = () => {
-      container.querySelectorAll('.amll-lyric-player > *').forEach((line) => {
-        const lineEl = line as HTMLElement
-        lineEl.classList.remove('mt-lyric-line-hidden')
-        Array.from(line.children)
-          .slice(1)
-          .forEach((node) => {
-            ;(node as HTMLElement).classList.remove('mt-lyric-subline-hidden')
-          })
-      })
-    }
-
-    if (!hidePassedLines) {
-      clearSubLineVisibility()
-      return
-    }
-
-    let pendingFrame: number | null = null
-    let lineObserver: MutationObserver | null = null
-
-    const syncLineVisibility = (line: Element) => {
-      const lineEl = line as HTMLElement
-      const mainLineEl = line.children.item(0) as HTMLElement | null
-      const opacity = Number.parseFloat(mainLineEl?.style.opacity ?? '')
-      const lineHidden = Number.isFinite(opacity) && opacity <= HIDDEN_LINE_OPACITY
-      lineEl.classList.toggle('mt-lyric-line-hidden', lineHidden)
-      Array.from(line.children)
-        .slice(1)
-        .forEach((node) => {
-          ;(node as HTMLElement).classList.toggle('mt-lyric-subline-hidden', lineHidden)
-        })
-    }
-
-    const syncSubLineVisibility = () => {
-      pendingFrame = null
-      const player = container.querySelector('.amll-lyric-player')
-      if (!player) return
-      Array.from(player.children).forEach(syncLineVisibility)
-      lineObserver?.disconnect()
-      lineObserver = new MutationObserver((records) => {
-        records.forEach((record) => {
-          const line = record.target.parentElement
-          if (line) syncLineVisibility(line)
-        })
-      })
-      Array.from(player.children).forEach((line) => {
-        const mainLine = line.children.item(0)
-        if (mainLine) lineObserver?.observe(mainLine, { attributes: true, attributeFilter: ['style'] })
-      })
-    }
-
-    const scheduleSync = () => {
-      if (pendingFrame !== null) return
-      pendingFrame = requestAnimationFrame(syncSubLineVisibility)
-    }
-
-    scheduleSync()
-    const observer = new MutationObserver(scheduleSync)
-    observer.observe(container.querySelector('.amll-lyric-player') ?? container, { childList: true })
-    return () => {
-      observer.disconnect()
-      lineObserver?.disconnect()
-      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)
-      clearSubLineVisibility()
-    }
-  }, [amllLines, hidePassedLines])
-
-  useEffect(() => {
-    return () => {
-      if (pendingTouchSeekTimerRef.current) clearTimeout(pendingTouchSeekTimerRef.current)
-      if (pendingAlignFrameRef.current !== null) cancelAnimationFrame(pendingAlignFrameRef.current)
-    }
-  }, [])
-
-  const clearPendingTouchSeek = useCallback(() => {
-    if (!pendingTouchSeekTimerRef.current) return
-    clearTimeout(pendingTouchSeekTimerRef.current)
-    pendingTouchSeekTimerRef.current = null
-  }, [])
-
-  useEffect(() => {
-    if (clickSeekActive) return
-    touchStartRef.current = null
-    clearPendingTouchSeek()
-  }, [clearPendingTouchSeek, clickSeekActive])
-
-  const getLineIndexFromTarget = useCallback((target: EventTarget | null) => {
-    const element = target instanceof HTMLElement ? target : null
-    const objects = (lyricPlayerRef.current?.lyricPlayer as unknown as AmllInternalPlayer | undefined)
-      ?.currentLyricLineObjects
-    if (!element || !objects?.length) return -1
-    return objects.findIndex((line) => {
-      const lineElement = line.getElement()
-      return lineElement === element || lineElement.contains(element)
-    })
-  }, [])
-
-  const getLineIndexAtPoint = useCallback(
-    (x: number, y: number) => getLineIndexFromTarget(document.elementFromPoint(x, y)),
-    [getLineIndexFromTarget],
-  )
 
   const alignPlayerToLine = useCallback((timeMs: number) => {
     const player = lyricPlayerRef.current?.lyricPlayer
@@ -357,102 +216,22 @@ export function LyricDisplay() {
 
       const playerState = usePlayerStore.getState()
       playerState.suppressNextRemoteSeek(1000, displayTargetTime)
-      alignPlayerToLine(displayTargetMs)
       if (playerState.localSeek) {
         playerState.localSeek(displayTargetTime)
       } else {
         playerState.setCurrentTime(displayTargetTime)
       }
-      if (pendingAlignFrameRef.current !== null) cancelAnimationFrame(pendingAlignFrameRef.current)
-      pendingAlignFrameRef.current = requestAnimationFrame(() => {
-        pendingAlignFrameRef.current = null
-        alignPlayerToLine(displayTargetMs)
-      })
-
       socket.emit(EVENTS.PLAYER_SEEK, { currentTime: displayTargetTime })
     },
-    [alignPlayerToLine, amllLines, socket],
-  )
-
-  const handlePointerDown = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      if (!clickSeekActive || event.pointerType === 'mouse') return
-      lastPointerEventAtRef.current = Date.now()
-      touchStartRef.current = {
-        x: event.clientX,
-        y: event.clientY,
-        lineIndex: getLineIndexAtPoint(event.clientX, event.clientY),
-      }
-    },
-    [clickSeekActive, getLineIndexAtPoint],
-  )
-
-  const handlePointerUp = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      if (!clickSeekActive || event.pointerType === 'mouse') return
-      lastPointerEventAtRef.current = Date.now()
-      const start = touchStartRef.current
-      touchStartRef.current = null
-      if (!start || start.lineIndex < 0) return
-      const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y)
-      if (moved > TAP_MOVE_TOLERANCE_PX) return
-      if (getLineIndexAtPoint(event.clientX, event.clientY) !== start.lineIndex) return
-
-      clearPendingTouchSeek()
-      pendingTouchSeekTimerRef.current = setTimeout(() => {
-        pendingTouchSeekTimerRef.current = null
-        seekToLineIndex(start.lineIndex)
-      }, 80)
-    },
-    [clearPendingTouchSeek, clickSeekActive, getLineIndexAtPoint, seekToLineIndex],
-  )
-
-  const handleTouchStart = useCallback(
-    (event: TouchEvent<HTMLDivElement>) => {
-      if (!clickSeekActive || Date.now() - lastPointerEventAtRef.current < 500) return
-      const touch = event.touches.item(0)
-      if (!touch) return
-      touchStartRef.current = {
-        x: touch.clientX,
-        y: touch.clientY,
-        lineIndex: getLineIndexAtPoint(touch.clientX, touch.clientY),
-      }
-    },
-    [clickSeekActive, getLineIndexAtPoint],
-  )
-
-  const handleTouchEnd = useCallback(
-    (event: TouchEvent<HTMLDivElement>) => {
-      if (!clickSeekActive || Date.now() - lastPointerEventAtRef.current < 500) return
-      const start = touchStartRef.current
-      touchStartRef.current = null
-      const touch = event.changedTouches.item(0)
-      if (!start || start.lineIndex < 0 || !touch) return
-      const moved = Math.hypot(touch.clientX - start.x, touch.clientY - start.y)
-      if (moved > TAP_MOVE_TOLERANCE_PX) return
-      if (getLineIndexAtPoint(touch.clientX, touch.clientY) !== start.lineIndex) return
-
-      clearPendingTouchSeek()
-      pendingTouchSeekTimerRef.current = setTimeout(() => {
-        pendingTouchSeekTimerRef.current = null
-        seekToLineIndex(start.lineIndex)
-      }, 80)
-    },
-    [clearPendingTouchSeek, clickSeekActive, getLineIndexAtPoint, seekToLineIndex],
+    [amllLines, socket],
   )
 
   const handleLyricClick = useCallback(
     (event: LyricLineMouseEvent) => {
-      clearPendingTouchSeek()
       if (clickSeekActive) seekToLineIndex(event.lineIndex)
     },
-    [clearPendingTouchSeek, clickSeekActive, seekToLineIndex],
+    [clickSeekActive, seekToLineIndex],
   )
-
-  const cancelTap = useCallback(() => {
-    touchStartRef.current = null
-    clearPendingTouchSeek()
-  }, [clearPendingTouchSeek])
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
@@ -484,13 +263,6 @@ export function LyricDisplay() {
 
   return (
     <div
-      ref={amllContainerRef}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={cancelTap}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={cancelTap}
       onKeyDown={handleKeyDown}
       tabIndex={clickSeekActive ? 0 : undefined}
       role={clickSeekActive ? 'application' : undefined}
