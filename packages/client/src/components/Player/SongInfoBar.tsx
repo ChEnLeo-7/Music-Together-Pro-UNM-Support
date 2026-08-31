@@ -8,6 +8,7 @@ import { useRoomStore } from '@/stores/roomStore'
 import { MessageSquare, Volume2, VolumeX } from 'lucide-react'
 import { motion } from 'motion/react'
 import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { ARTIST_LAYOUT_TRANSITION, TITLE_LAYOUT_TRANSITION } from './constants'
 
 /** Must match PlayerControls.DESIGN_WIDTH so zoom factors are identical */
 const DESIGN_WIDTH = 300
@@ -60,9 +61,10 @@ function VolumeControl({
 interface SongInfoBarProps {
   onOpenChat: () => void
   chatUnreadCount: number
+  sharedIdentity?: boolean
 }
 
-export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCount }: SongInfoBarProps) {
+export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCount, sharedIdentity = false }: SongInfoBarProps) {
   const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   const volume = usePlayerStore((s) => s.volume)
   const setVolume = usePlayerStore((s) => s.setVolume)
@@ -98,12 +100,22 @@ export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCou
       <div ref={innerRef} className="flex w-full items-end gap-2" style={{ width: DESIGN_WIDTH }}>
         {/* Left: static layout matches the controls and avoids nested layout/font animations. */}
         <div className="min-w-0 flex-1">
-          <div className="text-xl font-bold leading-tight text-white/90">
+          <motion.div
+            layout={sharedIdentity ? 'position' : false}
+            layoutId={sharedIdentity ? 'mobile-player-title' : undefined}
+            transition={TITLE_LAYOUT_TRANSITION}
+            className="text-xl font-bold leading-tight text-white/90"
+          >
             <MarqueeText>{currentTrack?.title ?? '暂无歌曲'}</MarqueeText>
-          </div>
-          <div className="text-sm text-white/50">
+          </motion.div>
+          <motion.div
+            layout={sharedIdentity ? 'position' : false}
+            layoutId={sharedIdentity ? 'mobile-player-artist' : undefined}
+            transition={ARTIST_LAYOUT_TRANSITION}
+            className="text-sm text-white/50"
+          >
             <MarqueeText>{currentTrack ? currentTrack.artist.join(' / ') : '点击搜索添加歌曲到队列'}</MarqueeText>
-          </div>
+          </motion.div>
         </div>
 
         {/* Right-bottom: volume + chat buttons (always visible, aligned to bottom) */}

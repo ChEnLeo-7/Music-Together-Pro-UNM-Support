@@ -13,6 +13,9 @@ import {
 import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
 import { hasLyricTimeSubscribers, publishLyricTime } from '@/lib/lyricClock'
+import { getServerTime } from '@/lib/clockSync'
+import { projectPlaybackPosition, type PlaybackAnchor } from '@/lib/playbackPosition'
+import { canConfirmPendingSeek } from '@/lib/pendingSeek'
 import {
   getNativePlaybackBridge,
   NATIVE_PLAYBACK_EVENT,
@@ -28,6 +31,8 @@ const PLAY_ERROR_TIMEOUT_MS = 3000
 const STALLED_TIMEOUT_MS = 8000
 const ANDROID_SNAPSHOT_INTERVAL_MS = 100
 const ANDROID_BOOTSTRAP_TIMEOUT_MS = 30_000
+export const AUDIO_UNLOCK_REQUIRED_EVENT = 'music-together-audio-unlock-required'
+export const AUDIO_UNLOCKED_EVENT = 'music-together-audio-unlocked'
 
 export interface AudioEngine {
   play(id?: number): number
@@ -313,7 +318,10 @@ class AndroidMediaEngine implements AudioEngine {
     }
     if (detail.type === 'pause') this.options.onpause()
     if (detail.type === 'seek' && Number.isFinite(detail.position)) {
-      usePlayerStore.getState().setCurrentTime(detail.position!)
+      const state = usePlayerStore.getState()
+      if (!canConfirmPendingSeek(detail.playbackRevision, state.pendingSeekRevision)) return
+      state.setConfirmedCurrentTime(detail.position!)
+      state.setPendingSeekTarget(null)
     }
     if (detail.type === 'snapshot') {
       this.applySnapshot(detail as NativePlaybackSnapshot & NativePlaybackEvent)
@@ -365,7 +373,7 @@ class AndroidMediaEngine implements AudioEngine {
     }
     if (this.snapshot.trackId !== this.trackId) return
     const state = usePlayerStore.getState()
-    state.setCurrentTime(this.snapshot.position, false)
+    state.setConfirmedCurrentTime(this.snapshot.position)
     if (state.isPlaying !== this.snapshot.isPlaying) state.setIsPlaying(this.snapshot.isPlaying)
   }
 }
@@ -448,7 +456,12 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
             return
           }
           lastTimeUpdateRef.current = now
-          usePlayerStore.getState().setCurrentTime(seekVal, false)
+          const playerState = usePlayerStore.getState()
+          if (getNativePlaybackBridge()) {
+            playerState.setConfirmedCurrentTime(seekVal)
+          } else {
+            playerState.setCurrentTime(seekVal, false)
+          }
 
           // Stalled detection: if currentTime hasn't moved for STALLED_TIMEOUT_MS
           // while playing() is true, the stream likely broke mid-playback.
@@ -479,7 +492,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
 
   // Load and play a track
   const loadTrack = useCallback(
-    (track: Track, seekTo?: number, autoPlay = true) => {
+    (track: Track, seekTo?: number, autoPlay = true, playbackAnchor?: PlaybackAnchor) => {
       if (unmuteTimerRef.current) {
         clearTimeout(unmuteTimerRef.current)
         unmuteTimerRef.current = null
@@ -505,8 +518,10 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
       soundIdRef.current = undefined
       trackTitleRef.current = track.title
       retryRef.current = false
-      usePlayerStore.getState().setDuration(0)
-      usePlayerStore.getState().setCurrentTime(0)
+      const playerState = usePlayerStore.getState()
+      playerState.setPendingSeekTarget(null)
+      playerState.setDuration(0)
+      playerState.setCurrentTime(0)
 
       if (!track.streamUrl) return
 
@@ -538,7 +553,9 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
             howl.once('play', () => {
               if (howlRef.current !== howl) return
               const elapsed = (Date.now() - loadStartTime) / 1000
-              const seekTarget = (seekTo ?? 0) + Math.min(elapsed, MAX_LOAD_COMPENSATION_S)
+              const seekTarget = playbackAnchor
+                ? projectPlaybackPosition(playbackAnchor, getServerTime())
+                : (seekTo ?? 0) + Math.min(elapsed, MAX_LOAD_COMPENSATION_S)
               // seekTo > 0: must seek to correct position (+ loading compensation)
               // seekTo === 0: only compensate if loading took significant time
               if ((seekTo && seekTo > 0) || elapsed > LOAD_COMPENSATION_THRESHOLD_S) {
@@ -598,6 +615,13 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
           onTrackEnd()
         },
         onplayerror: function (soundId: number) {
+          if (playbackAnchor) {
+            window.dispatchEvent(new Event(AUDIO_UNLOCK_REQUIRED_EVENT))
+            window.addEventListener(AUDIO_UNLOCKED_EVENT, () => {
+              if (howlRef.current === howl) howl.play(soundId)
+            }, { once: true })
+            return
+          }
           // Try to recover via Howler unlock; give up after timeout
           if (playErrorTimerRef.current) clearTimeout(playErrorTimerRef.current)
           playErrorTimerRef.current = setTimeout(() => {

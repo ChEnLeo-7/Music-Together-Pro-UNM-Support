@@ -3,7 +3,7 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { useRoomStore } from '@/stores/roomStore'
 import { storage } from '@/lib/storage'
 import { resetAllRoomState } from '@/lib/resetStores'
-import { releaseNativePlayback } from '@/lib/nativePlayback'
+import { configureNativePlayback, getNativePlaybackBridge, releaseNativePlayback } from '@/lib/nativePlayback'
 import { ERROR_CODE, EVENTS } from '@music-together/shared'
 import type {
   AudioQuality,
@@ -65,6 +65,14 @@ export function useRoomState() {
 
     const onRejoinToken = (data: { roomId: string; token: string; expiresAt: number }) => {
       storage.setRejoinToken(data.roomId, data.token, data.expiresAt)
+      const room = useRoomStore.getState().room
+      if (!getNativePlaybackBridge() || room?.id !== data.roomId) return
+      configureNativePlayback({
+        roomId: data.roomId,
+        userId: storage.getUserId(),
+        nickname: storage.getNickname(),
+        rejoinToken: data.token,
+      })
     }
 
     const onUserLeft = (user: User) => {

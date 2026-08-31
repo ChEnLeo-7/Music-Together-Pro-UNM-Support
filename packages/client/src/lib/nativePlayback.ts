@@ -10,6 +10,7 @@ export interface NativePlaybackEvent {
   isPlaying?: boolean
   volume?: number
   rate?: number
+  playbackRevision?: number
 }
 
 export interface NativePlaybackSnapshot {
@@ -36,6 +37,7 @@ interface NativePlaybackBridge {
   getRate(): number
   getTrackId(): string
   getPlaybackSnapshot(): string
+  setPlayerFullscreen(enabled: boolean): void
   releaseSource(source: string): void
   releaseSession(): void
 }
@@ -47,6 +49,7 @@ declare global {
 }
 
 export const NATIVE_PLAYBACK_EVENT = 'music-together-native-playback'
+export const NATIVE_FULLSCREEN_EXIT_EVENT = 'music-together-native-fullscreen-exit'
 
 export function getNativePlaybackBridge(): NativePlaybackBridge | null {
   return window.MusicTogetherAndroid ?? null

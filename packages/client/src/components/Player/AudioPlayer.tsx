@@ -8,12 +8,13 @@ import { SERVER_URL } from '@/lib/config'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { usePlayerStore } from '@/stores/playerStore'
+import { getNativePlaybackBridge, NATIVE_FULLSCREEN_EXIT_EVENT } from '@/lib/nativePlayback'
 import { useRoomStore } from '@/stores/roomStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 import { BackgroundRender } from '@applemusic-like-lyrics/react'
 import { Maximize2, Minimize2 } from 'lucide-react'
-import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VoteBanner } from '../Vote/VoteBanner'
 import { LyricDisplay } from './LyricDisplay'
@@ -88,6 +89,7 @@ export function AudioPlayer({
   const t = useI18n((s) => s.t)
   const { ref: playerRef, isPortrait } = useContainerPortrait()
   const isMobile = useIsMobile()
+  const prefersReducedMotion = useReducedMotion()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const fullscreenButtonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lyricTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -116,7 +118,17 @@ export function AudioPlayer({
 
   useEffect(() => {
     onFullscreenChange?.(isPlayerFullscreen)
+    getNativePlaybackBridge()?.setPlayerFullscreen(isPlayerFullscreen)
   }, [isPlayerFullscreen, onFullscreenChange])
+
+  useEffect(() => {
+    const exitFullscreen = () => setIsPlayerFullscreen(false)
+    window.addEventListener(NATIVE_FULLSCREEN_EXIT_EVENT, exitFullscreen)
+    return () => {
+      window.removeEventListener(NATIVE_FULLSCREEN_EXIT_EVENT, exitFullscreen)
+      getNativePlaybackBridge()?.setPlayerFullscreen(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (isMobile) {
@@ -209,7 +221,7 @@ export function AudioPlayer({
     onOpenChat: runWithInteraction(onOpenChat),
     chatUnreadCount,
   } as const
-  const disableMobileLayoutAnimation = false
+  const disableMobileLayoutAnimation = prefersReducedMotion === true
 
   return (
     <div
@@ -243,7 +255,9 @@ export function AudioPlayer({
               size="icon-sm"
               className={cn(
                 'rounded-full bg-black/20 text-white/80 backdrop-blur-md transition-opacity duration-150 hover:bg-white/15 hover:text-white focus-visible:opacity-100',
-                isMobile ? (showMobileFullscreenButton ? 'opacity-100' : 'opacity-0') : 'opacity-0 group-hover/fullscreen:opacity-100',
+                isMobile
+                  ? (showMobileFullscreenButton ? 'opacity-100' : 'pointer-events-none opacity-0')
+                  : 'opacity-0 group-hover/fullscreen:opacity-100',
               )}
               onClick={togglePlayerFullscreen}
               aria-label={isPlayerFullscreen ? t('exitFullscreen') : t('fullscreen')}
@@ -273,15 +287,20 @@ export function AudioPlayer({
                   className={cn('w-full min-h-0', lyricExpanded ? 'shrink-0' : 'flex-1 flex items-center justify-center')}
                   style={!lyricExpanded ? ({ containerType: 'size' } as React.CSSProperties) : undefined}
                 >
-                  <NowPlaying compact={lyricExpanded} onCoverClick={toggleLyricView} disableLayoutAnimation={disableMobileLayoutAnimation} />
+                   <NowPlaying
+                     compact={lyricExpanded}
+                     onCoverClick={toggleLyricView}
+                     disableLayoutAnimation={disableMobileLayoutAnimation}
+                     sharedIdentity={!disableMobileLayoutAnimation}
+                   />
                 </div>
 
                 {/* Lyrics — popLayout so exiting lyrics don't occupy flex space */}
                 {disableMobileLayoutAnimation ? (
                   <div
                     className={cn(
-                      'min-h-0 w-full flex-1 overflow-hidden will-change-transform transition-[opacity,transform] duration-350 ease-out',
-                      lyricExpanded ? 'translate-y-0 opacity-100' : 'pointer-events-none max-h-0 translate-y-8 opacity-0',
+                      'min-h-0 w-full flex-1 overflow-hidden transition-opacity duration-150',
+                      lyricExpanded ? 'opacity-100' : 'pointer-events-none max-h-0 opacity-0',
                     )}
                     style={LYRIC_MASK_STYLE}
                   >
@@ -292,9 +311,9 @@ export function AudioPlayer({
                     {lyricExpanded && (
                       <motion.div
                         key="lyrics"
-                        initial={{ opacity: 0, y: 20 }}
+                         initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 20 }}
+                         exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
                         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                         className="relative z-20 h-full min-h-0 w-full flex-1 overflow-hidden"
                         style={LYRIC_MASK_STYLE}
@@ -308,7 +327,7 @@ export function AudioPlayer({
                 {/* 2. Song info + action buttons (independent zoom module) */}
                 {!lyricExpanded && (
                   <div className="w-full shrink-0 mx-auto" style={coverMaxStyle}>
-                    <SongInfoBar {...songInfoProps} />
+                     <SongInfoBar {...songInfoProps} sharedIdentity={!disableMobileLayoutAnimation} />
                   </div>
                 )}
 

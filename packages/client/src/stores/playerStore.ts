@@ -3,11 +3,15 @@ import type { Track } from '@music-together/shared'
 import type { LyricLine as AMLLLyricLine } from '@applemusic-like-lyrics/core'
 import { storage } from '@/lib/storage'
 import { publishLyricTime } from '@/lib/lyricClock'
+import { displayTimeForSnapshot } from '@/lib/pendingSeek'
 
 interface PlayerStore {
   loadedTrack: Track | null
   isPlaying: boolean
   currentTime: number
+  confirmedCurrentTime: number
+  pendingSeekTarget: number | null
+  pendingSeekRevision: number | null
   lyricDisplayTimeMs: number
   lyricMotionSuspended: boolean
   lyricFrameSuspended: boolean
@@ -25,6 +29,9 @@ interface PlayerStore {
   setLoadedTrack: (track: Track | null) => void
   setIsPlaying: (playing: boolean) => void
   setCurrentTime: (time: number, isSeek?: boolean) => void
+  setConfirmedCurrentTime: (time: number) => void
+  setPendingSeekTarget: (time: number | null) => void
+  setPendingSeekRevision: (revision: number | null) => void
   setLyricDisplayTimeMs: (timeMs: number) => void
   setLyricMotionSuspended: (suspended: boolean) => void
   setLyricFrameSuspended: (suspended: boolean) => void
@@ -43,6 +50,9 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
   loadedTrack: null,
   isPlaying: false,
   currentTime: 0,
+  confirmedCurrentTime: 0,
+  pendingSeekTarget: null,
+  pendingSeekRevision: null,
   lyricDisplayTimeMs: 0,
   lyricMotionSuspended: false,
   lyricFrameSuspended: false,
@@ -64,6 +74,16 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
     publishLyricTime(timeMs, isSeek)
     set({ currentTime: time, lyricDisplayTimeMs: timeMs })
   },
+  setConfirmedCurrentTime: (time) => set((state) => ({
+    confirmedCurrentTime: time,
+    currentTime: displayTimeForSnapshot(time, state.pendingSeekTarget),
+  })),
+  setPendingSeekTarget: (time) => set((state) => ({
+    pendingSeekTarget: time,
+    pendingSeekRevision: null,
+    currentTime: time ?? state.confirmedCurrentTime,
+  })),
+  setPendingSeekRevision: (revision) => set({ pendingSeekRevision: revision }),
   setLyricDisplayTimeMs: (timeMs) => set({ lyricDisplayTimeMs: Math.max(0, Math.round(timeMs)) }),
   setLyricMotionSuspended: (suspended) => set({ lyricMotionSuspended: suspended }),
   setLyricFrameSuspended: (suspended) => set({ lyricFrameSuspended: suspended }),
@@ -85,6 +105,9 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
       loadedTrack: null,
       isPlaying: false,
       currentTime: 0,
+      confirmedCurrentTime: 0,
+      pendingSeekTarget: null,
+      pendingSeekRevision: null,
       lyricDisplayTimeMs: 0,
       lyricMotionSuspended: false,
       lyricFrameSuspended: false,

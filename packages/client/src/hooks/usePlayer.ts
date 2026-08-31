@@ -15,6 +15,7 @@ import { useMediaSession } from './useMediaSession'
 import { usePlayerSync } from './usePlayerSync'
 import { configureNativePlayback, getNativePlaybackBridge } from '@/lib/nativePlayback'
 import { SERVER_URL } from '@/lib/config'
+import { projectPlaybackPosition } from '@/lib/playbackPosition'
 
 /**
  * Composing hook: useHowl + useLyric + usePlayerSync.
@@ -32,6 +33,7 @@ export function usePlayer() {
   const room = useRoomStore((s) => s.room)
   const loadingRef = useRef<{ trackId: string; ts: number; serverTimestamp: number } | null>(null)
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const preparedRef = useRef<{
     trackId: string
     playbackRevision: number
@@ -103,6 +105,11 @@ export function usePlayer() {
         clearTimeout(recoveryTimerRef.current)
         recoveryTimerRef.current = null
       }
+      if (pendingSeekTimerRef.current) {
+        clearTimeout(pendingSeekTimerRef.current)
+        pendingSeekTimerRef.current = null
+      }
+      usePlayerStore.getState().setPendingSeekTarget(null)
     }
     socket.on('disconnect', onDisconnect)
     return () => {
@@ -139,7 +146,7 @@ export function usePlayer() {
       setTimeout(reportReady, 50)
     }
 
-    const onPlayerPlay = (data: { track: Track; playState: ScheduledPlayState }) => {
+    const onPlayerPlay = (data: { track: Track; playState: ScheduledPlayState; recovery?: boolean }) => {
       const currentRevision = useRoomStore.getState().room?.playState.playbackRevision ?? -1
       if (data.playState.playbackRevision < currentRevision) return
 
@@ -173,6 +180,22 @@ export function usePlayer() {
       })
 
       const ct = data.playState.currentTime
+      if (data.recovery) {
+        const anchor = {
+          currentTime: ct,
+          serverTimestamp: data.playState.serverTimestamp,
+          isPlaying: data.playState.isPlaying,
+          duration: data.track.duration,
+        }
+        loadTrack(
+          data.track,
+          projectPlaybackPosition(anchor, getServerTime()),
+          data.playState.isPlaying,
+          anchor,
+        )
+        fetchLyric(data.track)
+        return
+      }
       const executeDelay = Math.max(
         0,
         data.playState.serverTimeToExecute - (isCalibrated() ? getServerTime() : Date.now()),
@@ -222,16 +245,36 @@ export function usePlayer() {
       playTimerRef.current = null
     }
 
+    const onPlayerSeek = (data: { playState: ScheduledPlayState }) => {
+      cancelPendingPlay()
+      if (!getNativePlaybackBridge()) return
+      const playerState = usePlayerStore.getState()
+      if (
+        playerState.pendingSeekTarget !== null &&
+        Math.abs(playerState.pendingSeekTarget - data.playState.currentTime) < 0.05
+      ) {
+        playerState.setPendingSeekRevision(data.playState.playbackRevision)
+      }
+      useRoomStore.getState().updateRoom({
+        playState: {
+          isPlaying: data.playState.isPlaying,
+          currentTime: data.playState.currentTime,
+          serverTimestamp: data.playState.serverTimestamp,
+          playbackRevision: data.playState.playbackRevision,
+        },
+      })
+    }
+
     socket.on(EVENTS.PLAYER_PLAY, onPlayerPlay)
     socket.on(EVENTS.PLAYER_PREPARE, onPlayerPrepare)
     socket.on(EVENTS.PLAYER_PAUSE, cancelPendingPlay)
-    socket.on(EVENTS.PLAYER_SEEK, cancelPendingPlay)
+    socket.on(EVENTS.PLAYER_SEEK, onPlayerSeek)
 
     return () => {
       socket.off(EVENTS.PLAYER_PLAY, onPlayerPlay)
       socket.off(EVENTS.PLAYER_PREPARE, onPlayerPrepare)
       socket.off(EVENTS.PLAYER_PAUSE, cancelPendingPlay)
-      socket.off(EVENTS.PLAYER_SEEK, cancelPendingPlay)
+      socket.off(EVENTS.PLAYER_SEEK, onPlayerSeek)
       if (playTimerRef.current) {
         clearTimeout(playTimerRef.current)
         playTimerRef.current = null
@@ -315,13 +358,23 @@ export function usePlayer() {
           }
           const ps = latestRoom.playState
           recoveredRevision = ps.playbackRevision
-          const elapsed = ps.isPlaying ? (getServerTime() - ps.serverTimestamp) / 1000 : 0
           loadingRef.current = {
             trackId: latestRoom.currentTrack.id,
             ts: Date.now(),
             serverTimestamp: ps.serverTimestamp,
           }
-          loadTrack(latestRoom.currentTrack, ps.currentTime + Math.max(0, elapsed), ps.isPlaying)
+          const anchor = {
+            currentTime: ps.currentTime,
+            serverTimestamp: ps.serverTimestamp,
+            isPlaying: ps.isPlaying,
+            duration: latestRoom.currentTrack.duration,
+          }
+          loadTrack(
+            latestRoom.currentTrack,
+            projectPlaybackPosition(anchor, getServerTime()),
+            ps.isPlaying,
+            anchor,
+          )
           fetchLyric(latestRoom.currentTrack)
         }, 1_500)
       }
@@ -367,8 +420,18 @@ export function usePlayer() {
       }
       // Optimistic local update for the progress bar UI
       if (!getNativePlaybackBridge()) localSeek(time)
-      usePlayerStore.getState().setCurrentTime(time)
+      const playerState = usePlayerStore.getState()
+      if (getNativePlaybackBridge()) playerState.setPendingSeekTarget(time)
+      playerState.setCurrentTime(time)
       socket.emit(EVENTS.PLAYER_SEEK, { currentTime: time })
+      if (getNativePlaybackBridge()) {
+        if (pendingSeekTimerRef.current) clearTimeout(pendingSeekTimerRef.current)
+        pendingSeekTimerRef.current = setTimeout(() => {
+          pendingSeekTimerRef.current = null
+          const latest = usePlayerStore.getState()
+          if (latest.pendingSeekTarget === time) latest.setPendingSeekTarget(null)
+        }, 6_000)
+      }
     },
     [localSeek, socket],
   )

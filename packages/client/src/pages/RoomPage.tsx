@@ -29,6 +29,7 @@ import { useClockSync } from '@/hooks/useClockSync'
 import { storage } from '@/lib/storage'
 import { getLocalizedError, useI18n } from '@/lib/i18n'
 import { getNativePlaybackBridge } from '@/lib/nativePlayback'
+import { AUDIO_UNLOCKED_EVENT, AUDIO_UNLOCK_REQUIRED_EVENT } from '@/hooks/useHowl'
 
 /** Invisible component that runs NTP clock-sync only while in a room. */
 function ClockSyncRunner() {
@@ -68,7 +69,9 @@ export default function RoomPage() {
   // Gate: audio must be unlocked before joining the room.
   // From lobby: isAudioUnlocked() is already true → gate skipped, auto-join runs immediately.
   // Direct URL / page refresh: gate blocks until user clicks "开始收听".
-  const [gateOpen, setGateOpen] = useState(() => isAudioUnlocked())
+  const [gateOpen, setGateOpen] = useState(() =>
+    isAudioUnlocked() || Boolean(getNativePlaybackBridge()) || Boolean(roomId && storage.getRejoinToken(roomId)),
+  )
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
@@ -165,13 +168,30 @@ export default function RoomPage() {
   // --- Gate start handler (receives password from gate if applicable) ---
   const handleGateStart = useCallback(async (password?: string, nickname?: string) => {
     await unlockAudio()
+    window.dispatchEvent(new Event(AUDIO_UNLOCKED_EVENT))
     if (password !== undefined) passwordRef.current = password
     if (nickname) gateNicknameRef.current = nickname
     setGateOpen(true)
   }, [])
 
+  useEffect(() => {
+    const requestUnlock = () => setGateOpen(false)
+    window.addEventListener(AUDIO_UNLOCK_REQUIRED_EVENT, requestUnlock)
+    return () => window.removeEventListener(AUDIO_UNLOCK_REQUIRED_EVENT, requestUnlock)
+  }, [])
+
   // --- Auto-join if room state is missing (e.g. page refresh, direct URL access) ---
   // Only after the interaction gate is open — avoids autoplay warnings.
+  useEffect(() => {
+    const onDisconnect = () => {
+      joiningRef.current = false
+    }
+    socket.on('disconnect', onDisconnect)
+    return () => {
+      socket.off('disconnect', onDisconnect)
+    }
+  }, [socket])
+
   useEffect(() => {
     if (checking) return
     if (!gateOpen) return

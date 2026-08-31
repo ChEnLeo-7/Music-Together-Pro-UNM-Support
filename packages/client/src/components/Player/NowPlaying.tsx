@@ -4,7 +4,8 @@ import { useRoomStore } from '@/stores/roomStore'
 import { Disc3 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
-import { LAYOUT_TRANSITION } from './constants'
+import { ARTIST_LAYOUT_TRANSITION, LAYOUT_TRANSITION, TITLE_LAYOUT_TRANSITION } from './constants'
+import { useI18n } from '@/lib/i18n'
 
 interface NowPlayingProps {
   /** Compact mode: small cover + song info in a single row (lyric view top bar) */
@@ -12,10 +13,17 @@ interface NowPlayingProps {
   /** Called when the cover art is tapped (toggle lyric view) */
   onCoverClick?: () => void
   disableLayoutAnimation?: boolean
+  sharedIdentity?: boolean
 }
 
-export function NowPlaying({ compact = false, onCoverClick, disableLayoutAnimation = false }: NowPlayingProps) {
+export function NowPlaying({
+  compact = false,
+  onCoverClick,
+  disableLayoutAnimation = false,
+  sharedIdentity = false,
+}: NowPlayingProps) {
   const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
+  const t = useI18n((s) => s.t)
   const [coverError, setCoverError] = useState(false)
 
   // Skip layoutId on first frame to prevent unwanted entry animation
@@ -51,22 +59,34 @@ export function NowPlaying({ compact = false, onCoverClick, disableLayoutAnimati
   if (compact) {
     return (
       <div className="flex w-full items-center gap-3.5">
-        <motion.div
+        <motion.button
+          type="button"
           layoutId={layoutId}
           onClick={onCoverClick}
-          whileTap={{ scale: 0.92 }}
+          whileTap={disableLayoutAnimation ? undefined : { scale: 0.92 }}
           transition={LAYOUT_TRANSITION}
-          className="h-14 w-14 shrink-0 cursor-pointer overflow-hidden rounded-lg shadow-md shadow-black/20"
+          aria-label={t('showCover')}
+          className="h-14 w-14 shrink-0 cursor-pointer overflow-hidden rounded-lg shadow-md shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
         >
           {coverContent}
-        </motion.div>
+        </motion.button>
         <div className="min-w-0 flex-1">
-          <div className="text-[22px] font-semibold leading-tight text-white/90">
+          <motion.div
+            layout={sharedIdentity ? 'position' : false}
+            layoutId={sharedIdentity ? 'mobile-player-title' : undefined}
+            transition={TITLE_LAYOUT_TRANSITION}
+            className="text-[22px] font-semibold leading-tight text-white/90"
+          >
             <MarqueeText>{currentTrack?.title ?? '暂无歌曲'}</MarqueeText>
-          </div>
-          <div className="text-base text-white/50">
+          </motion.div>
+          <motion.div
+            layout={sharedIdentity ? 'position' : false}
+            layoutId={sharedIdentity ? 'mobile-player-artist' : undefined}
+            transition={ARTIST_LAYOUT_TRANSITION}
+            className="text-base text-white/50"
+          >
             <MarqueeText>{currentTrack ? currentTrack.artist.join(' / ') : '...'}</MarqueeText>
-          </div>
+          </motion.div>
         </div>
       </div>
     )
@@ -75,18 +95,27 @@ export function NowPlaying({ compact = false, onCoverClick, disableLayoutAnimati
   // ---------------------------------------------------------------------------
   // Default mode: cover only (song info is handled by SongInfoBar)
   // ---------------------------------------------------------------------------
-  return (
-    <motion.div
+  const coverClassName = cn(
+    'relative mx-auto aspect-square overflow-hidden rounded-3xl shadow-lg shadow-black/15',
+    onCoverClick && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80',
+  )
+  const coverStyle = { width: 'min(100cqw, 100cqh)' }
+
+  return onCoverClick ? (
+    <motion.button
+      type="button"
       layoutId={layoutId}
       onClick={onCoverClick}
-      whileTap={onCoverClick ? { scale: 0.96 } : undefined}
+      whileTap={disableLayoutAnimation ? undefined : { scale: 0.96 }}
       transition={LAYOUT_TRANSITION}
-      style={{ width: 'min(100cqw, 100cqh)' }}
-      className={cn(
-        'relative mx-auto aspect-square overflow-hidden rounded-3xl shadow-lg shadow-black/15',
-        onCoverClick && 'cursor-pointer',
-      )}
+      style={coverStyle}
+      className={coverClassName}
+      aria-label={t('showLyrics')}
     >
+      {coverContent}
+    </motion.button>
+  ) : (
+    <motion.div transition={LAYOUT_TRANSITION} style={coverStyle} className={coverClassName}>
       {coverContent}
     </motion.div>
   )
