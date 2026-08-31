@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Track } from '@music-together/shared'
-import type { TypedServer } from '../middleware/types.js'
+import type { TypedServer, TypedSocket } from '../middleware/types.js'
 import { roomRepo } from '../repositories/roomRepository.js'
 import { userRepo } from '../repositories/userRepository.js'
 import * as playerService from './playerService.js'
@@ -27,6 +27,14 @@ function createTrack(id: string): Track {
 function fakeIo(): TypedServer {
   const target = { emit: () => target }
   return { to: () => target } as unknown as TypedServer
+}
+
+function recordingSocket() {
+  const events: Array<{ event: string; payload: unknown }> = []
+  return {
+    events,
+    socket: { emit: (event: string, payload: unknown) => events.push({ event, payload }) } as unknown as TypedSocket,
+  }
 }
 
 function createTestRoom() {
@@ -98,6 +106,34 @@ test('ready playback instances release the prepare barrier before timeout', asyn
 
     assert.ok(Date.now() - startedAt < 500)
     assert.equal(room.playState.playbackRevision, revision)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('reload recovery preserves a sole user paused state and revision', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const track = createTrack(`paused-track-${sequence}`)
+  const { socket, events } = recordingSocket()
+  room.currentTrack = track
+  room.queue = [track]
+  room.playState = { isPlaying: false, currentTime: 42, serverTimestamp: Date.now(), playbackRevision: 7 }
+
+  try {
+    await playerService.syncPlaybackToSocket(fakeIo(), socket, room.id, room)
+    assert.equal(room.playState.isPlaying, false)
+    assert.equal(room.playState.currentTime, 42)
+    assert.equal(room.playState.playbackRevision, 7)
+    const recovery = events.find(({ event }) => event === 'player:play')?.payload as {
+      recovery: boolean
+      playState: { isPlaying: boolean; currentTime: number; playbackRevision: number }
+    }
+    assert.equal(recovery.recovery, true)
+    assert.equal(recovery.playState.isPlaying, false)
+    assert.equal(recovery.playState.currentTime, 42)
+    assert.equal(recovery.playState.playbackRevision, 7)
   } finally {
     roomRepo.deleteSocketMapping(webSocketId)
     roomRepo.delete(room.id)

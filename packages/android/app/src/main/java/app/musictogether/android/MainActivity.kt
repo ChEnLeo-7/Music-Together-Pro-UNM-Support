@@ -32,7 +32,9 @@ import androidx.activity.OnBackPressedCallback
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.TextInputEditText
@@ -41,6 +43,8 @@ import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
   private var webView: WebView? = null
+  private var contentRoot: FrameLayout? = null
+  private var playerFullscreen = false
 
   private val playbackEvents = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -67,6 +71,14 @@ class MainActivity : ComponentActivity() {
 
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
+        if (playerFullscreen) {
+          setPlayerFullscreen(false)
+          webView?.evaluateJavascript(
+            "window.dispatchEvent(new Event('music-together-native-fullscreen-exit'))",
+            null,
+          )
+          return
+        }
         val browser = webView
         when {
           browser == null -> finish()
@@ -286,6 +298,7 @@ class MainActivity : ComponentActivity() {
   }
 
   override fun onDestroy() {
+    setPlayerFullscreen(false)
     webView?.removeJavascriptInterface("MusicTogetherAndroid")
     webView?.destroy()
     super.onDestroy()
@@ -341,13 +354,33 @@ class MainActivity : ComponentActivity() {
         FrameLayout.LayoutParams.MATCH_PARENT,
       ))
     }
+    contentRoot = root
     ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-      val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+      if (playerFullscreen) {
+        view.setPadding(0, 0, 0, 0)
+      } else {
+        val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+        view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+      }
       insets
     }
     setContentView(root)
     ViewCompat.requestApplyInsets(root)
+  }
+
+  private fun setPlayerFullscreen(enabled: Boolean) {
+    playerFullscreen = enabled
+    WindowCompat.setDecorFitsSystemWindows(window, !enabled)
+    WindowCompat.getInsetsController(window, window.decorView).apply {
+      if (enabled) {
+        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        hide(WindowInsetsCompat.Type.systemBars())
+      } else {
+        show(WindowInsetsCompat.Type.systemBars())
+      }
+    }
+    if (enabled) contentRoot?.setPadding(0, 0, 0, 0)
+    contentRoot?.let { ViewCompat.requestApplyInsets(it) }
   }
 
   private inner class PlaybackBridge(
@@ -391,6 +424,9 @@ class MainActivity : ComponentActivity() {
     @JavascriptInterface fun getRate(): Double = PlaybackService.snapshot.rate.toDouble()
     @JavascriptInterface fun getTrackId(): String = PlaybackService.snapshot.trackId
     @JavascriptInterface fun getPlaybackSnapshot(): String = PlaybackService.snapshot.toJson()
+    @JavascriptInterface fun setPlayerFullscreen(enabled: Boolean) {
+      runOnUiThread { this@MainActivity.setPlayerFullscreen(enabled) }
+    }
     @JavascriptInterface fun releaseSource(source: String) = send(PlaybackService.ACTION_RELEASE_SOURCE) {
       putExtra(PlaybackService.EXTRA_SOURCE, source)
     }

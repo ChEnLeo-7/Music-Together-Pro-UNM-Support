@@ -900,7 +900,8 @@ export function playPrevTrackInRoom(
 
 /**
  * Send current playback state to a socket that just joined a room.
- * Handles auto-resume when alone, and auto-play from queue.
+ * Restores the authoritative room state without turning recovery into a
+ * room-wide playback command.
  */
 export async function syncPlaybackToSocket(
   io: TypedServer,
@@ -911,28 +912,18 @@ export async function syncPlaybackToSocket(
   const isAloneInRoom = room.users.filter((user) => user.online !== false).length === 1
 
   if (room.currentTrack?.streamUrl) {
-    // Alone in room + track was paused → auto-resume (user rejoining)
-    const shouldAutoPlay = isAloneInRoom || room.playState.isPlaying
-    if (isAloneInRoom && !room.playState.isPlaying) {
-      room.playState = { ...room.playState, isPlaying: true, serverTimestamp: Date.now() }
-    }
-
     const snapshotCurrentTime = estimateCurrentTime(roomId)
     const snapshotTimestamp = Date.now()
-    const joinCalibrationDelayMs = NTP.INITIAL_INTERVAL_MS * NTP.MAX_INITIAL_SAMPLES + 100
-    const scheduleTime = shouldAutoPlay
-      ? Math.max(getScheduleTime(roomId), snapshotTimestamp + joinCalibrationDelayMs)
-      : snapshotTimestamp
-    const delaySec = shouldAutoPlay ? Math.max(0, (scheduleTime - snapshotTimestamp) / 1000) : 0
 
     socket.emit(EVENTS.PLAYER_PLAY, {
       track: room.currentTrack,
+      recovery: true,
       playState: {
-        isPlaying: shouldAutoPlay,
-        currentTime: snapshotCurrentTime + delaySec,
-        serverTimestamp: scheduleTime,
+        isPlaying: room.playState.isPlaying,
+        currentTime: snapshotCurrentTime,
+        serverTimestamp: snapshotTimestamp,
         playbackRevision: room.playState.playbackRevision,
-        serverTimeToExecute: scheduleTime,
+        serverTimeToExecute: snapshotTimestamp,
       },
     })
   } else if (isAloneInRoom && room.queue.length > 0) {

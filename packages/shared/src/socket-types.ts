@@ -41,7 +41,7 @@ export interface ServerToClientEvents {
   [EVENTS.ROOM_LIST_UPDATE]: (rooms: RoomListItem[]) => void
   [EVENTS.ROOM_ROLE_CHANGED]: (data: { userId: string; role: UserRole }) => void
 
-  [EVENTS.PLAYER_PLAY]: (data: { track: Track; playState: ScheduledPlayState }) => void
+  [EVENTS.PLAYER_PLAY]: (data: { track: Track; playState: ScheduledPlayState; recovery?: boolean }) => void
   [EVENTS.PLAYER_PREPARE]: (data: { track: Track; playbackRevision: number }) => void
   [EVENTS.PLAYER_LEASE]: (data: { active: boolean }) => void
   [EVENTS.PLAYER_PAUSE]: (data: { playState: ScheduledPlayState }) => void

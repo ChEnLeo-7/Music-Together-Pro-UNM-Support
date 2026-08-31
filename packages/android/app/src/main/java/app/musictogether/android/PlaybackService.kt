@@ -428,7 +428,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     if (!acceptRevision(revision)) return
     val executeAt = state.optLong("serverTimeToExecute", serverTime())
     scheduleAt(executeAt, revision) {
-      seekLocally(state.optDouble("currentTime"))
+      seekLocally(state.optDouble("currentTime"), notifyWeb = true, playbackRevision = revision)
     }
   }
 
@@ -517,11 +517,15 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
   private fun isClockCalibrated() = serverAnchorTime != 0L && monotonicAnchorTime != 0L
 
-  private fun seekLocally(positionSeconds: Double, notifyWeb: Boolean = false) {
+  private fun seekLocally(
+    positionSeconds: Double,
+    notifyWeb: Boolean = false,
+    playbackRevision: Long? = null,
+  ) {
     val positionMs = (positionSeconds * 1000).toLong().coerceAtLeast(0)
     player.seekTo(positionMs)
     updateSnapshot()
-    if (notifyWeb) sendPlaybackEvent("seek", position = positionMs)
+    if (notifyWeb) sendPlaybackEvent("seek", position = positionMs, playbackRevision = playbackRevision)
   }
 
   private fun loadTrack(track: JSONObject, positionSeconds: Double, autoPlay: Boolean) {
@@ -710,6 +714,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     type: String,
     duration: Long? = null,
     position: Long? = null,
+    playbackRevision: Long? = null,
     message: String? = null,
   ) {
     val payload = JSONObject().apply {
@@ -718,6 +723,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       put("trackId", currentTrackId)
       duration?.let { put("duration", it / 1000.0) }
       position?.let { put("position", it / 1000.0) }
+      playbackRevision?.let { put("playbackRevision", it) }
       message?.let { put("message", it) }
     }
     sendBroadcast(Intent(ACTION_PLAYBACK_EVENT).setPackage(packageName).putExtra(EXTRA_EVENT, payload.toString()))
