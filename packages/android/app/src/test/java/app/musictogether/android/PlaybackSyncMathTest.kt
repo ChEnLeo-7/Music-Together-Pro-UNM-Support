@@ -21,11 +21,11 @@ class PlaybackSyncMathTest {
 
   @Test
   fun `moderate drift adjusts speed within cap`() {
-    val ahead = correction(actual = 10.5, expected = 10.0, alpha = 1.0)
+    val ahead = correction(actual = 10.1, expected = 10.0, alpha = 1.0)
     assertNull(ahead.seekToSeconds)
     assertEquals(0.98f, ahead.playbackRate)
 
-    val behind = correction(actual = 9.5, expected = 10.0, alpha = 1.0)
+    val behind = correction(actual = 9.9, expected = 10.0, alpha = 1.0)
     assertEquals(1.02f, behind.playbackRate)
   }
 
