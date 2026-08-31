@@ -133,11 +133,15 @@ jobs:
             });
             for (const release of releases) {
               if (!release.tag_name.startsWith('android-debug-')) continue;
-              await github.rest.repos.deleteRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.id,
-              });
+              try {
+                await github.rest.repos.deleteRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.id,
+                });
+              } catch (error) {
+                core.warning(`Could not delete release ${release.tag_name}: ${String(error)}`);
+              }
               try {
                 await github.rest.git.deleteRef({
                   owner: context.repo.owner,
@@ -145,5 +149,5 @@ jobs:
                   ref: `tags/${release.tag_name}`,
                 });
               } catch (error) {
-                core.warning(`Could not delete tag ${release.tag_name}: ${error.message}`);
+                core.warning(`Could not delete tag ${release.tag_name}: ${String(error)}`);
               }
