@@ -85,14 +85,15 @@ export function usePlayer() {
 
   useEffect(() => {
     if (!room || !getNativePlaybackBridge()) return
+    const rejoinToken = storage.getRejoinToken(room.id) ?? undefined
+    if (room.hasPassword && !rejoinToken) return
     configureNativePlayback({
-      serverUrl: SERVER_URL,
       roomId: room.id,
       userId: storage.getUserId(),
       nickname: storage.getNickname(),
-      rejoinToken: storage.getRejoinToken(room.id) ?? undefined,
+      rejoinToken,
     })
-  }, [room?.id])
+  }, [room])
 
   // Reset dedup ref on disconnect so reconnect PLAYER_PLAY is never blocked
   useEffect(() => {
@@ -256,11 +257,12 @@ export function usePlayer() {
         return
       }
 
-      const playerTrack = usePlayerStore.getState().currentTrack
+      const loadedTrack = usePlayerStore.getState().loadedTrack
       const roomTrack = room.currentTrack
+      const engineMatchesRoom = !!howlRef.current && loadedTrack?.id === roomTrack?.id
 
       // Server has cleared the track (queue empty / cleared) — reset client
-      if (!roomTrack && (playerTrack || howlRef.current)) {
+      if (!roomTrack && (loadedTrack || howlRef.current)) {
         recoveredRevision = room.playState.playbackRevision
         if (recoveryTimerRef.current) {
           clearTimeout(recoveryTimerRef.current)
@@ -281,8 +283,12 @@ export function usePlayer() {
 
       if (recoveredRevision === room.playState.playbackRevision) return
 
-      // Server has track but client doesn't (HMR reset / missed PLAYER_PLAY)
-      if (roomTrack?.streamUrl && (!playerTrack || !howlRef.current)) {
+      // Room metadata is authoritative and can restore lyrics immediately.
+      // Audio recovery additionally requires a resolved stream URL.
+      if (roomTrack && !engineMatchesRoom) {
+        void fetchLyric(roomTrack)
+        if (!roomTrack.streamUrl) return
+
         // Skip if onPlayerPlay is already handling this track — its updateRoom()
         // call triggers this subscription synchronously before loadTrack runs,
         // so playerTrack/howlRef are still stale. Checking loadingRef avoids
@@ -294,7 +300,19 @@ export function usePlayer() {
         recoveryTimerRef.current = setTimeout(() => {
           recoveryTimerRef.current = null
           const latestRoom = useRoomStore.getState().room
-          if (!latestRoom?.currentTrack?.streamUrl || howlRef.current) return
+          if (!latestRoom?.currentTrack?.streamUrl) return
+          const latestLoadedTrack = usePlayerStore.getState().loadedTrack
+          if (howlRef.current && latestLoadedTrack?.id === latestRoom.currentTrack.id) return
+
+          if (howlRef.current) {
+            try {
+              howlRef.current.unload()
+            } catch {
+              /* ignore */
+            }
+            howlRef.current = null
+            soundIdRef.current = undefined
+          }
           const ps = latestRoom.playState
           recoveredRevision = ps.playbackRevision
           const elapsed = ps.isPlaying ? (getServerTime() - ps.serverTimestamp) / 1000 : 0

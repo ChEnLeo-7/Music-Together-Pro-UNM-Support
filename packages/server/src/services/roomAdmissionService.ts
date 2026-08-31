@@ -98,7 +98,7 @@ function issueGrant(roomId: string, userId: string, sessionId: string, passwordV
   return { token, expiresAt: grant.expiresAt }
 }
 
-function rotateGrant(token: string, input: AuthorizeRoomJoinInput): IssuedRoomGrant | null {
+function validateGrant(token: string, input: AuthorizeRoomJoinInput): IssuedRoomGrant | null {
   const grant = grantsByHash.get(hashToken(token))
   if (!grant) return null
   if (grant.expiresAt <= Date.now()) {
@@ -114,8 +114,10 @@ function rotateGrant(token: string, input: AuthorizeRoomJoinInput): IssuedRoomGr
     return null
   }
 
-  deleteGrant(grant)
-  return issueGrant(input.room.id, input.userId, input.sessionId, input.room.passwordVersion)
+  // A browser and the Android playback service use sibling sockets bound to
+  // the same authenticated session. Keep the bounded, session-bound grant
+  // reusable so one socket cannot invalidate the other during reconnect.
+  return { token, expiresAt: grant.expiresAt }
 }
 
 function consumeBucket(map: Map<string, RateBucket>, key: string, limit: number, windowMs: number): boolean {
@@ -151,7 +153,7 @@ export function authorizeRoomJoin(input: AuthorizeRoomJoinInput): RoomAuthorizat
   if (!input.room.credential || input.userId === input.room.creatorId) return { authorized: true }
 
   if (input.grantToken) {
-    const grant = rotateGrant(input.grantToken, input)
+    const grant = validateGrant(input.grantToken, input)
     if (grant) return { authorized: true, grant }
   }
 

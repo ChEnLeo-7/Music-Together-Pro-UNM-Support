@@ -85,7 +85,7 @@ test('owner permission is identity equality, not an administrative role', () => 
   assert.equal(isRoomOwner('owner', 'server-admin'), false)
 })
 
-test('grant is bound and rotates on consumption', () => {
+test('grant is bound and reusable by sibling sockets in the same session', () => {
   const room = protectedRoom()
   const admitted = authorize(room, 'member', { password: 'secret1' })
   assert.ok(admitted.authorized && admitted.grant)
@@ -101,12 +101,9 @@ test('grant is bound and rotates on consumption', () => {
     errorCode: 'ROOM_PASSWORD_REQUIRED',
   })
 
-  const rotated = authorize(room, 'member', { grantToken: token })
-  assert.ok(rotated.authorized && rotated.grant && rotated.grant.token !== token)
-  assert.deepEqual(authorize(room, 'member', { grantToken: token }), {
-    authorized: false,
-    errorCode: 'ROOM_PASSWORD_REQUIRED',
-  })
+  const reused = authorize(room, 'member', { grantToken: token })
+  assert.ok(reused.authorized && reused.grant?.token === token)
+  assert.ok(authorize(room, 'member', { grantToken: token }).authorized)
 })
 
 test('version change and room revocation invalidate grants', () => {

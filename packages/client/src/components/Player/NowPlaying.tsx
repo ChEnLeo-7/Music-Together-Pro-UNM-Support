@@ -1,10 +1,10 @@
 import { MarqueeText } from '@/components/ui/marquee-text'
 import { cn } from '@/lib/utils'
-import { usePlayerStore } from '@/stores/playerStore'
+import { useRoomStore } from '@/stores/roomStore'
 import { Disc3 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
-import { LAYOUT_TRANSITION, SPRING } from './constants'
+import { LAYOUT_TRANSITION } from './constants'
 
 interface NowPlayingProps {
   /** Compact mode: small cover + song info in a single row (lyric view top bar) */
@@ -15,7 +15,7 @@ interface NowPlayingProps {
 }
 
 export function NowPlaying({ compact = false, onCoverClick, disableLayoutAnimation = false }: NowPlayingProps) {
-  const currentTrack = usePlayerStore((s) => s.currentTrack)
+  const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   const [coverError, setCoverError] = useState(false)
 
   // Skip layoutId on first frame to prevent unwanted entry animation
@@ -60,28 +60,14 @@ export function NowPlaying({ compact = false, onCoverClick, disableLayoutAnimati
         >
           {coverContent}
         </motion.div>
-        <motion.div
-          layoutId={ready && !disableLayoutAnimation ? 'song-info' : undefined}
-          transition={LAYOUT_TRANSITION}
-          className="min-w-0 flex-1"
-        >
-          <motion.div
-            initial={disableLayoutAnimation ? false : { fontSize: 20 }}
-            animate={disableLayoutAnimation ? undefined : { fontSize: 22 }}
-            transition={SPRING}
-            className={cn('font-semibold leading-tight text-white/90', disableLayoutAnimation && 'text-[22px]')}
-          >
+        <div className="min-w-0 flex-1">
+          <div className="text-[22px] font-semibold leading-tight text-white/90">
             <MarqueeText>{currentTrack?.title ?? '暂无歌曲'}</MarqueeText>
-          </motion.div>
-          <motion.div
-            initial={disableLayoutAnimation ? false : { fontSize: 14 }}
-            animate={disableLayoutAnimation ? undefined : { fontSize: 16 }}
-            transition={SPRING}
-            className={cn('text-white/50', disableLayoutAnimation && 'text-base')}
-          >
+          </div>
+          <div className="text-base text-white/50">
             <MarqueeText>{currentTrack ? currentTrack.artist.join(' / ') : '...'}</MarqueeText>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
       </div>
     )
   }

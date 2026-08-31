@@ -171,6 +171,21 @@ interface TencentSearchSong {
   }
 }
 
+interface TencentLegacySearchSong {
+  songmid: string
+  songname: string
+  interval?: number
+  singer?: Array<{ name: string }>
+  albummid?: string
+  albumname?: string
+  pay?: {
+    paydownload?: number
+    payplay?: number
+    paytrackmouth?: number
+    paytrackprice?: number
+  }
+}
+
 /** External API timeout (ms) */
 const API_TIMEOUT_MS = 15_000
 
@@ -611,10 +626,11 @@ class MusicProvider {
       }
 
       const result = response['music.search.SearchCgiService.DoSearchForQQMusicDesktop']
-      // Fail Fast: invalid response code or missing data
+      // QQ intermittently rejects this endpoint with code 2001 while its public
+      // search endpoint remains available from the same network.
       if (result?.code !== 0 || !result?.data?.body?.song?.list) {
-        logger.warn(`Tencent search failed: code ${result?.code}`)
-        return []
+        logger.warn(`Tencent desktop search failed: code ${result?.code}; trying legacy endpoint`)
+        return await this.searchTencentLegacy(keyword, limit, page)
       }
 
       const songList = result.data.body.song.list
@@ -645,6 +661,56 @@ class MusicProvider {
       logger.error('Tencent search failed:', error)
       return []
     }
+  }
+
+  private async searchTencentLegacy(keyword: string, limit: number, page: number): Promise<Track[]> {
+    const url = new URL('https://c.y.qq.com/soso/fcgi-bin/client_search_cp')
+    url.search = new URLSearchParams({
+      format: 'json',
+      p: String(page),
+      n: String(limit),
+      w: keyword,
+      cr: '1',
+      aggr: '1',
+      lossless: '1',
+    }).toString()
+
+    const response = await withTimeout(
+      fetch(url, {
+        headers: {
+          Referer: 'https://y.qq.com/',
+          'User-Agent': 'Mozilla/5.0',
+        },
+      }).then((res) => res.json() as Promise<{ code?: number; data?: { song?: { list?: TencentLegacySearchSong[] } } }>),
+    )
+    const songList = response?.code === 0 ? response.data?.song?.list : undefined
+    if (!songList) {
+      logger.warn(`Tencent legacy search failed for "${keyword}"`)
+      return []
+    }
+
+    const tracks: Track[] = songList.map((song) => ({
+      id: nanoid(),
+      source: 'tencent',
+      sourceId: song.songmid,
+      title: song.songname || 'Unknown',
+      artist: song.singer?.map((singer) => singer.name).filter(Boolean) || ['Unknown'],
+      album: song.albumname || '',
+      duration: song.interval || 0,
+      cover: song.albummid ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${song.albummid}.jpg` : '',
+      urlId: song.songmid,
+      lyricId: song.songmid,
+      picId: song.albummid || '',
+      vip:
+        song.pay?.paydownload === 1 ||
+        song.pay?.payplay === 1 ||
+        song.pay?.paytrackmouth === 1 ||
+        (song.pay?.paytrackprice ?? 0) > 0,
+    }))
+
+    this.registerTracks(tracks)
+    logger.info(`Legacy search "${keyword}" on tencent: ${tracks.length} results`)
+    return tracks
   }
 
   /**
@@ -930,11 +996,13 @@ class MusicProvider {
       // QQ 音乐使用新版搜索 API (Meting API 已失效)
       if (source === 'tencent') {
         const tracks = await this.searchTencent(keyword, limit, page)
-        // Update search index (cacheKey already defined above)
-        this.searchIndex.set(cacheKey, {
-          source,
-          ids: tracks.map((t) => t.sourceId),
-        })
+        // A temporary upstream rejection must not become a persistent empty cache hit.
+        if (tracks.length > 0) {
+          this.searchIndex.set(cacheKey, {
+            source,
+            ids: tracks.map((t) => t.sourceId),
+          })
+        }
         return tracks
       }
 

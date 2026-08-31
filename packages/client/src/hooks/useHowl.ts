@@ -12,10 +12,12 @@ import {
 } from '@/lib/constants'
 import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
+import { hasLyricTimeSubscribers, publishLyricTime } from '@/lib/lyricClock'
 import {
   getNativePlaybackBridge,
   NATIVE_PLAYBACK_EVENT,
   type NativePlaybackEvent,
+  type NativePlaybackSnapshot,
 } from '@/lib/nativePlayback'
 
 /** Max wait (ms) for Howler `unlock` event before giving up and skipping */
@@ -24,6 +26,8 @@ const PLAY_ERROR_TIMEOUT_MS = 3000
 /** If playback reports playing() but currentTime doesn't advance for this
  *  many milliseconds, treat it as stalled (network drop mid-stream). */
 const STALLED_TIMEOUT_MS = 8000
+const ANDROID_SNAPSHOT_INTERVAL_MS = 100
+const ANDROID_BOOTSTRAP_TIMEOUT_MS = 30_000
 
 export interface AudioEngine {
   play(id?: number): number
@@ -207,12 +211,24 @@ class AndroidMediaEngine implements AudioEngine {
   private destroyed = false
   private loaded = false
   private bootstrapTimer: ReturnType<typeof setTimeout> | null = null
+  private snapshotTimer: ReturnType<typeof setInterval> | null = null
+  private readonly bootstrapStartedAt = performance.now()
+  private snapshot: NativePlaybackSnapshot = {
+    position: 0,
+    duration: 0,
+    isPlaying: false,
+    volume: 0,
+    rate: 1,
+    trackId: '',
+  }
 
   constructor(
     private readonly options: NativeAudioOptions,
     private readonly trackId: string,
   ) {
     window.addEventListener(NATIVE_PLAYBACK_EVENT, this.handleNativeEvent as EventListener)
+    this.refreshSnapshot()
+    this.snapshotTimer = setInterval(this.refreshSnapshot, ANDROID_SNAPSHOT_INTERVAL_MS)
     this.bootstrapTimer = setTimeout(this.bootstrap, 0)
   }
 
@@ -227,20 +243,19 @@ class AndroidMediaEngine implements AudioEngine {
   seek(): number
   seek(time: number): this
   seek(time?: number): number | this {
-    const bridge = getNativePlaybackBridge()
-    if (typeof time !== 'number') return bridge?.getPosition() ?? 0
+    if (typeof time !== 'number') return this.snapshot.position
     return this
   }
 
   duration(): number {
-    return getNativePlaybackBridge()?.getDuration() ?? 0
+    return this.snapshot.duration
   }
 
   volume(): number
   volume(value: number): this
   volume(value?: number): number | this {
     const bridge = getNativePlaybackBridge()
-    if (typeof value !== 'number') return bridge?.getVolume() ?? 0
+    if (typeof value !== 'number') return this.snapshot.volume
     bridge?.setVolume(Math.max(0, Math.min(1, value)))
     return this
   }
@@ -251,12 +266,13 @@ class AndroidMediaEngine implements AudioEngine {
   }
 
   playing(): boolean {
-    return getNativePlaybackBridge()?.isPlaying() ?? false
+    return this.snapshot.isPlaying
   }
 
   unload(): this {
     this.destroyed = true
     if (this.bootstrapTimer) clearTimeout(this.bootstrapTimer)
+    if (this.snapshotTimer) clearInterval(this.snapshotTimer)
     window.removeEventListener(NATIVE_PLAYBACK_EVENT, this.handleNativeEvent as EventListener)
     return this
   }
@@ -264,8 +280,7 @@ class AndroidMediaEngine implements AudioEngine {
   rate(): number
   rate(value: number): this
   rate(value?: number): number | this {
-    const bridge = getNativePlaybackBridge()
-    if (typeof value !== 'number') return bridge?.getRate() ?? 1
+    if (typeof value !== 'number') return this.snapshot.rate
     return this
   }
 
@@ -297,6 +312,12 @@ class AndroidMediaEngine implements AudioEngine {
       this.options.onplay()
     }
     if (detail.type === 'pause') this.options.onpause()
+    if (detail.type === 'seek' && Number.isFinite(detail.position)) {
+      usePlayerStore.getState().setCurrentTime(detail.position!)
+    }
+    if (detail.type === 'snapshot') {
+      this.applySnapshot(detail as NativePlaybackSnapshot & NativePlaybackEvent)
+    }
     if (detail.type === 'end') this.options.onpause()
     if (detail.type === 'error') this.options.onloaderror(this.soundId, detail.message ?? 'native-playback-error')
   }
@@ -309,13 +330,43 @@ class AndroidMediaEngine implements AudioEngine {
 
   private bootstrap = () => {
     if (this.destroyed) return
-    const bridge = getNativePlaybackBridge()
-    if (bridge?.getTrackId() === this.trackId && bridge.getDuration() > 0) {
+    if (this.snapshot.trackId === this.trackId && this.snapshot.duration > 0) {
       this.emitLoad()
-      if (bridge.isPlaying()) this.options.onplay()
+      if (this.snapshot.isPlaying) this.options.onplay()
+      return
+    }
+    if (performance.now() - this.bootstrapStartedAt >= ANDROID_BOOTSTRAP_TIMEOUT_MS) {
+      this.bootstrapTimer = null
+      this.options.onloaderror(this.soundId, 'native-playback-bootstrap-timeout')
       return
     }
     this.bootstrapTimer = setTimeout(this.bootstrap, 100)
+  }
+
+  private refreshSnapshot = () => {
+    if (this.destroyed) return
+    const raw = getNativePlaybackBridge()?.getPlaybackSnapshot()
+    if (!raw) return
+    try {
+      this.applySnapshot(JSON.parse(raw) as NativePlaybackSnapshot)
+    } catch {
+      // Ignore a transient malformed native response; the next poll reconciles it.
+    }
+  }
+
+  private applySnapshot(snapshot: Partial<NativePlaybackSnapshot>) {
+    this.snapshot = {
+      position: Number.isFinite(snapshot.position) ? snapshot.position! : this.snapshot.position,
+      duration: Number.isFinite(snapshot.duration) ? snapshot.duration! : this.snapshot.duration,
+      isPlaying: snapshot.isPlaying ?? this.snapshot.isPlaying,
+      volume: Number.isFinite(snapshot.volume) ? snapshot.volume! : this.snapshot.volume,
+      rate: Number.isFinite(snapshot.rate) ? snapshot.rate! : this.snapshot.rate,
+      trackId: snapshot.trackId ?? this.snapshot.trackId,
+    }
+    if (this.snapshot.trackId !== this.trackId) return
+    const state = usePlayerStore.getState()
+    state.setCurrentTime(this.snapshot.position, false)
+    if (state.isPlaying !== this.snapshot.isPlaying) state.setIsPlaying(this.snapshot.isPlaying)
   }
 }
 
@@ -387,10 +438,17 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
       }
       if (engine && playing) {
         const now = performance.now()
-        if (now - lastTimeUpdateRef.current >= CURRENT_TIME_THROTTLE_MS) {
-          lastTimeUpdateRef.current = now
+        const updatePlayerState = now - lastTimeUpdateRef.current >= CURRENT_TIME_THROTTLE_MS
+        const updateLyrics = hasLyricTimeSubscribers()
+        if (updatePlayerState || updateLyrics) {
           const seekVal = engine.seek() as number
-          usePlayerStore.getState().setCurrentTime(seekVal)
+          if (updateLyrics) publishLyricTime(seekVal * 1000)
+          if (!updatePlayerState) {
+            animFrameRef.current = requestAnimationFrame(update)
+            return
+          }
+          lastTimeUpdateRef.current = now
+          usePlayerStore.getState().setCurrentTime(seekVal, false)
 
           // Stalled detection: if currentTime hasn't moved for STALLED_TIMEOUT_MS
           // while playing() is true, the stream likely broke mid-playback.
@@ -398,7 +456,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
           if (Math.abs(seekVal - st.lastSeek) < 0.05) {
             if (st.since > 0 && now - st.since > STALLED_TIMEOUT_MS) {
               console.warn('Playback stalled, skipping track')
-               toast.error(t('playbackInterrupted'))
+              toast.error(t('playbackInterrupted'))
               stalledRef.current = { lastSeek: -1, since: 0 }
               onTrackEnd()
               return
@@ -413,7 +471,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
       animFrameRef.current = requestAnimationFrame(update)
     }
     animFrameRef.current = requestAnimationFrame(update)
-   }, [onTrackEnd, t])
+  }, [onTrackEnd, t])
 
   const stopTimeUpdate = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current)
@@ -536,7 +594,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
           retryRef.current = false
           if (onTrackLoadFailure?.(track)) return
           console.error('Howl load error (after retry):', msg)
-           toast.error(t('trackLoadFailed', { track: trackTitleRef.current }))
+          toast.error(t('trackLoadFailed', { track: trackTitleRef.current }))
           onTrackEnd()
         },
         onplayerror: function (soundId: number) {
@@ -546,7 +604,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
             playErrorTimerRef.current = null
             if (onTrackLoadFailure?.(track)) return
             console.warn('Howl unlock timeout, skipping track')
-             toast.error(t('playbackFailed'))
+            toast.error(t('playbackFailed'))
             onTrackEnd()
           }, PLAY_ERROR_TIMEOUT_MS)
           howl.once('unlock', () => {
@@ -588,7 +646,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
       }
 
       howlRef.current = howl
-      usePlayerStore.getState().setCurrentTrack(track)
+      usePlayerStore.getState().setLoadedTrack(track)
     },
     [onTrackEnd, onTrackLoadFailure, startTimeUpdate, stopTimeUpdate, t],
   )
