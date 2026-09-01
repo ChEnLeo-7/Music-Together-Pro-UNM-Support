@@ -2,7 +2,8 @@ import type { Database } from 'better-sqlite3'
 
 interface Migration {
   version: number
-  sql: string
+  sql?: string
+  apply?: (db: Database) => void
 }
 
 const migrations: Migration[] = [
@@ -92,13 +93,68 @@ const migrations: Migration[] = [
   },
   {
     version: 3,
-    sql: `
-      ALTER TABLE rooms ADD COLUMN password_ciphertext TEXT;
-      ALTER TABLE rooms ADD COLUMN password_nonce TEXT;
-      ALTER TABLE rooms ADD COLUMN password_tag TEXT;
-      ALTER TABLE rooms ADD COLUMN password_key_version INTEGER;
-      ALTER TABLE rooms ADD COLUMN password_version INTEGER NOT NULL DEFAULT 0;
-    `,
+    apply: (db) => {
+      const requiredColumns = [
+        { name: 'password_ciphertext', definition: 'TEXT', type: 'TEXT', notnull: 0, defaultValue: null },
+        { name: 'password_nonce', definition: 'TEXT', type: 'TEXT', notnull: 0, defaultValue: null },
+        { name: 'password_tag', definition: 'TEXT', type: 'TEXT', notnull: 0, defaultValue: null },
+        { name: 'password_key_version', definition: 'INTEGER', type: 'INTEGER', notnull: 0, defaultValue: null },
+        {
+          name: 'password_version',
+          definition: 'INTEGER NOT NULL DEFAULT 0',
+          type: 'INTEGER',
+          notnull: 1,
+          defaultValue: '0',
+        },
+      ] as const
+
+      const currentColumns = () =>
+        new Map(
+          (
+            db.prepare('PRAGMA table_info(rooms)').all() as Array<{
+              name: string
+              type: string
+              notnull: 0 | 1
+              dflt_value: string | null
+            }>
+          ).map((column) => [column.name.toLowerCase(), column]),
+        )
+
+      const existingColumns = currentColumns()
+      for (const column of requiredColumns) {
+        if (!existingColumns.has(column.name)) {
+          db.exec(`ALTER TABLE rooms ADD COLUMN ${column.name} ${column.definition}`)
+        }
+      }
+
+      const finalColumns = currentColumns()
+      for (const expected of requiredColumns) {
+        const actual = finalColumns.get(expected.name)
+        const normalizedDefault = actual?.dflt_value?.replace(/[()']/g, '') ?? null
+        if (
+          !actual ||
+          actual.type.toUpperCase() !== expected.type ||
+          actual.notnull !== expected.notnull ||
+          normalizedDefault !== expected.defaultValue
+        ) {
+          throw new Error(`Database rooms.${expected.name} has an incompatible definition`)
+        }
+      }
+
+      const corrupted = db.prepare(`
+        SELECT id FROM rooms
+        WHERE (
+          (password_ciphertext IS NOT NULL) +
+          (password_nonce IS NOT NULL) +
+          (password_tag IS NOT NULL) +
+          (password_key_version IS NOT NULL)
+        ) NOT IN (0, 4)
+        LIMIT 1
+      `).get() as { id: string } | undefined
+      if (corrupted) {
+        throw new Error(`Room ${corrupted.id} has a partial encrypted password credential`)
+      }
+    },
   },
 ]
 
@@ -124,7 +180,8 @@ export function runMigrations(db: Database): void {
   for (const migration of migrations) {
     if (applied.has(migration.version)) continue
     db.transaction(() => {
-      db.exec(migration.sql)
+      if (migration.apply) migration.apply(db)
+      else if (migration.sql) db.exec(migration.sql)
       insertVersion.run(migration.version, Date.now())
     })()
   }
