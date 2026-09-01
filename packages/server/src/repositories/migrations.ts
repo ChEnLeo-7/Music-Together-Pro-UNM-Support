@@ -60,11 +60,7 @@ const migrations: Migration[] = [
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         creator_id TEXT NOT NULL,
-        password_ciphertext TEXT,
-        password_nonce TEXT,
-        password_tag TEXT,
-        password_key_version INTEGER,
-        password_version INTEGER NOT NULL DEFAULT 0,
+        password_hash TEXT,
         hidden INTEGER NOT NULL DEFAULT 0,
         permanent INTEGER NOT NULL DEFAULT 0,
         settings_json TEXT NOT NULL DEFAULT '{}',
@@ -92,6 +88,16 @@ const migrations: Migration[] = [
     version: 2,
     sql: `
       ALTER TABLE users ADD COLUMN must_change_username INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 3,
+    sql: `
+      ALTER TABLE rooms ADD COLUMN password_ciphertext TEXT;
+      ALTER TABLE rooms ADD COLUMN password_nonce TEXT;
+      ALTER TABLE rooms ADD COLUMN password_tag TEXT;
+      ALTER TABLE rooms ADD COLUMN password_key_version INTEGER;
+      ALTER TABLE rooms ADD COLUMN password_version INTEGER NOT NULL DEFAULT 0;
     `,
   },
 ]
