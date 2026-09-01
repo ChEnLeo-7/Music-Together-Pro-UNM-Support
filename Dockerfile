@@ -31,12 +31,9 @@ ENV NODE_ENV=production
 ENV PORT=3001
 WORKDIR /app
 
-RUN apk add --no-cache vips
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/server/package.json packages/server/package.json
-COPY packages/client/package.json packages/client/package.json
 COPY --from=prod-deps /app/node_modules node_modules
 COPY --from=prod-deps /app/packages/shared/node_modules packages/shared/node_modules
 COPY --from=prod-deps /app/packages/server/node_modules packages/server/node_modules
