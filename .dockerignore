@@ -11,3 +11,8 @@ docs
 .env
 screenshots
 *.md
+data
+packages/android
+.github
+*.jks
+*.keystore
