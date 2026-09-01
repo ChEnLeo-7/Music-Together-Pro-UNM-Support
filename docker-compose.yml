@@ -1,7 +1,8 @@
 services:
   music-together:
-    image: 'ghcr.io/chenleo-7/music-together-pro-unm-support:${IMAGE_TAG:-latest}'
-    pull_policy: always
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: music-together
     restart: unless-stopped
     init: true
