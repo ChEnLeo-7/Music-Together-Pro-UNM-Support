@@ -102,16 +102,16 @@ The Android app uses a Media3 foreground playback service and supports backgroun
 
 ## Docker Local Deployment
 
-The repository's `docker-compose.yml` pulls the latest production image from GHCR and includes a health check, log rotation, and a persistent data volume:
+The repository's `docker-compose.yml` builds the application image locally from the checked-out source and includes a health check, log rotation, and a persistent data volume:
 
 ```bash
 cp .env.example .env
 # Edit .env and set at least the three required secrets
-docker compose up -d
+docker compose up -d --build
 docker compose ps
 ```
 
-The default image is `ghcr.io/chenleo-7/music-together-pro-unm-support:latest`. Set `IMAGE_TAG` to pin a commit SHA published by GitHub Actions. Upgrade with `docker compose pull && docker compose up -d`.
+The application image is no longer pulled from GHCR. After updating the checked-out source, run `docker compose up -d --build` in the project directory. Docker builds for the host architecture and restarts the service; the `music-together-data` volume remains intact.
 
 When deploying behind a reverse proxy with `TRUST_PROXY_HOPS=1`, also set `BIND_ADDRESS=127.0.0.1` so clients cannot bypass the proxy and reach the application port directly.
 
@@ -127,8 +127,8 @@ Use the first two values for `ROOM_PASSWORD_KEY` and `PLATFORM_AUTH_KEY`, and th
 
 ```bash
 docker compose stop music-together
-docker compose run --rm music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
-docker compose up -d
+docker compose run --rm --build music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
+docker compose up -d --build
 ```
 
 The reset removes old users, permanent rooms, platform authorizations, and avatars. After restart, sign in once with `admin/admin` and immediately change both the username and password when prompted; public registration opens after that bootstrap step.

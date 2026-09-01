@@ -101,16 +101,16 @@ Android App 使用 Media3 前台播放服务，支持后台/锁屏播放和系�
 
 ## Docker 本地部署
 
-仓库中的 `docker-compose.yml` 默认拉取 GHCR 的最新生产镜像，并包含健康检查、日志轮转和持久化数据卷：
+仓库中的 `docker-compose.yml` 使用当前目录的源码在部署机器本地构建镜像，并包含健康检查、日志轮转和持久化数据卷：
 
 ```bash
 cp .env.example .env
 # 编辑 .env，至少填写三个必需密钥
-docker compose up -d
+docker compose up -d --build
 docker compose ps
 ```
 
-默认镜像为 `ghcr.io/chenleo-7/music-together-pro-unm-support:latest`。可通过 `IMAGE_TAG` 固定到 GitHub Actions 发布的提交 SHA；升级时运行 `docker compose pull && docker compose up -d`。
+应用镜像不再从 GHCR 拉取。更新源码后，在项目目录执行 `docker compose up -d --build`，Docker 会为当前主机架构重新构建并重启服务；数据库仍保存在 `music-together-data` 数据卷中。
 
 反向代理部署并设置 `TRUST_PROXY_HOPS=1` 时，应同时设置 `BIND_ADDRESS=127.0.0.1`，防止客户端绕过代理直接访问服务端口。
 
@@ -126,8 +126,8 @@ openssl rand -hex 32
 
 ```bash
 docker compose stop music-together
-docker compose run --rm music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
-docker compose up -d
+docker compose run --rm --build music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
+docker compose up -d --build
 ```
 
 重置会删除旧用户、永久房间、平台授权和头像。重新启动后使用一次性账号 `admin/admin` 登录，并按界面要求立即修改用户名和密码；完成后普通注册才会开放。
