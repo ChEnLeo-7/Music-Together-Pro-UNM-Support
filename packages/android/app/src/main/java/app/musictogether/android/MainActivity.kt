@@ -93,24 +93,39 @@ class MainActivity : ComponentActivity() {
     getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(SERVER_URL, serverUrl).apply()
     requestNotificationPermission()
     webView?.destroy()
+    val trustedServer = TrustedServer(serverUrl)
     webView = WebView(this).apply {
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
       settings.mediaPlaybackRequiresUserGesture = false
       settings.userAgentString = "${settings.userAgentString} MusicTogetherAndroid/1"
       webViewClient = object : WebViewClient() {
-        private val trusted = Uri.parse(serverUrl)
+        private var initialNavigation = true
 
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
           val target = request?.url ?: return true
           if (!request.isForMainFrame) return false
-          if (sameOrigin(target, trusted)) return false
+          if (sameOrigin(target, Uri.parse(trustedServer.url))) return false
+          if (initialNavigation && request.isRedirect && target.isHttpOrHttps()) {
+            trustedServer.url = originUrl(target)
+            return false
+          }
           runCatching { startActivity(Intent(Intent.ACTION_VIEW, target)) }
           return true
         }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+          super.onPageFinished(view, url)
+          val finalUri = url?.let(Uri::parse)
+          if (finalUri?.isHttpOrHttps() == true && sameOrigin(finalUri, Uri.parse(trustedServer.url))) {
+            trustedServer.url = originUrl(finalUri)
+            getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(SERVER_URL, trustedServer.url).apply()
+          }
+          initialNavigation = false
+        }
       }
       webChromeClient = WebChromeClient()
-      addJavascriptInterface(PlaybackBridge(this@MainActivity, serverUrl), "MusicTogetherAndroid")
+      addJavascriptInterface(PlaybackBridge(this@MainActivity, trustedServer), "MusicTogetherAndroid")
       loadUrl(if (sameOrigin(Uri.parse(initialUrl), Uri.parse(serverUrl))) initialUrl else serverUrl)
     }
     setSafeContent(webView ?: return)
@@ -334,6 +349,15 @@ class MainActivity : ComponentActivity() {
     else -> 80
   }
 
+  private fun originUrl(uri: Uri): String = buildString {
+    append(uri.scheme?.lowercase())
+    append("://")
+    append(uri.host)
+    val port = effectivePort(uri)
+    val defaultPort = if (uri.scheme.equals("https", ignoreCase = true)) 443 else 80
+    if (port != defaultPort) append(":$port")
+  }
+
   private fun matchWrap() = LinearLayout.LayoutParams(
     LinearLayout.LayoutParams.MATCH_PARENT,
     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -385,14 +409,14 @@ class MainActivity : ComponentActivity() {
 
   private inner class PlaybackBridge(
     private val context: Context,
-    private val approvedServerUrl: String,
+    private val trustedServer: TrustedServer,
   ) {
     @JavascriptInterface
     fun configureSession(config: String) {
       val json = runCatching { JSONObject(config) }.getOrNull() ?: return
       if (!json.has("roomId") || !json.has("userId") || !json.has("nickname")) return
-      json.put("serverUrl", approvedServerUrl)
-      val cookie = CookieManager.getInstance().getCookie(approvedServerUrl) ?: ""
+      json.put("serverUrl", trustedServer.url)
+      val cookie = CookieManager.getInstance().getCookie(trustedServer.url) ?: ""
       send(PlaybackService.ACTION_CONFIGURE) {
         putExtra(PlaybackService.EXTRA_CONFIG, json.toString())
         putExtra(PlaybackService.EXTRA_COOKIE, cookie)
@@ -442,4 +466,6 @@ class MainActivity : ComponentActivity() {
     private const val PREFERENCES = "music-together"
     private const val SERVER_URL = "server-url"
   }
+
+  private data class TrustedServer(var url: String)
 }
