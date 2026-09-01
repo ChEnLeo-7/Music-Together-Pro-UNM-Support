@@ -151,3 +151,4 @@ jobs:
               } catch (error) {
                 core.warning(`Could not delete tag ${release.tag_name}: ${String(error)}`);
               }
+            }
