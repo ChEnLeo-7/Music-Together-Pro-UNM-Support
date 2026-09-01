@@ -4,6 +4,7 @@
 
 ### 本次更新
 
+- 支持应用内跟随初始 HTTP(S) 服务端跨域、跨端口重定向，并将原生播放安全绑定到最终地址。
 - 网页重载后继续恢复正在播放歌曲的服务端时间位置，暂停歌曲保持暂停位置。
 - 修复 Android 调整进度时进度条短暂跳回旧位置的问题。
 - Android 播放器支持隐藏状态栏和导航栏的沉浸式全屏。
@@ -34,6 +35,7 @@ This release provides an Android Release APK signed with a persistent production
 
 ### Security and reliability
 
+- Initial cross-origin and cross-port HTTP(S) server redirects now stay in-app, with native playback securely rebound to the final origin.
 - Reload recovery resumes from the server-authoritative position, while paused tracks remain paused at their saved position.
 - Fixed the Android progress bar briefly jumping back to the previous position during a seek.
 - Added immersive player fullscreen that hides the status and navigation bars.
