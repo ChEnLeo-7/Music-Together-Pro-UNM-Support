@@ -13,7 +13,7 @@ Docker 容器 (:3001)
 
 ## CI/CD 流程
 
-1. **push 到 main** → GitHub Actions 构建 Docker 镜像 → 推送到 GHCR（`ghcr.io`）
+1. **push 到 main** → GitHub Actions 构建 `linux/amd64` 和 `linux/arm64` 镜像 → 推送到 GHCR（`ghcr.io`）
 2. **服务器上** Watchtower 每 5 分钟检查镜像更新 → 自动拉取并重启容器
 
 零人工干预，GitHub 零额外 Secrets（使用自带的 `GITHUB_TOKEN`）。
@@ -33,7 +33,7 @@ Docker 容器 (:3001)
 ## 反向代理来源地址
 
 - 直接暴露应用端口时保持 `TRUST_PROXY_HOPS=0`，服务端不会信任客户端伪造的转发头
-- 经本机 Nginx/1Panel 单层反向代理时通常设置 `TRUST_PROXY_HOPS=1`
+- 经本机 Nginx/1Panel 单层反向代理时通常设置 `TRUST_PROXY_HOPS=1`，并设置 `BIND_ADDRESS=127.0.0.1`
 - HTTP 登录限速和 Socket 房间密码限速共用相同的可信代理跳数
 - 配置值必须等于实际可信代理层数，否则可能错误归并用户或信任伪造来源地址
 
@@ -51,14 +51,15 @@ Docker 容器 (:3001)
 新账号 schema 不兼容旧随机 ID 账号数据库。升级前必须停止服务并备份数据，然后显式执行：
 
 ```bash
+docker compose stop music-together
 docker compose run --rm music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
-docker compose run --rm music-together node packages/server/dist/cli/initAdmin.js
+docker compose up -d
 ```
 
 - reset 会删除用户、永久房间、平台授权和头像
 - 普通启动绝不会自动重置数据库
-- 首个管理员只允许通过服务器本机交互命令创建
-- 管理员存在后公开注册才会开放
+- 重启后使用一次性账号 `admin/admin` 登录，并按界面要求立即修改用户名和密码
+- 完成管理员凭据更新后公开注册才会开放
 
 ## 房间密码密钥
 

@@ -1,34 +1,51 @@
 services:
   music-together:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: music-together:local
+    image: 'ghcr.io/chenleo-7/music-together-pro-unm-support:${IMAGE_TAG:-latest}'
+    pull_policy: always
     container_name: music-together
     restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
     ports:
-      - "${HOST_PORT:-3001}:3001"
+      - '${BIND_ADDRESS:-0.0.0.0}:${HOST_PORT:-3001}:3001'
     environment:
       NODE_ENV: production
       PORT: 3001
-      CLIENT_URL: "${CLIENT_URL:-}"
-      CORS_ORIGINS: "${CORS_ORIGINS:-}"
-      TRUST_PROXY_HOPS: "${TRUST_PROXY_HOPS:-0}"
-      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
-      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
-      ROOM_PASSWORD_KEY: "${ROOM_PASSWORD_KEY:?ROOM_PASSWORD_KEY is required}"
-      ROOM_PASSWORD_KEY_VERSION: "${ROOM_PASSWORD_KEY_VERSION:-1}"
-      ROOM_ADMISSION_TTL_MS: "${ROOM_ADMISSION_TTL_MS:-300000}"
-      PLATFORM_AUTH_KEY: "${PLATFORM_AUTH_KEY:?PLATFORM_AUTH_KEY is required}"
-      STREAM_PROXY_SECRET: "${STREAM_PROXY_SECRET:?STREAM_PROXY_SECRET is required}"
-      DATABASE_URL: "${DATABASE_URL:-file:/app/data/music-together.db}"
-      AUTO_FALLBACK_ENABLED: "${AUTO_FALLBACK_ENABLED:-true}"
-      UNM_SERVER_URL: "${UNM_SERVER_URL:-}"
-      UNM_SERVER_TIMEOUT_MS: "${UNM_SERVER_TIMEOUT_MS:-10000}"
+      CLIENT_URL: '${CLIENT_URL:-}'
+      CORS_ORIGINS: '${CORS_ORIGINS:-}'
+      TRUST_PROXY_HOPS: '${TRUST_PROXY_HOPS:-0}'
+      SESSION_TTL_DAYS: '${SESSION_TTL_DAYS:-30}'
+      SESSION_COOKIE_SECURE: '${SESSION_COOKIE_SECURE:-true}'
+      ROOM_PASSWORD_KEY: '${ROOM_PASSWORD_KEY:?ROOM_PASSWORD_KEY is required}'
+      ROOM_PASSWORD_KEY_VERSION: '${ROOM_PASSWORD_KEY_VERSION:-1}'
+      ROOM_ADMISSION_TTL_MS: '${ROOM_ADMISSION_TTL_MS:-300000}'
+      PLATFORM_AUTH_KEY: '${PLATFORM_AUTH_KEY:?PLATFORM_AUTH_KEY is required}'
+      STREAM_PROXY_SECRET: '${STREAM_PROXY_SECRET:?STREAM_PROXY_SECRET is required}'
+      DATABASE_URL: '${DATABASE_URL:-file:/app/data/music-together.db}'
+      AUTO_FALLBACK_ENABLED: '${AUTO_FALLBACK_ENABLED:-true}'
+      UNM_SERVER_URL: '${UNM_SERVER_URL:-}'
+      UNM_SERVER_TIMEOUT_MS: '${UNM_SERVER_TIMEOUT_MS:-10000}'
     volumes:
       - music-together-data:/app/data
     networks:
       - music-together
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
 
 networks:
   music-together:
