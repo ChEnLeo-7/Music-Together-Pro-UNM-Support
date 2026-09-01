@@ -102,47 +102,18 @@ The Android app uses a Media3 foreground playback service and supports backgroun
 
 ## Docker Local Deployment
 
-**Docker-Compose**:
-``` Docker-Compose
-services:
-  music-together:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: music-together:local
-    container_name: music-together
-    restart: unless-stopped
-    ports:
-      - "${HOST_PORT:-3001}:3001"
-    environment:
-      NODE_ENV: production
-      PORT: 3001
-      CLIENT_URL: "${CLIENT_URL:-}"
-      CORS_ORIGINS: "${CORS_ORIGINS:-}"
-      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
-      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
-      ROOM_PASSWORD_KEY: "${ROOM_PASSWORD_KEY:?ROOM_PASSWORD_KEY is required}"
-      ROOM_PASSWORD_KEY_VERSION: "${ROOM_PASSWORD_KEY_VERSION:-1}"
-      ROOM_ADMISSION_TTL_MS: "${ROOM_ADMISSION_TTL_MS:-300000}"
-      PLATFORM_AUTH_KEY: "${PLATFORM_AUTH_KEY:?PLATFORM_AUTH_KEY is required}"
-      STREAM_PROXY_SECRET: "${STREAM_PROXY_SECRET:?STREAM_PROXY_SECRET is required}"
-      DATABASE_URL: "${DATABASE_URL:-file:/app/data/music-together.db}"
-      AUTO_FALLBACK_ENABLED: "${AUTO_FALLBACK_ENABLED:-true}"
-      UNM_SERVER_URL: "${UNM_SERVER_URL:-}"
-      UNM_SERVER_TIMEOUT_MS: "${UNM_SERVER_TIMEOUT_MS:-10000}"
-    volumes:
-      - music-together-data:/app/data
-    networks:
-      - music-together
+The repository's `docker-compose.yml` pulls the latest production image from GHCR and includes a health check, log rotation, and a persistent data volume:
 
-networks:
-  music-together:
-    name: music-together
-
-volumes:
-  music-together-data:
-
+```bash
+cp .env.example .env
+# Edit .env and set at least the three required secrets
+docker compose up -d
+docker compose ps
 ```
+
+The default image is `ghcr.io/chenleo-7/music-together-pro-unm-support:latest`. Set `IMAGE_TAG` to pin a commit SHA published by GitHub Actions. Upgrade with `docker compose pull && docker compose up -d`.
+
+When deploying behind a reverse proxy with `TRUST_PROXY_HOPS=1`, also set `BIND_ADDRESS=127.0.0.1` so clients cannot bypass the proxy and reach the application port directly.
 
 Before the first deployment, generate and configure the keys in `.env`:
 
@@ -152,72 +123,17 @@ openssl rand -base64 32
 openssl rand -hex 32
 ```
 
-Use the first two values for `ROOM_PASSWORD_KEY` and `PLATFORM_AUTH_KEY`, and the third for `STREAM_PROXY_SECRET`. Session cookies require HTTPS by default; set `SESSION_COOKIE_SECURE=false` only for trusted LAN HTTP testing. Upgrading from the old account system requires stopping the service, backing up the data, and explicitly resetting all application data:
+Use the first two values for `ROOM_PASSWORD_KEY` and `PLATFORM_AUTH_KEY`, and the third for `STREAM_PROXY_SECRET`. Session cookies require HTTPS by default; set `SESSION_COOKIE_SECURE=false` only for trusted LAN HTTP testing. If an upgrade from an old version reports `Unversioned database schema detected`, back up the Docker volume on the host and then run this mandatory incompatible-schema reset:
 
 ```bash
+docker compose stop music-together
 docker compose run --rm music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
-docker compose run --rm music-together node packages/server/dist/cli/initAdmin.js
 docker compose up -d
 ```
 
-The reset removes old users, permanent rooms, platform authorizations, and avatars. The first administrator can only be created through the local interactive command; public registration opens after initialization.
+The reset removes old users, permanent rooms, platform authorizations, and avatars. After restart, sign in once with `admin/admin` and immediately change both the username and password when prompted; public registration opens after that bootstrap step.
 
-**Dockerfile**
-```
-# syntax=docker/dockerfile:1
-
-FROM node:22-alpine AS base
-WORKDIR /app
-RUN corepack enable
-
-FROM base AS deps
-RUN apk add --no-cache python3 make g++
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/shared/package.json packages/shared/package.json
-COPY packages/server/package.json packages/server/package.json
-COPY packages/client/package.json packages/client/package.json
-RUN pnpm install --frozen-lockfile
-
-FROM deps AS build
-COPY packages/shared packages/shared
-COPY packages/server packages/server
-COPY packages/client packages/client
-RUN pnpm build
-
-FROM base AS prod-deps
-RUN apk add --no-cache python3 make g++
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/shared/package.json packages/shared/package.json
-COPY packages/server/package.json packages/server/package.json
-COPY packages/client/package.json packages/client/package.json
-RUN pnpm install --frozen-lockfile --prod --filter @music-together/server...
-
-FROM node:22-alpine AS production
-ENV NODE_ENV=production
-ENV PORT=3001
-WORKDIR /app
-
-RUN apk add --no-cache vips
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/shared/package.json packages/shared/package.json
-COPY packages/server/package.json packages/server/package.json
-COPY packages/client/package.json packages/client/package.json
-COPY --from=prod-deps /app/node_modules node_modules
-COPY --from=prod-deps /app/packages/shared/node_modules packages/shared/node_modules
-COPY --from=prod-deps /app/packages/server/node_modules packages/server/node_modules
-COPY --from=build /app/packages/shared/dist packages/shared/dist
-COPY --from=build /app/packages/server/dist packages/server/dist
-COPY --from=build /app/packages/client/dist packages/client/dist
-
-RUN sed -i 's|./src/index.ts|./dist/index.js|g' packages/shared/package.json \
-  && mkdir -p /app/data
-
-EXPOSE 3001
-VOLUME ["/app/data"]
-CMD ["node", "packages/server/dist/index.js"]
-
-```
+Refer to the repository root `Dockerfile` for image build details so documentation cannot drift from the production image configuration.
 
 ## Project Structure
 

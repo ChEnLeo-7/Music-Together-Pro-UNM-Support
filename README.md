@@ -101,47 +101,18 @@ Android App 使用 Media3 前台播放服务，支持后台/锁屏播放和系�
 
 ## Docker 本地部署
 
-**Docker-Compose**:
-``` Docker-Compose
-services:
-  music-together:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: music-together:local
-    container_name: music-together
-    restart: unless-stopped
-    ports:
-      - "${HOST_PORT:-3001}:3001"
-    environment:
-      NODE_ENV: production
-      PORT: 3001
-      CLIENT_URL: "${CLIENT_URL:-}"
-      CORS_ORIGINS: "${CORS_ORIGINS:-}"
-      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
-      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
-      ROOM_PASSWORD_KEY: "${ROOM_PASSWORD_KEY:?ROOM_PASSWORD_KEY is required}"
-      ROOM_PASSWORD_KEY_VERSION: "${ROOM_PASSWORD_KEY_VERSION:-1}"
-      ROOM_ADMISSION_TTL_MS: "${ROOM_ADMISSION_TTL_MS:-300000}"
-      PLATFORM_AUTH_KEY: "${PLATFORM_AUTH_KEY:?PLATFORM_AUTH_KEY is required}"
-      STREAM_PROXY_SECRET: "${STREAM_PROXY_SECRET:?STREAM_PROXY_SECRET is required}"
-      DATABASE_URL: "${DATABASE_URL:-file:/app/data/music-together.db}"
-      AUTO_FALLBACK_ENABLED: "${AUTO_FALLBACK_ENABLED:-true}"
-      UNM_SERVER_URL: "${UNM_SERVER_URL:-}"
-      UNM_SERVER_TIMEOUT_MS: "${UNM_SERVER_TIMEOUT_MS:-10000}"
-    volumes:
-      - music-together-data:/app/data
-    networks:
-      - music-together
+仓库中的 `docker-compose.yml` 默认拉取 GHCR 的最新生产镜像，并包含健康检查、日志轮转和持久化数据卷：
 
-networks:
-  music-together:
-    name: music-together
-
-volumes:
-  music-together-data:
-
+```bash
+cp .env.example .env
+# 编辑 .env，至少填写三个必需密钥
+docker compose up -d
+docker compose ps
 ```
+
+默认镜像为 `ghcr.io/chenleo-7/music-together-pro-unm-support:latest`。可通过 `IMAGE_TAG` 固定到 GitHub Actions 发布的提交 SHA；升级时运行 `docker compose pull && docker compose up -d`。
+
+反向代理部署并设置 `TRUST_PROXY_HOPS=1` 时，应同时设置 `BIND_ADDRESS=127.0.0.1`，防止客户端绕过代理直接访问服务端口。
 
 首次部署前先在 `.env` 中生成并填写密钥：
 
@@ -151,72 +122,17 @@ openssl rand -base64 32
 openssl rand -hex 32
 ```
 
-前两个分别用于 `ROOM_PASSWORD_KEY` 和 `PLATFORM_AUTH_KEY`，第三个用于 `STREAM_PROXY_SECRET`。默认会话 Cookie 要求通过 HTTPS 访问；仅在可信局域网 HTTP 调试时才可设置 `SESSION_COOKIE_SECURE=false`。从旧账号系统升级时需要先停止服务并备份数据，然后执行显式全量重置：
+前两个分别用于 `ROOM_PASSWORD_KEY` 和 `PLATFORM_AUTH_KEY`，第三个用于 `STREAM_PROXY_SECRET`。默认会话 Cookie 要求通过 HTTPS 访问；仅在可信局域网 HTTP 调试时才可设置 `SESSION_COOKIE_SECURE=false`。如果旧版本升级时启动日志报告 `Unversioned database schema detected`，必须先在宿主机备份 Docker 数据卷，再执行以下不兼容升级重置：
 
 ```bash
+docker compose stop music-together
 docker compose run --rm music-together node packages/server/dist/cli/resetAccounts.js --confirm=RESET-ALL-APPLICATION-DATA
-docker compose run --rm music-together node packages/server/dist/cli/initAdmin.js
 docker compose up -d
 ```
 
-重置会删除旧用户、永久房间、平台授权和头像。首个管理员只能通过上述本机交互命令创建，普通注册会在管理员初始化后开放。
+重置会删除旧用户、永久房间、平台授权和头像。重新启动后使用一次性账号 `admin/admin` 登录，并按界面要求立即修改用户名和密码；完成后普通注册才会开放。
 
-**Dockerfile**
-```
-# syntax=docker/dockerfile:1
-
-FROM node:22-alpine AS base
-WORKDIR /app
-RUN corepack enable
-
-FROM base AS deps
-RUN apk add --no-cache python3 make g++
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/shared/package.json packages/shared/package.json
-COPY packages/server/package.json packages/server/package.json
-COPY packages/client/package.json packages/client/package.json
-RUN pnpm install --frozen-lockfile
-
-FROM deps AS build
-COPY packages/shared packages/shared
-COPY packages/server packages/server
-COPY packages/client packages/client
-RUN pnpm build
-
-FROM base AS prod-deps
-RUN apk add --no-cache python3 make g++
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/shared/package.json packages/shared/package.json
-COPY packages/server/package.json packages/server/package.json
-COPY packages/client/package.json packages/client/package.json
-RUN pnpm install --frozen-lockfile --prod --filter @music-together/server...
-
-FROM node:22-alpine AS production
-ENV NODE_ENV=production
-ENV PORT=3001
-WORKDIR /app
-
-RUN apk add --no-cache vips
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/shared/package.json packages/shared/package.json
-COPY packages/server/package.json packages/server/package.json
-COPY packages/client/package.json packages/client/package.json
-COPY --from=prod-deps /app/node_modules node_modules
-COPY --from=prod-deps /app/packages/shared/node_modules packages/shared/node_modules
-COPY --from=prod-deps /app/packages/server/node_modules packages/server/node_modules
-COPY --from=build /app/packages/shared/dist packages/shared/dist
-COPY --from=build /app/packages/server/dist packages/server/dist
-COPY --from=build /app/packages/client/dist packages/client/dist
-
-RUN sed -i 's|./src/index.ts|./dist/index.js|g' packages/shared/package.json \
-  && mkdir -p /app/data
-
-EXPOSE 3001
-VOLUME ["/app/data"]
-CMD ["node", "packages/server/dist/index.js"]
-
-```
+镜像构建细节以仓库根目录的 `Dockerfile` 为准，避免文档副本与实际生产镜像配置漂移。
 
 ## 项目结构
 
