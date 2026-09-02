@@ -14,7 +14,7 @@ import type { SocketData } from './middleware/types.js'
 import authRoutes from './routes/auth.js'
 import musicRoutes from './routes/music.js'
 import roomRoutes from './routes/rooms.js'
-import settingsRoutes from './routes/settings.js'
+import { createSettingsRoutes } from './routes/settings.js'
 import { clearAllTimers } from './services/roomLifecycleService.js'
 import { logger } from './utils/logger.js'
 import { createAdminRoutes } from './routes/admin.js'
@@ -52,7 +52,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/music', musicRoutes)
 app.use('/api/rooms', roomRoutes)
 app.use('/api/admin', createAdminRoutes(io))
-app.use('/api/settings', settingsRoutes)
+app.use('/api/settings', createSettingsRoutes(io))
 
 // Health check
 app.get('/api/health', (_req, res) => {

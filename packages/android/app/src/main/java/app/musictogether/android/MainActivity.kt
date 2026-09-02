@@ -40,11 +40,16 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URI
 
 class MainActivity : ComponentActivity() {
   private var webView: WebView? = null
   private var contentRoot: FrameLayout? = null
   private var playerFullscreen = false
+  private var connectionAttempt = 0L
+  private var activityStarted = false
+  private var serverConnectButton: MaterialButton? = null
 
   private val playbackEvents = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -100,16 +105,11 @@ class MainActivity : ComponentActivity() {
       settings.mediaPlaybackRequiresUserGesture = false
       settings.userAgentString = "${settings.userAgentString} MusicTogetherAndroid/1"
       webViewClient = object : WebViewClient() {
-        private var initialNavigation = true
-
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
           val target = request?.url ?: return true
           if (!request.isForMainFrame) return false
+          if (request.isRedirect && !target.isHttpOrHttps()) return true
           if (sameOrigin(target, Uri.parse(trustedServer.url))) return false
-          if (initialNavigation && request.isRedirect && target.isHttpOrHttps()) {
-            trustedServer.url = originUrl(target)
-            return false
-          }
           runCatching { startActivity(Intent(Intent.ACTION_VIEW, target)) }
           return true
         }
@@ -121,7 +121,6 @@ class MainActivity : ComponentActivity() {
             trustedServer.url = originUrl(finalUri)
             getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(SERVER_URL, trustedServer.url).apply()
           }
-          initialNavigation = false
         }
       }
       webChromeClient = WebChromeClient()
@@ -132,6 +131,7 @@ class MainActivity : ComponentActivity() {
   }
 
   private fun showServerPicker() {
+    connectionAttempt += 1
     if (webView != null) {
       startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_RELEASE_SESSION))
     }
@@ -207,6 +207,7 @@ class MainActivity : ComponentActivity() {
       insetBottom = 0
       backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(208, 188, 255))
     }
+    serverConnectButton = connect
     val form = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       setPadding(dp(20), dp(20), dp(20), dp(20))
@@ -250,13 +251,33 @@ class MainActivity : ComponentActivity() {
     }
 
     val connectToServer = {
-      val normalized = normalizeServerUrl(address.text.toString())
+      val normalized = ServerRedirects.normalize(address.text.toString())
       if (normalized == null) {
         addressField.error = getString(R.string.server_invalid)
         address.requestFocus()
       } else {
         addressField.error = null
-        openServer(normalized)
+        connect.isEnabled = false
+        val attempt = ++connectionAttempt
+        Thread {
+          val resolution = runCatching { resolveServerRedirects(normalized) }.getOrNull()
+          runOnUiThread {
+            if (attempt != connectionAttempt || isFinishing || (Build.VERSION.SDK_INT >= 17 && isDestroyed)) return@runOnUiThread
+            connect.isEnabled = true
+            if (!activityStarted) return@runOnUiThread
+            when {
+              resolution == null -> {
+                addressField.error = getString(R.string.server_redirect_failed)
+                address.requestFocus()
+              }
+              resolution.accepted -> openServer(ServerRedirects.origin(resolution.uri), resolution.uri.toString())
+              else -> {
+                addressField.error = getString(R.string.server_redirect_invalid)
+                address.requestFocus()
+              }
+            }
+          }
+        }.start()
       }
     }
     connect.setOnClickListener { connectToServer() }
@@ -283,6 +304,7 @@ class MainActivity : ComponentActivity() {
 
   override fun onStart() {
     super.onStart()
+    activityStarted = true
     ContextCompat.registerReceiver(
       this,
       playbackEvents,
@@ -303,6 +325,9 @@ class MainActivity : ComponentActivity() {
   }
 
   override fun onStop() {
+    activityStarted = false
+    connectionAttempt += 1
+    serverConnectButton?.isEnabled = true
     runCatching { unregisterReceiver(playbackEvents) }
     super.onStop()
   }
@@ -313,6 +338,8 @@ class MainActivity : ComponentActivity() {
   }
 
   override fun onDestroy() {
+    connectionAttempt += 1
+    serverConnectButton = null
     setPlayerFullscreen(false)
     webView?.removeJavascriptInterface("MusicTogetherAndroid")
     webView?.destroy()
@@ -327,13 +354,20 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  private fun normalizeServerUrl(raw: String): String? {
-    val value = raw.trim().trimEnd('/')
-    if (value.isBlank()) return null
-    val withScheme = if ("://" in value) value else "http://$value"
-    val uri = runCatching { Uri.parse(withScheme) }.getOrNull() ?: return null
-    if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return null
-    return uri.toString().trimEnd('/')
+  private fun resolveServerRedirects(initial: URI): RedirectResolution = ServerRedirects.resolve(initial) { current ->
+    val connection = current.toURL().openConnection() as HttpURLConnection
+    try {
+      connection.instanceFollowRedirects = false
+      connection.connectTimeout = 10_000
+      connection.readTimeout = 10_000
+      connection.requestMethod = "GET"
+      connection.setRequestProperty("User-Agent", "MusicTogetherAndroid/1")
+      connection.setRequestProperty("Range", "bytes=0-0")
+      connection.connect()
+      RedirectResponse(connection.responseCode, connection.getHeaderField("Location"))
+    } finally {
+      connection.disconnect()
+    }
   }
 
   private fun Uri.isHttpOrHttps(): Boolean = scheme in setOf("http", "https") && !host.isNullOrBlank()

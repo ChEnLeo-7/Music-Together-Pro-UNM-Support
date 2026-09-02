@@ -14,7 +14,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 
 import { BackgroundRender } from '@applemusic-like-lyrics/react'
 import { Maximize2, Minimize2 } from 'lucide-react'
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react'
+import { LayoutGroup, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VoteBanner } from '../Vote/VoteBanner'
 import { LyricDisplay } from './LyricDisplay'
@@ -35,7 +35,7 @@ const LYRIC_MASK_STYLE = {
  * 这些 CDN 不允许跨域请求，AMLL 的 WebGL 纹理加载会被 CORS 拦截
  */
 const PROXY_COVER_HOSTS = [
-  'y.gtimg.cn',        // QQ 音乐
+  'y.gtimg.cn', // QQ 音乐
   'imgessl.kugou.com', // 酷狗
 ]
 
@@ -85,7 +85,6 @@ export function AudioPlayer({
   const bgFps = useSettingsStore((s) => s.bgFps)
   const bgFlowSpeed = useSettingsStore((s) => s.bgFlowSpeed)
   const bgRenderScale = useSettingsStore((s) => s.bgRenderScale)
-  const performanceOptimization = useSettingsStore((s) => s.performanceOptimization)
   const t = useI18n((s) => s.t)
   const { ref: playerRef, isPortrait } = useContainerPortrait()
   const isMobile = useIsMobile()
@@ -94,12 +93,9 @@ export function AudioPlayer({
   const fullscreenButtonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lyricTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lyricFrameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const backgroundResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isPlayerFullscreen, setIsPlayerFullscreen] = useState(false)
   const [showMobileFullscreenButton, setShowMobileFullscreenButton] = useState(true)
   const [mobileTransitioning, setMobileTransitioning] = useState(false)
-  const [backgroundTransitioning, setBackgroundTransitioning] = useState(false)
-
 
   // 封面 URL 代理：解决 QQ 音乐 / 酷狗等 CDN 的 CORS 限制
   const proxiedCover = useMemo(
@@ -170,38 +166,30 @@ export function AudioPlayer({
   // Measure cover area to constrain info/controls width (paused during lyric mode)
   const { ref: coverAreaRef, coverWidth } = useCoverWidth(lyricExpanded)
   const toggleLyricView = useCallback(() => {
-    if (performanceOptimization) {
-      setMobileTransitioning(true)
-      setBackgroundTransitioning(true)
-      setLyricFrameSuspended(true)
-      if (lyricTransitionTimerRef.current) clearTimeout(lyricTransitionTimerRef.current)
-      if (lyricFrameTimerRef.current) clearTimeout(lyricFrameTimerRef.current)
-      if (backgroundResumeTimerRef.current) clearTimeout(backgroundResumeTimerRef.current)
-      lyricTransitionTimerRef.current = window.setTimeout(() => {
-        lyricTransitionTimerRef.current = null
-        setMobileTransitioning(false)
-      }, 360)
-      lyricFrameTimerRef.current = window.setTimeout(() => {
-        lyricFrameTimerRef.current = null
-        setLyricFrameSuspended(false)
-      }, 420)
-      backgroundResumeTimerRef.current = window.setTimeout(() => {
-        backgroundResumeTimerRef.current = null
-        setBackgroundTransitioning(false)
-      }, 520)
-    }
+    setMobileTransitioning(true)
+    setLyricFrameSuspended(true)
+    if (lyricTransitionTimerRef.current) clearTimeout(lyricTransitionTimerRef.current)
+    if (lyricFrameTimerRef.current) clearTimeout(lyricFrameTimerRef.current)
+    lyricTransitionTimerRef.current = window.setTimeout(() => {
+      lyricTransitionTimerRef.current = null
+      setMobileTransitioning(false)
+    }, 200)
+    lyricFrameTimerRef.current = window.setTimeout(() => {
+      lyricFrameTimerRef.current = null
+      setLyricFrameSuspended(false)
+    }, 240)
+
     setLyricExpanded((v) => !v)
-  }, [performanceOptimization, setLyricFrameSuspended])
+  }, [setLyricFrameSuspended])
 
   useEffect(() => {
-    if (!performanceOptimization) setLyricFrameSuspended(false)
     return () => {
       if (lyricTransitionTimerRef.current) clearTimeout(lyricTransitionTimerRef.current)
       if (lyricFrameTimerRef.current) clearTimeout(lyricFrameTimerRef.current)
-      if (backgroundResumeTimerRef.current) clearTimeout(backgroundResumeTimerRef.current)
+      setMobileTransitioning(false)
       setLyricFrameSuspended(false)
     }
-  }, [performanceOptimization, setLyricFrameSuspended])
+  }, [setLyricFrameSuspended])
 
   // Derived styles to constrain info/controls to cover width
   const coverMaxStyle = coverWidth ? { maxWidth: coverWidth } : undefined
@@ -237,7 +225,7 @@ export function AudioPlayer({
         <div className="pointer-events-none absolute inset-0 z-0 opacity-80 saturate-[1.3]">
           <BackgroundRender
             album={proxiedCover}
-            playing={!(performanceOptimization && (mobileTransitioning || backgroundTransitioning))}
+            playing={!isPortrait || (!lyricExpanded && !mobileTransitioning)}
             fps={bgFps}
             flowSpeed={bgFlowSpeed}
             renderScale={bgRenderScale}
@@ -256,7 +244,9 @@ export function AudioPlayer({
               className={cn(
                 'rounded-full bg-black/20 text-white/80 backdrop-blur-md transition-opacity duration-150 hover:bg-white/15 hover:text-white focus-visible:opacity-100',
                 isMobile
-                  ? (showMobileFullscreenButton ? 'opacity-100' : 'pointer-events-none opacity-0')
+                  ? showMobileFullscreenButton
+                    ? 'opacity-100'
+                    : 'pointer-events-none opacity-0'
                   : 'opacity-0 group-hover/fullscreen:opacity-100',
               )}
               onClick={togglePlayerFullscreen}
@@ -284,50 +274,46 @@ export function AudioPlayer({
                 {/* 1. Cover — fills remaining space in cover mode, centered within */}
                 <div
                   ref={coverAreaRef}
-                  className={cn('w-full min-h-0', lyricExpanded ? 'shrink-0' : 'flex-1 flex items-center justify-center')}
+                  className={cn(
+                    'w-full min-h-0',
+                    lyricExpanded ? 'shrink-0' : 'flex-1 flex items-center justify-center',
+                  )}
                   style={!lyricExpanded ? ({ containerType: 'size' } as React.CSSProperties) : undefined}
                 >
-                   <NowPlaying
-                     compact={lyricExpanded}
-                     onCoverClick={toggleLyricView}
-                     disableLayoutAnimation={disableMobileLayoutAnimation}
-                     sharedIdentity={!disableMobileLayoutAnimation}
-                   />
+                  <NowPlaying
+                    compact={lyricExpanded}
+                    onCoverClick={toggleLyricView}
+                    disableLayoutAnimation={disableMobileLayoutAnimation}
+                    sharedIdentity={!disableMobileLayoutAnimation}
+                  />
                 </div>
 
-                {/* Lyrics — popLayout so exiting lyrics don't occupy flex space */}
-                {disableMobileLayoutAnimation ? (
-                  <div
-                    className={cn(
-                      'min-h-0 w-full flex-1 overflow-hidden transition-opacity duration-150',
-                      lyricExpanded ? 'opacity-100' : 'pointer-events-none max-h-0 opacity-0',
-                    )}
-                    style={LYRIC_MASK_STYLE}
-                  >
-                    <LyricDisplay />
-                  </div>
-                ) : (
-                  <AnimatePresence mode="popLayout">
-                    {lyricExpanded && (
-                      <motion.div
-                        key="lyrics"
-                         initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                         exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
-                        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                        className="relative z-20 h-full min-h-0 w-full flex-1 overflow-hidden"
-                        style={LYRIC_MASK_STYLE}
-                      >
-                        <LyricDisplay />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                )}
+                {/* Keep AMLL mounted so opening lyrics never rebuilds the full timeline. */}
+                <motion.div
+                  initial={false}
+                  animate={
+                    lyricExpanded
+                      ? { opacity: 1, transform: 'translateY(0)' }
+                      : {
+                          opacity: 0,
+                          transform: prefersReducedMotion ? 'translateY(0)' : 'translateY(12px)',
+                        }
+                  }
+                  transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                  aria-hidden={!lyricExpanded}
+                  className={cn(
+                    'z-20 min-h-0 w-full overflow-hidden',
+                    lyricExpanded ? 'relative h-full flex-1' : 'pointer-events-none absolute inset-0',
+                  )}
+                  style={LYRIC_MASK_STYLE}
+                >
+                  <LyricDisplay active={lyricExpanded} />
+                </motion.div>
 
                 {/* 2. Song info + action buttons (independent zoom module) */}
                 {!lyricExpanded && (
                   <div className="w-full shrink-0 mx-auto" style={coverMaxStyle}>
-                     <SongInfoBar {...songInfoProps} sharedIdentity={!disableMobileLayoutAnimation} />
+                    <SongInfoBar {...songInfoProps} sharedIdentity={!disableMobileLayoutAnimation} />
                   </div>
                 )}
 
@@ -349,11 +335,13 @@ export function AudioPlayer({
             // Desktop layout: left panel (cover + info + controls) + right lyrics
             // ---------------------------------------------------------------
             <>
-              <div
-                className="relative flex w-[40%] flex-col items-center gap-[clamp(12px,3vh,32px)] transition-all duration-300"
-              >
+              <div className="relative flex w-[40%] flex-col items-center gap-[clamp(12px,3vh,32px)] transition-all duration-300">
                 {/* 1. Cover — flex-1 fills remaining space, centered */}
-                <div ref={coverAreaRef} className="min-h-0 w-full flex-1 flex items-center justify-center" style={{ containerType: 'size' }}>
+                <div
+                  ref={coverAreaRef}
+                  className="min-h-0 w-full flex-1 flex items-center justify-center"
+                  style={{ containerType: 'size' }}
+                >
                   <NowPlaying />
                 </div>
                 {/* 2. Song info + action buttons */}

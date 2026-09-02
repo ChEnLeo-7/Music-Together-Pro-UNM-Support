@@ -58,7 +58,7 @@
 2. **🧾 User Data Persistence**: Saves nickname, avatar, and identity to the database
 3. **👁‍🗨 Chat History Visibility**: Setting to control whether new users can see historical chat messages when entering a room
 4. **🔄 Manual Sync**: Supports manual sync trigger in Settings → Room, with higher frequency calibration
-5. **🧪 Experimental Features**: Performance optimizations (not guaranteed smooth), click on lyrics to jump to the corresponding timestamp
+5. **🧪 Experimental Features**: Click lyrics to jump to the corresponding timestamp
 6. **🪪 Server Admin Identity**: Allows dissolving any room, viewing account info, deleting accounts, resetting account passwords
 7. **🎵 Audio Source & Quality Adjustment**: Supports adjusting audio source priority and quality priority, real‑time adjustment of current song quality
 8. **👤 Guest Mode**: Enter a room with just a nickname, can later set a password to convert into a registered account

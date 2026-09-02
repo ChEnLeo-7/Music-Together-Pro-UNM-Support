@@ -17,6 +17,15 @@ export function normalizeUnmServerUrl(url: string): string {
   return normalizeUrl(url)
 }
 
+export function canConfigureRoomUnm(
+  roomCreatorId: string,
+  principalUserId: string | undefined,
+  isServerAdmin: boolean,
+  isActiveRoomMember = true,
+): boolean {
+  return isActiveRoomMember && Boolean(principalUserId) && (principalUserId === roomCreatorId || isServerAdmin)
+}
+
 export function getUnmServerTimeoutMs(): number {
   return config.unm.timeoutMs
 }

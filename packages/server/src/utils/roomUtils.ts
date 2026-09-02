@@ -1,5 +1,6 @@
 import type { RoomState } from '@music-together/shared'
 import type { RoomData } from '../repositories/types.js'
+import { getUnmServerUrl } from '../services/runtimeConfigService.js'
 
 interface PublicRoomStateOptions {
   includeQueue?: boolean
@@ -22,7 +23,7 @@ export function toPublicRoomState(data: RoomData, options: PublicRoomStateOption
     currentTrack: data.currentTrack,
     playState: data.playState,
     playMode: data.playMode,
-    unmServerUrl: data.unmServerUrl,
+    unmConfigured: Boolean(getUnmServerUrl(data.id)),
   }
 
   if (options.includeQueue) {

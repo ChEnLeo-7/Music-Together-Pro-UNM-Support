@@ -8,15 +8,7 @@ import type { LyricLine as AMLLLyricLine, LyricLineMouseEvent } from '@applemusi
 import { EVENTS } from '@music-together/shared'
 import '@applemusic-like-lyrics/core/style.css'
 import { LyricPlayer, type LyricPlayerRef } from '@applemusic-like-lyrics/react'
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   getActiveLineIndices,
   mergeLrcTextByTime,
@@ -30,6 +22,7 @@ const SEEK_HIGHLIGHT_EPSILON_MS = 8
 const DUPLICATE_SEEK_SUPPRESS_MS = 600
 
 interface LyricPlayerViewProps {
+  active: boolean
   amllLines: AMLLLyricLine[]
   alignAnchor: 'top' | 'center' | 'bottom'
   alignPosition: number
@@ -68,6 +61,7 @@ function mergeLyrics(original: string, translated: string): LrcTimelineEntry[] {
 }
 
 function LyricPlayerView({
+  active,
   amllLines,
   alignAnchor,
   alignPosition,
@@ -81,14 +75,19 @@ function LyricPlayerView({
   lyricPlayerRef,
   onLyricLineClick,
 }: LyricPlayerViewProps) {
-  const shouldFreezeTime = lyricMotionSuspended || lyricFrameSuspended
+  const shouldFreezeTime = !active || lyricMotionSuspended || lyricFrameSuspended
 
   useEffect(() => {
     const player = lyricPlayerRef.current?.lyricPlayer
     if (!player) return
     player.setCurrentTime(getLyricTime().timeMs, true)
-    void player.calcLayout(true)
-  }, [amllLines, alignAnchor, alignPosition, hidePassedLines, lyricPlayerRef])
+  }, [amllLines, lyricPlayerRef])
+
+  useEffect(() => {
+    const player = lyricPlayerRef.current?.lyricPlayer
+    if (!player) return
+    void player.calcLayout()
+  }, [alignAnchor, alignPosition, lyricPlayerRef])
 
   useEffect(() => {
     if (shouldFreezeTime) return
@@ -124,7 +123,7 @@ function LyricPlayerView({
     <LyricPlayer
       ref={lyricPlayerRef}
       lyricLines={amllLines}
-      playing={isPlaying && !shouldFreezeTime}
+      playing={isPlaying}
       alignAnchor={alignAnchor}
       alignPosition={hidePassedLines ? Math.max(0, alignPosition - 0.16) : alignPosition}
       enableSpring={enableSpring}
@@ -132,13 +131,17 @@ function LyricPlayerView({
       enableScale={enableScale}
       hidePassedLines={hidePassedLines}
       onLyricLineClick={onLyricLineClick}
-      disabled={lyricFrameSuspended}
+      disabled={shouldFreezeTime}
       style={FULL_SIZE_STYLE}
     />
   )
 }
 
-export function LyricDisplay() {
+interface LyricDisplayProps {
+  active?: boolean
+}
+
+export function LyricDisplay({ active = true }: LyricDisplayProps) {
   const { socket } = useSocketContext()
   const ability = useContext(AbilityContext)
   const lyric = usePlayerStore((s) => s.lyric)
@@ -264,9 +267,9 @@ export function LyricDisplay() {
   return (
     <div
       onKeyDown={handleKeyDown}
-      tabIndex={clickSeekActive ? 0 : undefined}
-      role={clickSeekActive ? 'application' : undefined}
-      aria-label={clickSeekActive ? '歌词，使用上下方向键选择，回车跳转' : undefined}
+      tabIndex={active && clickSeekActive ? 0 : undefined}
+      role={active && clickSeekActive ? 'application' : undefined}
+      aria-label={active && clickSeekActive ? '歌词，使用上下方向键选择，回车跳转' : undefined}
       className={cn(
         'amll-container h-full w-full',
         clickSeekActive && 'cursor-pointer',
@@ -282,6 +285,7 @@ export function LyricDisplay() {
       }
     >
       <LyricPlayerView
+        active={active}
         amllLines={amllLines}
         alignAnchor={alignAnchor}
         alignPosition={alignPosition}
