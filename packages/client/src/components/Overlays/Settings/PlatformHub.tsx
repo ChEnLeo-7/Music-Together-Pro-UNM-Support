@@ -12,7 +12,13 @@ import { SERVER_URL } from '@/lib/config'
 import { AuthRequestError } from '@/lib/identityAuth'
 import { useI18n } from '@/lib/i18n'
 import { getLocalizedError } from '@/lib/i18n'
-import { PLATFORM_COLORS, PLATFORM_SHORT_LABELS, PLATFORM_TEXT, getMyPlatformStatus, getPlatformStatus } from '@/lib/platform'
+import {
+  PLATFORM_COLORS,
+  PLATFORM_SHORT_LABELS,
+  PLATFORM_TEXT,
+  getMyPlatformStatus,
+  getPlatformStatus,
+} from '@/lib/platform'
 import { storage } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 import { useSocketContext } from '@/providers/SocketProvider'
@@ -31,9 +37,27 @@ import { QrLoginDialog } from './QrLoginDialog'
 type ViewState = { type: 'list' } | { type: 'detail'; playlist: Playlist; source: MusicSource }
 
 const PLATFORMS: MusicSource[] = ['netease', 'tencent', 'kugou']
-const SOURCE_PRIORITY_OPTIONS: Array<{ value: SourcePriority; labelKey: 'sourcePrioritySmart' | 'sourcePriorityPlatformFirst' | 'sourcePriorityUnmFirst' | 'sourcePriorityPlatformOnly' | 'sourcePriorityUnmOnly'; descriptionKey: 'sourcePrioritySmartDesc' | 'sourcePriorityPlatformFirstDesc' | 'sourcePriorityUnmFirstDesc' | 'sourcePriorityPlatformOnlyDesc' | 'sourcePriorityUnmOnlyDesc' }> = [
+const SOURCE_PRIORITY_OPTIONS: Array<{
+  value: SourcePriority
+  labelKey:
+    | 'sourcePrioritySmart'
+    | 'sourcePriorityPlatformFirst'
+    | 'sourcePriorityUnmFirst'
+    | 'sourcePriorityPlatformOnly'
+    | 'sourcePriorityUnmOnly'
+  descriptionKey:
+    | 'sourcePrioritySmartDesc'
+    | 'sourcePriorityPlatformFirstDesc'
+    | 'sourcePriorityUnmFirstDesc'
+    | 'sourcePriorityPlatformOnlyDesc'
+    | 'sourcePriorityUnmOnlyDesc'
+}> = [
   { value: 'smart', labelKey: 'sourcePrioritySmart', descriptionKey: 'sourcePrioritySmartDesc' },
-  { value: 'platform-first', labelKey: 'sourcePriorityPlatformFirst', descriptionKey: 'sourcePriorityPlatformFirstDesc' },
+  {
+    value: 'platform-first',
+    labelKey: 'sourcePriorityPlatformFirst',
+    descriptionKey: 'sourcePriorityPlatformFirstDesc',
+  },
   { value: 'unm-first', labelKey: 'sourcePriorityUnmFirst', descriptionKey: 'sourcePriorityUnmFirstDesc' },
   { value: 'platform-only', labelKey: 'sourcePriorityPlatformOnly', descriptionKey: 'sourcePriorityPlatformOnlyDesc' },
   { value: 'unm-only', labelKey: 'sourcePriorityUnmOnly', descriptionKey: 'sourcePriorityUnmOnlyDesc' },
@@ -50,13 +74,15 @@ export function PlatformHub() {
   const t = useI18n((s) => s.t)
   const isMobileDialog = useIsResponsiveMobile()
   const roomId = useRoomStore((s) => s.room?.id)
-  const roomUnmServerUrl = useRoomStore((s) => s.room?.unmServerUrl ?? '')
+  const roomUnmConfigured = useRoomStore((s) => s.room?.unmConfigured ?? false)
   const audioQuality = useRoomStore((s) => s.room?.audioQuality ?? 320)
   const sourcePriority = useRoomStore((s) => s.room?.sourcePriority ?? 'smart')
   const currentUser = useRoomStore((s) => s.currentUser)
   const isRoomAdmin = currentUser?.role === 'owner' || currentUser?.role === 'admin'
+  const isRoomOwner = currentUser?.role === 'owner'
   const isServerAdmin = useAccountStore((s) => s.me?.role === 'admin')
   const canManageRoom = isRoomAdmin || isServerAdmin
+  const canConfigureUnm = isRoomOwner || isServerAdmin
 
   const [activePlatform, setActivePlatform] = useState<MusicSource>('netease')
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
@@ -68,8 +94,8 @@ export function PlatformHub() {
   const [savingUnm, setSavingUnm] = useState(false)
 
   const qualityOptions = useMemo(
-    () => getAudioQualityOptions(auth.platformStatus, Boolean(roomUnmServerUrl), sourcePriority),
-    [auth.platformStatus, roomUnmServerUrl, sourcePriority],
+    () => getAudioQualityOptions(auth.platformStatus, roomUnmConfigured, sourcePriority),
+    [auth.platformStatus, roomUnmConfigured, sourcePriority],
   )
   const selectedQualityOption =
     (sourcePriority === 'unm-first' || sourcePriority === 'unm-only'
@@ -100,7 +126,7 @@ export function PlatformHub() {
 
   useEffect(() => {
     let cancelled = false
-    if (!roomId) return
+    if (!roomId || !canConfigureUnm) return
     fetch(`${SERVER_URL}/api/settings?roomId=${encodeURIComponent(roomId)}`, { credentials: 'include' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { roomUnmServerUrl?: string } | null) => {
@@ -112,11 +138,7 @@ export function PlatformHub() {
     return () => {
       cancelled = true
     }
-  }, [roomId])
-
-  useEffect(() => {
-    setUnmServerUrl(roomUnmServerUrl)
-  }, [roomUnmServerUrl])
+  }, [canConfigureUnm, roomId])
 
   const verifyingPlatforms = useMemo(() => {
     if (auth.statusLoaded) return {}
@@ -169,12 +191,12 @@ export function PlatformHub() {
         const body = (await res.json().catch(() => null)) as { code?: string; error?: string } | null
         throw new AuthRequestError(body?.error ?? `Request failed: ${res.status}`, body?.code, res.status)
       }
-      const data = (await res.json()) as { roomUnmServerUrl?: string }
+      const data = (await res.json()) as { unmServerUrl?: string; roomUnmServerUrl?: string }
       setUnmServerUrl(data.roomUnmServerUrl ?? '')
-      useRoomStore.getState().updateRoom({ unmServerUrl: data.roomUnmServerUrl ?? '' })
+      useRoomStore.getState().updateRoom({ unmConfigured: Boolean(data.unmServerUrl) })
       toast.success(t('unmServerSaved'))
     } catch (err) {
-       toast.error(getLocalizedError(err, t))
+      toast.error(getLocalizedError(err, t))
     } finally {
       setSavingUnm(false)
     }
@@ -224,18 +246,35 @@ export function PlatformHub() {
               <Switch checked={serverAuthPersistence} onCheckedChange={handleServerAuthPersistenceChange} />
             </div>
 
-            {isServerAdmin && <div className="mb-3 min-w-0 max-w-full overflow-hidden rounded-md border px-3 py-2">
-              <div className="mb-2 min-w-0">
-                <p className="text-sm font-medium">{t('unmServer')}</p>
-                <p className="text-xs text-muted-foreground">{t('unmServerDesc')}</p>
+            {canConfigureUnm && (
+              <div className="mb-3 min-w-0 max-w-full overflow-hidden rounded-md border px-3 py-2">
+                <div className="mb-2 min-w-0">
+                  <p className="text-sm font-medium">{t('unmServer')}</p>
+                  <p className="text-xs text-muted-foreground">{t('unmServerDesc')}</p>
+                </div>
+                <div
+                  className={cn(
+                    'grid min-w-0 grid-cols-1 gap-2',
+                    !isMobileDialog && 'sm:grid-cols-[minmax(0,1fr)_auto]',
+                  )}
+                >
+                  <Input
+                    value={unmServerUrl}
+                    onChange={(e) => setUnmServerUrl(e.target.value)}
+                    placeholder={t('unmServerPlaceholder')}
+                    className="min-w-0 max-w-full"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveUnmServer}
+                    disabled={savingUnm}
+                    className={cn('w-full', !isMobileDialog && 'sm:w-auto')}
+                  >
+                    {t('save')}
+                  </Button>
+                </div>
               </div>
-              <div className={cn('grid min-w-0 grid-cols-1 gap-2', !isMobileDialog && 'sm:grid-cols-[minmax(0,1fr)_auto]')}>
-                <Input value={unmServerUrl} onChange={(e) => setUnmServerUrl(e.target.value)} placeholder={t('unmServerPlaceholder')} className="min-w-0 max-w-full" />
-                <Button variant="outline" onClick={handleSaveUnmServer} disabled={savingUnm} className={cn('w-full', !isMobileDialog && 'sm:w-auto')}>
-                  {t('save')}
-                </Button>
-              </div>
-            </div>}
+            )}
 
             <div className="mb-3 min-w-0 max-w-full overflow-hidden rounded-md border px-3 py-2">
               <div className="mb-2 min-w-0">
@@ -249,11 +288,14 @@ export function PlatformHub() {
                     type="button"
                     variant={sourcePriority === option.value ? 'default' : 'outline'}
                     size="sm"
-                    className={cn('h-auto min-w-0 flex-col items-start overflow-hidden whitespace-normal px-2 py-2 text-left text-xs', !isMobileDialog && 'sm:px-3 sm:text-sm')}
+                    className={cn(
+                      'h-auto min-w-0 flex-col items-start overflow-hidden whitespace-normal px-2 py-2 text-left text-xs',
+                      !isMobileDialog && 'sm:px-3 sm:text-sm',
+                    )}
                     onClick={() => updateRoomSetting({ sourcePriority: option.value as SourcePriority })}
                   >
-                     <span className="w-full truncate font-medium">{t(option.labelKey)}</span>
-                     <span className="w-full truncate text-[10px] opacity-70">{t(option.descriptionKey)}</span>
+                    <span className="w-full truncate font-medium">{t(option.labelKey)}</span>
+                    <span className="w-full truncate text-[10px] opacity-70">{t(option.descriptionKey)}</span>
                   </Button>
                 ))}
               </div>
@@ -269,20 +311,29 @@ export function PlatformHub() {
                 <p className="text-sm font-medium">{t('audioQuality')}</p>
                 <p className="text-xs text-muted-foreground">{t('appliesNextTrack')}</p>
               </div>
-              <Select
-                value={visibleAudioQualityKey}
-                onValueChange={handleAudioQualityChange}
-              >
-                <SelectTrigger className={cn('h-8 w-full min-w-0 text-sm [&>span]:truncate', !isMobileDialog && 'sm:w-[170px]')}>
+              <Select value={visibleAudioQualityKey} onValueChange={handleAudioQualityChange}>
+                <SelectTrigger
+                  className={cn('h-8 w-full min-w-0 text-sm [&>span]:truncate', !isMobileDialog && 'sm:w-[170px]')}
+                >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent position="popper" sideOffset={6} className="z-[80] max-h-[min(18rem,var(--radix-select-content-available-height))] overscroll-contain">
+                <SelectContent
+                  position="popper"
+                  sideOffset={6}
+                  className="z-[80] max-h-[min(18rem,var(--radix-select-content-available-height))] overscroll-contain"
+                >
                   {qualityOptions.map((option) => (
                     <SelectItem key={qualityOptionKey(option)} value={qualityOptionKey(option)}>
                       <span className="inline-flex items-center gap-2">
                         <span>{option.label}</span>
                         {option.platform && (
-                          <span className={option.platform === 'unm' ? 'text-[10px] text-muted-foreground' : `text-[10px] ${PLATFORM_TEXT[option.platform]}`}>
+                          <span
+                            className={
+                              option.platform === 'unm'
+                                ? 'text-[10px] text-muted-foreground'
+                                : `text-[10px] ${PLATFORM_TEXT[option.platform]}`
+                            }
+                          >
                             {platformLabel(option.platform)}
                           </span>
                         )}
@@ -297,17 +348,29 @@ export function PlatformHub() {
       </div>
 
       <div className="min-w-0 max-w-full space-y-4 overflow-x-hidden">
-        <Tabs value={activePlatform} onValueChange={(v) => setActivePlatform(v as MusicSource)} className="min-w-0 max-w-full overflow-x-hidden">
+        <Tabs
+          value={activePlatform}
+          onValueChange={(v) => setActivePlatform(v as MusicSource)}
+          className="min-w-0 max-w-full overflow-x-hidden"
+        >
           <TabsList className="grid w-full min-w-0 grid-cols-3">
             {PLATFORMS.map((platform) => (
-              <TabsTrigger key={platform} value={platform} className={`${PLATFORM_COLORS[platform]} min-w-0 px-2 text-xs sm:text-sm`}>
+              <TabsTrigger
+                key={platform}
+                value={platform}
+                className={`${PLATFORM_COLORS[platform]} min-w-0 px-2 text-xs sm:text-sm`}
+              >
                 {PLATFORM_SHORT_LABELS[platform]}
               </TabsTrigger>
             ))}
           </TabsList>
 
           {PLATFORMS.map((platform) => (
-            <TabsContent key={platform} value={platform} className="mt-4 min-w-0 max-w-full space-y-4 overflow-x-hidden">
+            <TabsContent
+              key={platform}
+              value={platform}
+              className="mt-4 min-w-0 max-w-full space-y-4 overflow-x-hidden"
+            >
               <LoginSection
                 platform={platform}
                 status={getPlatformStatus(platform, auth.platformStatus)}
@@ -347,7 +410,12 @@ export function PlatformHub() {
         onCheckStatus={(key: string) => auth.checkQrStatus(key)}
       />
 
-      <ManualCookieDialog open={cookieDialogOpen} onOpenChange={setCookieDialogOpen} platform={cookieDialogPlatform} onSubmit={handleCookieSubmit} />
+      <ManualCookieDialog
+        open={cookieDialogOpen}
+        onOpenChange={setCookieDialogOpen}
+        platform={cookieDialogPlatform}
+        onSubmit={handleCookieSubmit}
+      />
     </div>
   )
 }

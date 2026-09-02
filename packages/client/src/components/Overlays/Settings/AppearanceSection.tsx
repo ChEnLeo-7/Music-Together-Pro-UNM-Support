@@ -14,14 +14,6 @@ export function AppearanceSection() {
         <h3 className="text-base font-semibold">背景渲染</h3>
         <Separator className="mt-2 mb-4" />
 
-        <SettingRow
-          label="性能优化"
-          description="启用实验性的性能优化，不一定保证流畅"
-          labelExtra={<span className="rounded bg-yellow-400/20 px-1 py-0.5 text-[10px] font-semibold leading-none text-yellow-600">Beta</span>}
-        >
-          <Switch checked={s.performanceOptimization} onCheckedChange={s.setPerformanceOptimization} />
-        </SettingRow>
-
         <SettingRow label="隐藏顶部音源来源" description="关闭左上角延迟旁边的音源/音质切换入口">
           <Switch checked={s.hidePlayerQualityButton} onCheckedChange={s.setHidePlayerQualityButton} />
         </SettingRow>

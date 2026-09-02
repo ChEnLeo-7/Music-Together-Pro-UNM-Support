@@ -104,7 +104,7 @@ export interface RoomState {
   currentTrack: Track | null
   playState: PlayState
   playMode: PlayMode
-  unmServerUrl?: string
+  unmConfigured: boolean
 }
 
 export interface PlayState {

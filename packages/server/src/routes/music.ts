@@ -14,7 +14,7 @@ import { logger } from '../utils/logger.js'
 import { assertPublicHttpUrl } from '../utils/publicUrl.js'
 import { verifyStreamProxySignature } from '../utils/streamProxy.js'
 import { getUnmServerTimeoutMs, getUnmServerUrl } from '../services/runtimeConfigService.js'
-import { request as httpRequest } from 'node:http'
+import { portForUrl, requestForUrl } from '../utils/httpRequest.js'
 
 const router: RouterType = Router()
 const STREAM_FETCH_TIMEOUT_MS = 120_000
@@ -99,7 +99,12 @@ function setStreamHeaders(
   res.status(overrides.status ?? 200)
 }
 
-async function pipeSlicedWebStream(body: ReadableStream<Uint8Array>, res: Response, start: number, end: number): Promise<void> {
+async function pipeSlicedWebStream(
+  body: ReadableStream<Uint8Array>,
+  res: Response,
+  start: number,
+  end: number,
+): Promise<void> {
   const reader = body.getReader()
   let offset = 0
   try {
@@ -374,7 +379,8 @@ router.get('/stream-proxy', async (req: Request, res: Response) => {
     const upstreamContentLength = Number(upstream.headers.get('content-length') ?? 0)
     setStreamHeaders(res, upstream.headers, parsed, {
       status: upstream.status,
-      contentLength: Number.isFinite(upstreamContentLength) && upstreamContentLength > 0 ? upstreamContentLength : undefined,
+      contentLength:
+        Number.isFinite(upstreamContentLength) && upstreamContentLength > 0 ? upstreamContentLength : undefined,
       contentRange: upstream.headers.get('content-range') ?? undefined,
     })
 
@@ -401,16 +407,22 @@ router.get('/stream-proxy', async (req: Request, res: Response) => {
   }
 })
 
-async function proxyStreamViaUnm(audioUrl: string, headers: HeadersInit, res: Response, roomId?: string): Promise<void> {
+async function proxyStreamViaUnm(
+  audioUrl: string,
+  headers: HeadersInit,
+  res: Response,
+  roomId?: string,
+): Promise<void> {
   const proxyUrl = new URL(getUnmServerUrl(roomId))
   const targetUrl = new URL(audioUrl)
   logger.info('Proxying stream via UNM', { roomId, unmHost: proxyUrl.host, targetHost: targetUrl.host })
 
   await new Promise<void>((resolve, reject) => {
-    const upstream = httpRequest(
+    const request = requestForUrl(proxyUrl)
+    const upstream = request(
       {
         host: proxyUrl.hostname,
-        port: proxyUrl.port ? Number(proxyUrl.port) : 80,
+        port: portForUrl(proxyUrl),
         method: 'GET',
         path: targetUrl.toString(),
         headers: {
@@ -421,7 +433,11 @@ async function proxyStreamViaUnm(audioUrl: string, headers: HeadersInit, res: Re
         timeout: getUnmServerTimeoutMs(),
       },
       (upstreamRes) => {
-        logger.info('UNM stream proxy response', { roomId, statusCode: upstreamRes.statusCode, contentType: upstreamRes.headers['content-type'] })
+        logger.info('UNM stream proxy response', {
+          roomId,
+          statusCode: upstreamRes.statusCode,
+          contentType: upstreamRes.headers['content-type'],
+        })
         const passthroughHeaders = [
           'content-type',
           'content-length',

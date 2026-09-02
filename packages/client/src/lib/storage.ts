@@ -126,7 +126,6 @@ export const SETTING_DEFAULTS = {
   bgFps: 30,
   bgFlowSpeed: 2,
   bgRenderScale: 0.5,
-  performanceOptimization: false,
   hidePlayerQualityButton: false,
 } satisfies Record<string, unknown>
 
@@ -225,9 +224,6 @@ export const storage = {
     return [0.25, 0.5, 0.75, 1].includes(scale) ? scale : SETTING_DEFAULTS.bgRenderScale
   },
   setBgRenderScale: (v: number) => safeSet('bgRenderScale', String(v)),
-
-  getPerformanceOptimization: () => safeGet('performanceOptimization') === 'true',
-  setPerformanceOptimization: (v: boolean) => safeSet('performanceOptimization', String(v)),
 
   getHidePlayerQualityButton: () => safeGet('hidePlayerQualityButton') === 'true',
   setHidePlayerQualityButton: (v: boolean) => safeSet('hidePlayerQualityButton', String(v)),

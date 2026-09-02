@@ -42,7 +42,6 @@ type SettingsStore = ResettableFields<'ttmlEnabled', boolean> &
   ResettableFields<'bgFps', number> &
   ResettableFields<'bgFlowSpeed', number> &
   ResettableFields<'bgRenderScale', number> &
-  ResettableFields<'performanceOptimization', boolean> &
   ResettableFields<'hidePlayerQualityButton', boolean>
 
 // ---------------------------------------------------------------------------
@@ -101,7 +100,6 @@ export const useSettingsStore = create<SettingsStore>((set) => {
     ...resettable('bgFps', storage.getBgFps, storage.setBgFps),
     ...resettable('bgFlowSpeed', storage.getBgFlowSpeed, storage.setBgFlowSpeed),
     ...resettable('bgRenderScale', storage.getBgRenderScale, storage.setBgRenderScale),
-    ...resettable('performanceOptimization', storage.getPerformanceOptimization, storage.setPerformanceOptimization),
     ...resettable('hidePlayerQualityButton', storage.getHidePlayerQualityButton, storage.setHidePlayerQualityButton),
   } as SettingsStore
 })

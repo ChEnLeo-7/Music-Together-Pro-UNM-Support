@@ -4,7 +4,6 @@ import type { KrcInfo } from '@s4p/kugou-lrc'
 import type { AudioQuality, MusicSource, Playlist, StreamSource, Track } from '@music-together/shared'
 import { LRUCache } from 'lru-cache'
 import { nanoid } from 'nanoid'
-import { request as httpRequest } from 'node:http'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import pLimit from 'p-limit'
@@ -14,6 +13,7 @@ import * as tencentAuth from './tencentAuthService.js'
 import { config } from '../config.js'
 import { getUnmServerTimeoutMs, getUnmServerUrl } from './runtimeConfigService.js'
 import { logger } from '../utils/logger.js'
+import { portForUrl, requestForUrl } from '../utils/httpRequest.js'
 
 const require = createRequire(import.meta.url)
 const generateNeteaseConfig = require('@neteasecloudmusicapienhanced/api/generateConfig') as () => Promise<void> | void
@@ -681,7 +681,9 @@ class MusicProvider {
           Referer: 'https://y.qq.com/',
           'User-Agent': 'Mozilla/5.0',
         },
-      }).then((res) => res.json() as Promise<{ code?: number; data?: { song?: { list?: TencentLegacySearchSong[] } } }>),
+      }).then(
+        (res) => res.json() as Promise<{ code?: number; data?: { song?: { list?: TencentLegacySearchSong[] } } }>,
+      ),
     )
     const songList = response?.code === 0 ? response.data?.song?.list : undefined
     if (!songList) {
@@ -784,11 +786,16 @@ class MusicProvider {
       return null
     }
   }
-  
+
   /**
    * Search for albums. Returns a list of Playlist objects.
    */
-  async searchAlbum(source: MusicSource, keyword: string, limit = 20, page = 1): Promise<import('@music-together/shared').Playlist[]> {
+  async searchAlbum(
+    source: MusicSource,
+    keyword: string,
+    limit = 20,
+    page = 1,
+  ): Promise<import('@music-together/shared').Playlist[]> {
     if (!keyword.trim()) return []
 
     try {
@@ -812,7 +819,7 @@ class MusicProvider {
               'User-Agent': 'QQ%E9%9F%B3%E4%B9%90/73222',
             },
             body: JSON.stringify(payload),
-          }).then((res) => res.json())
+          }).then((res) => res.json()),
         )
 
         if (!response) return []
@@ -832,10 +839,10 @@ class MusicProvider {
 
       if (source === 'kugou') {
         const url = `http://mobilecdn.kugou.com/api/v3/search/album?api_ver=1&area_code=1&correct=1&pagesize=${limit}&plat=2&tag=1&sver=5&showtype=10&page=${page}&keyword=${encodeURIComponent(keyword)}&version=8990`
-        const response = await withTimeout(fetch(url).then(res => res.json()))
-        
+        const response = await withTimeout(fetch(url).then((res) => res.json()))
+
         if (!response || response.errcode !== 0 || !response.data?.info) return []
-        
+
         return response.data.info.map((album: any) => ({
           id: String(album.albumid),
           name: album.albumname || 'Unknown Album',
@@ -882,7 +889,12 @@ class MusicProvider {
   /**
    * Search for playlists. Returns a list of Playlist objects.
    */
-  async searchPlaylist(source: MusicSource, keyword: string, limit = 20, page = 1): Promise<import('@music-together/shared').Playlist[]> {
+  async searchPlaylist(
+    source: MusicSource,
+    keyword: string,
+    limit = 20,
+    page = 1,
+  ): Promise<import('@music-together/shared').Playlist[]> {
     if (!keyword.trim()) return []
 
     try {
@@ -906,7 +918,7 @@ class MusicProvider {
               'User-Agent': 'QQ%E9%9F%B3%E4%B9%90/73222',
             },
             body: JSON.stringify(payload),
-          }).then((res) => res.json())
+          }).then((res) => res.json()),
         )
 
         if (!response) return []
@@ -927,10 +939,10 @@ class MusicProvider {
 
       if (source === 'kugou') {
         const url = `http://mobilecdn.kugou.com/api/v3/search/special?api_ver=1&area_code=1&correct=1&pagesize=${limit}&plat=2&tag=1&sver=5&showtype=10&page=${page}&keyword=${encodeURIComponent(keyword)}&version=8990`
-        const response = await withTimeout(fetch(url).then(res => res.json()))
-        
+        const response = await withTimeout(fetch(url).then((res) => res.json()))
+
         if (!response || response.errcode !== 0 || !response.data?.info) return []
-        
+
         return response.data.info.map((playlist: any) => ({
           id: String(playlist.specialid),
           name: playlist.specialname || 'Unknown Playlist',
@@ -1085,13 +1097,15 @@ class MusicProvider {
     addUniqueQuality(qualities, 128)
 
     const detail = musicDetail ?? {}
-    if (song.m || song.h || song.sq || song.hr || detail.m || detail.h || detail.sq || detail.hr) addUniqueQuality(qualities, 192)
+    if (song.m || song.h || song.sq || song.hr || detail.m || detail.h || detail.sq || detail.hr)
+      addUniqueQuality(qualities, 192)
     if (song.h || song.sq || song.hr || detail.h || detail.sq || detail.hr) addUniqueQuality(qualities, 320)
     if (song.sq || song.hr || detail.sq || detail.hr) addUniqueQuality(qualities, 999)
     if (song.db || detail.db) addUniqueQuality(qualities, 'netease_dolby')
     if (song.hr || detail.hr) addUniqueQuality(qualities, 'netease_hires')
     if (detail.je) addUniqueQuality(qualities, 'netease_jyeffect')
-    if (detail.sk || (Array.isArray(detail.sks) && detail.sks.length > 0)) addUniqueQuality(qualities, 'netease_spatial')
+    if (detail.sk || (Array.isArray(detail.sks) && detail.sks.length > 0))
+      addUniqueQuality(qualities, 'netease_spatial')
     if (detail.jm) addUniqueQuality(qualities, 'netease_master')
 
     const levels = this.collectLevelStrings({ song, privilege, musicDetail })
@@ -1147,13 +1161,20 @@ class MusicProvider {
     }
   }
 
-  private async getNeteaseStreamUrlV1(urlId: string, quality: AudioQuality | number, cookie?: string, roomId?: string): Promise<StreamUrlResult | null> {
+  private async getNeteaseStreamUrlV1(
+    urlId: string,
+    quality: AudioQuality | number,
+    cookie?: string,
+    roomId?: string,
+  ): Promise<StreamUrlResult | null> {
     const level = neteaseQualityToLevel(quality)
     if (!level) return null
 
     try {
       await ensureNeteaseEnhancedConfig()
-      const res = await withTimeout(ncmApi.song_url_v1({ id: urlId, level, timestamp: Date.now(), ...(cookie ? { cookie } : {}) }))
+      const res = await withTimeout(
+        ncmApi.song_url_v1({ id: urlId, level, timestamp: Date.now(), ...(cookie ? { cookie } : {}) }),
+      )
       const data = res?.body?.data?.[0] as MetingJson | undefined
       if (!data) return null
       const returnedLevel = data.level
@@ -1181,13 +1202,21 @@ class MusicProvider {
         return null
       }
       if (url?.startsWith('http://')) url = url.replace(/^http:\/\//, 'https://')
-      return url ? { url: createClientStreamUrl('netease', url, roomId), source: 'netease', quality: returnedQuality ?? (quality as AudioQuality) } : null
+      return url
+        ? {
+            url: createClientStreamUrl('netease', url, roomId),
+            source: 'netease',
+            quality: returnedQuality ?? (quality as AudioQuality),
+          }
+        : null
     } catch (err) {
       if (isXeapiPublicKeyMissing(err)) {
         const initialized = await ensureNeteaseEnhancedConfig(true)
         if (initialized) {
           try {
-            const res = await withTimeout(ncmApi.song_url_v1({ id: urlId, level, timestamp: Date.now(), ...(cookie ? { cookie } : {}) }))
+            const res = await withTimeout(
+              ncmApi.song_url_v1({ id: urlId, level, timestamp: Date.now(), ...(cookie ? { cookie } : {}) }),
+            )
             const data = res?.body?.data?.[0] as MetingJson | undefined
             if (!data) return null
             const returnedLevel = data.level
@@ -1217,7 +1246,13 @@ class MusicProvider {
               return null
             }
             if (url?.startsWith('http://')) url = url.replace(/^http:\/\//, 'https://')
-            return url ? { url: createClientStreamUrl('netease', url, roomId), source: 'netease', quality: returnedQuality ?? (quality as AudioQuality) } : null
+            return url
+              ? {
+                  url: createClientStreamUrl('netease', url, roomId),
+                  source: 'netease',
+                  quality: returnedQuality ?? (quality as AudioQuality),
+                }
+              : null
           } catch (retryErr) {
             logger.warn(`Netease song_url_v1 retry failed: ${urlId}/${level}`, { err: retryErr })
             return null
@@ -1329,7 +1364,10 @@ class MusicProvider {
 
       // Only cache non-cookie & successful results (null = transient failure, retry next time)
       if (!cookie && url) {
-        this.streamUrlCache.set(`${source}:${urlId}:${qualityCacheKey}:${roomId ?? ''}`, createClientStreamUrl(source, url, roomId))
+        this.streamUrlCache.set(
+          `${source}:${urlId}:${qualityCacheKey}:${roomId ?? ''}`,
+          createClientStreamUrl(source, url, roomId),
+        )
       }
 
       if (url) {
@@ -1353,7 +1391,12 @@ class MusicProvider {
     }
   }
 
-  private async getNeteaseStreamUrlViaUnmProxy(urlId: string, bitrate: number, cookie?: string, roomId?: string): Promise<StreamUrlResult | null> {
+  private async getNeteaseStreamUrlViaUnmProxy(
+    urlId: string,
+    bitrate: number,
+    cookie?: string,
+    roomId?: string,
+  ): Promise<StreamUrlResult | null> {
     if (!getUnmServerUrl(roomId)) return null
 
     try {
@@ -1416,10 +1459,11 @@ class MusicProvider {
   ): Promise<string> {
     return new Promise((resolve, reject) => {
       const payload = typeof body === 'string' || Buffer.isBuffer(body) ? body : null
-      const req = httpRequest(
+      const request = requestForUrl(proxyUrl)
+      const req = request(
         {
           host: proxyUrl.hostname,
-          port: proxyUrl.port ? Number(proxyUrl.port) : 80,
+          port: portForUrl(proxyUrl),
           method: payload ? 'POST' : 'GET',
           path: targetUrl.toString(),
           headers: {
@@ -1593,7 +1637,7 @@ class MusicProvider {
     playlistId: string,
     playlistTotal?: number,
     cookie?: string | null,
-    type: 'playlist' | 'album' = 'playlist'
+    type: 'playlist' | 'album' = 'playlist',
   ): Promise<{ ids: string[]; total: number }> {
     const cacheKey = `${source}:${playlistId}`
 
@@ -1646,12 +1690,9 @@ class MusicProvider {
    * Fetch full Netease playlist via ncmApi.playlist_track_all.
    * No 1000-track limit; returns full song data including duration/album/artist.
    */
-  
+
   /** Fetch Netease album using ncmApi.album */
-  private async fetchNeteaseAlbum(
-    albumId: string,
-    cacheKey: string,
-  ): Promise<{ ids: string[]; total: number }> {
+  private async fetchNeteaseAlbum(albumId: string, cacheKey: string): Promise<{ ids: string[]; total: number }> {
     try {
       const res = await withTimeout(ncmApi.album({ id: albumId, timestamp: Date.now() }), 30_000)
       if (res === null) {
@@ -1665,7 +1706,7 @@ class MusicProvider {
       }
 
       const allTracks = songs.map((song: any) => this.rawToTrack(song, 'netease'))
-      
+
       for (const t of allTracks) this.enrichFromRegistry(t)
       this.registerTracks(allTracks)
 
@@ -1886,7 +1927,7 @@ class MusicProvider {
     source: MusicSource,
     playlistId: string,
     cacheKey: string,
-    type: 'playlist' | 'album' = 'playlist'
+    type: 'playlist' | 'album' = 'playlist',
   ): Promise<{ ids: string[]; total: number }> {
     try {
       const meting = new Meting(source)
@@ -1940,7 +1981,7 @@ class MusicProvider {
     offset: number,
     playlistTotal?: number,
     cookie?: string | null,
-    type: 'playlist' | 'album' = 'playlist'
+    type: 'playlist' | 'album' = 'playlist',
   ): Promise<{ tracks: Track[]; total: number; hasMore: boolean }> {
     const { ids, total } = await this.fetchFullPlaylist(source, playlistId, playlistTotal, cookie, type)
     if (total === 0) return { tracks: [], total: 0, hasMore: false }
