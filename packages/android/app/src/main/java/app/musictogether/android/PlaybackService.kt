@@ -114,15 +114,15 @@ class PlaybackService : MediaSessionService(), Player.Listener {
         .build()
         .also { it.setSmallIcon(R.drawable.ic_notification) },
     )
+    val launchIntent = requireNotNull(packageManager.getLaunchIntentForPackage(packageName))
+    val sessionActivity = android.app.PendingIntent.getActivity(
+      this,
+      0,
+      launchIntent,
+      android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+    )
     mediaSession = MediaSession.Builder(this, createSessionPlayer(player))
-      .setSessionActivity(packageManager.getLaunchIntentForPackage(packageName)?.let {
-        android.app.PendingIntent.getActivity(
-          this,
-          0,
-          it,
-          android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-      })
+      .setSessionActivity(sessionActivity)
       .build()
     addSession(mediaSession)
     updateSnapshot()
