@@ -49,6 +49,8 @@ class MainActivity : ComponentActivity() {
   private var playerFullscreen = false
   private var connectionAttempt = 0L
   private var activityStarted = false
+  private var pendingRestore: RestoreRequest? = null
+  private var serverProbe: ServerProbe? = null
   private var serverConnectButton: MaterialButton? = null
 
   private val playbackEvents = object : BroadcastReceiver() {
@@ -67,9 +69,14 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     val savedUrl = savedInstanceState?.getString(STATE_URL)
-    val savedServer = getSharedPreferences(PREFERENCES, MODE_PRIVATE).getString(SERVER_URL, null)
-    if (!savedUrl.isNullOrBlank() && !savedServer.isNullOrBlank()) {
-      openServer(savedServer, savedUrl)
+    val preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+    val savedServer = ServerUrlMemory.preferred(
+      preferences.getString(INITIAL_SERVER_URL, null),
+      preferences.getString(SERVER_URL, null),
+    )
+    if (!savedServer.isNullOrBlank()) {
+      showServerPicker()
+      restoreSavedServer(savedServer, savedUrl.orEmpty())
     } else {
       showServerPicker()
     }
@@ -94,11 +101,14 @@ class MainActivity : ComponentActivity() {
     })
   }
 
-  private fun openServer(serverUrl: String, initialUrl: String = serverUrl) {
-    getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(SERVER_URL, serverUrl).apply()
+  private fun openServer(initialServerUrl: String, trustedServerUrl: String, initialUrl: String = trustedServerUrl) {
+    cancelServerProbe()
+    pendingRestore = null
+    getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(INITIAL_SERVER_URL, initialServerUrl).apply()
+    serverConnectButton = null
     requestNotificationPermission()
     webView?.destroy()
-    val trustedServer = TrustedServer(serverUrl)
+    val trustedServer = TrustedServer(trustedServerUrl)
     webView = WebView(this).apply {
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
@@ -108,6 +118,7 @@ class MainActivity : ComponentActivity() {
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
           val target = request?.url ?: return true
           if (!request.isForMainFrame) return false
+          if (target.getUserInfo() != null) return true
           if (request.isRedirect && !target.isHttpOrHttps()) return true
           if (sameOrigin(target, Uri.parse(trustedServer.url))) return false
           runCatching { startActivity(Intent(Intent.ACTION_VIEW, target)) }
@@ -119,19 +130,21 @@ class MainActivity : ComponentActivity() {
           val finalUri = url?.let(Uri::parse)
           if (finalUri?.isHttpOrHttps() == true && sameOrigin(finalUri, Uri.parse(trustedServer.url))) {
             trustedServer.url = originUrl(finalUri)
-            getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(SERVER_URL, trustedServer.url).apply()
           }
         }
       }
       webChromeClient = WebChromeClient()
       addJavascriptInterface(PlaybackBridge(this@MainActivity, trustedServer), "MusicTogetherAndroid")
-      loadUrl(if (sameOrigin(Uri.parse(initialUrl), Uri.parse(serverUrl))) initialUrl else serverUrl)
+      loadUrl(if (sameOrigin(Uri.parse(initialUrl), Uri.parse(trustedServerUrl))) initialUrl else trustedServerUrl)
     }
     setSafeContent(webView ?: return)
   }
 
   private fun showServerPicker() {
+    cancelServerProbe()
+    pendingRestore = null
     connectionAttempt += 1
+    serverConnectButton = null
     if (webView != null) {
       startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_RELEASE_SESSION))
     }
@@ -177,7 +190,11 @@ class MainActivity : ComponentActivity() {
       setLineSpacing(0f, 1.25f)
     }
     val address = TextInputEditText(this).apply {
-      setText(getSharedPreferences(PREFERENCES, MODE_PRIVATE).getString(SERVER_URL, ""))
+      val preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+      setText(ServerUrlMemory.preferred(
+        preferences.getString(INITIAL_SERVER_URL, null),
+        preferences.getString(SERVER_URL, null),
+      ).orEmpty())
       setTextColor(Color.rgb(230, 224, 233))
       setHintTextColor(Color.rgb(147, 143, 153))
       textSize = 16f
@@ -251,33 +268,35 @@ class MainActivity : ComponentActivity() {
     }
 
     val connectToServer = {
+      cancelServerProbe()
+      pendingRestore = null
+      val attempt = ++connectionAttempt
       val normalized = ServerRedirects.normalize(address.text.toString())
       if (normalized == null) {
         addressField.error = getString(R.string.server_invalid)
         address.requestFocus()
       } else {
         addressField.error = null
+        getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
+          .putString(INITIAL_SERVER_URL, normalized.toString())
+          .apply()
         connect.isEnabled = false
-        val attempt = ++connectionAttempt
-        Thread {
-          val resolution = runCatching { resolveServerRedirects(normalized) }.getOrNull()
-          runOnUiThread {
-            if (attempt != connectionAttempt || isFinishing || (Build.VERSION.SDK_INT >= 17 && isDestroyed)) return@runOnUiThread
-            connect.isEnabled = true
-            if (!activityStarted) return@runOnUiThread
-            when {
-              resolution == null -> {
-                addressField.error = getString(R.string.server_redirect_failed)
-                address.requestFocus()
-              }
-              resolution.accepted -> openServer(ServerRedirects.origin(resolution.uri), resolution.uri.toString())
-              else -> {
-                addressField.error = getString(R.string.server_redirect_invalid)
-                address.requestFocus()
-              }
+        startServerProbe(normalized) { resolution ->
+          if (attempt != connectionAttempt || isFinishing || (Build.VERSION.SDK_INT >= 17 && isDestroyed)) return@startServerProbe
+          connect.isEnabled = true
+          if (!activityStarted) return@startServerProbe
+          when {
+            resolution == null -> {
+              addressField.error = getString(R.string.server_redirect_failed)
+              address.requestFocus()
+            }
+            resolution.accepted -> openServer(normalized.toString(), ServerRedirects.origin(resolution.uri), resolution.uri.toString())
+            else -> {
+              addressField.error = getString(R.string.server_redirect_invalid)
+              address.requestFocus()
             }
           }
-        }.start()
+        }
       }
     }
     connect.setOnClickListener { connectToServer() }
@@ -312,6 +331,7 @@ class MainActivity : ComponentActivity() {
       ContextCompat.RECEIVER_NOT_EXPORTED,
     )
     dispatchPlaybackSnapshot()
+    startSavedServerRestore()
   }
 
   private fun dispatchPlaybackSnapshot() {
@@ -326,6 +346,7 @@ class MainActivity : ComponentActivity() {
 
   override fun onStop() {
     activityStarted = false
+    cancelServerProbe()
     connectionAttempt += 1
     serverConnectButton?.isEnabled = true
     runCatching { unregisterReceiver(playbackEvents) }
@@ -338,6 +359,8 @@ class MainActivity : ComponentActivity() {
   }
 
   override fun onDestroy() {
+    activityStarted = false
+    cancelServerProbe()
     connectionAttempt += 1
     serverConnectButton = null
     setPlayerFullscreen(false)
@@ -354,8 +377,10 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  private fun resolveServerRedirects(initial: URI): RedirectResolution = ServerRedirects.resolve(initial) { current ->
+  private fun resolveServerRedirects(initial: URI, probe: ServerProbe): RedirectResolution = ServerRedirects.resolve(initial) { current ->
+    if (probe.cancelled || Thread.currentThread().isInterrupted) throw InterruptedException()
     val connection = current.toURL().openConnection() as HttpURLConnection
+    probe.connection = connection
     try {
       connection.instanceFollowRedirects = false
       connection.connectTimeout = 10_000
@@ -363,32 +388,104 @@ class MainActivity : ComponentActivity() {
       connection.requestMethod = "GET"
       connection.setRequestProperty("User-Agent", "MusicTogetherAndroid/1")
       connection.setRequestProperty("Range", "bytes=0-0")
+      if (probe.cancelled || Thread.currentThread().isInterrupted) throw InterruptedException()
       connection.connect()
+      if (probe.cancelled || Thread.currentThread().isInterrupted) throw InterruptedException()
       RedirectResponse(connection.responseCode, connection.getHeaderField("Location"))
     } finally {
+      if (probe.connection === connection) probe.connection = null
       connection.disconnect()
     }
   }
 
-  private fun Uri.isHttpOrHttps(): Boolean = scheme in setOf("http", "https") && !host.isNullOrBlank()
+  private fun startServerProbe(initial: URI, onComplete: (RedirectResolution?) -> Unit) {
+    if (serverProbe != null) return
+    val probe = ServerProbe()
+    serverProbe = probe
+    val worker = Thread {
+      val resolution = runCatching { resolveServerRedirects(initial, probe) }
+        .getOrNull()
+        ?.takeUnless { probe.cancelled }
+      runOnUiThread {
+        if (serverProbe !== probe || probe.cancelled) return@runOnUiThread
+        serverProbe = null
+        onComplete(resolution)
+      }
+    }
+    probe.thread = worker
+    worker.start()
+  }
+
+  private fun cancelServerProbe() {
+    val probe = serverProbe ?: return
+    serverProbe = null
+    probe.cancelled = true
+    probe.thread?.interrupt()
+    probe.connection?.disconnect()
+  }
+
+  private fun restoreSavedServer(initialServerUrl: String, savedPageUrl: String) {
+    pendingRestore = RestoreRequest(initialServerUrl, savedPageUrl)
+    startSavedServerRestore()
+  }
+
+  private fun startSavedServerRestore() {
+    val request = pendingRestore ?: return
+    if (!activityStarted || serverProbe != null) return
+
+    val initial = ServerRedirects.normalize(request.initialServerUrl)
+    if (initial == null) {
+      pendingRestore = null
+      showServerPicker()
+      return
+    }
+
+    val attempt = ++connectionAttempt
+    startServerProbe(initial) { resolution ->
+      if (attempt != connectionAttempt || isFinishing || (Build.VERSION.SDK_INT >= 17 && isDestroyed)) {
+        if (activityStarted && pendingRestore != null) startSavedServerRestore()
+        return@startServerProbe
+      }
+      if (!activityStarted) return@startServerProbe
+      if (resolution?.accepted != true) {
+        pendingRestore = null
+        showServerPicker()
+        return@startServerProbe
+      }
+
+      val trustedServerUrl = ServerRedirects.origin(resolution.uri)
+      val restoredPage = runCatching { Uri.parse(request.savedPageUrl) }.getOrNull()
+        ?.takeIf { it.isHttpOrHttps() && sameOrigin(it, Uri.parse(trustedServerUrl)) }
+        ?.toString()
+      openServer(initial.toString(), trustedServerUrl, restoredPage ?: resolution.uri.toString())
+    }
+  }
+
+  private fun Uri.isHttpOrHttps(): Boolean =
+    (scheme?.equals("http", ignoreCase = true) == true || scheme?.equals("https", ignoreCase = true) == true) &&
+      !host.isNullOrBlank() && getUserInfo() == null
 
   private fun sameOrigin(first: Uri, second: Uri): Boolean =
-    first.scheme.equals(second.scheme, ignoreCase = true) &&
-      first.host.equals(second.host, ignoreCase = true) &&
+    first.getUserInfo() == null && second.getUserInfo() == null &&
+      first.scheme?.equals(second.scheme, ignoreCase = true) == true &&
+      first.host?.equals(second.host, ignoreCase = true) == true &&
       effectivePort(first) == effectivePort(second)
 
   private fun effectivePort(uri: Uri): Int = when {
     uri.port >= 0 -> uri.port
-    uri.scheme.equals("https", ignoreCase = true) -> 443
+    uri.scheme?.equals("https", ignoreCase = true) == true -> 443
     else -> 80
   }
 
   private fun originUrl(uri: Uri): String = buildString {
     append(uri.scheme?.lowercase())
     append("://")
-    append(uri.host)
+    val host = uri.host.orEmpty()
+    if (host.contains(':') && !host.startsWith('[')) append('[')
+    append(host)
+    if (host.contains(':') && !host.startsWith('[')) append(']')
     val port = effectivePort(uri)
-    val defaultPort = if (uri.scheme.equals("https", ignoreCase = true)) 443 else 80
+    val defaultPort = if (uri.scheme?.equals("https", ignoreCase = true) == true) 443 else 80
     if (port != defaultPort) append(":$port")
   }
 
@@ -498,8 +595,16 @@ class MainActivity : ComponentActivity() {
   companion object {
     private const val STATE_URL = "url"
     private const val PREFERENCES = "music-together"
+    private const val INITIAL_SERVER_URL = "initial-server-url"
+    /** Legacy preference retained as a fallback for existing installations. */
     private const val SERVER_URL = "server-url"
   }
 
+  private data class RestoreRequest(val initialServerUrl: String, val savedPageUrl: String)
+  private class ServerProbe {
+    @Volatile var cancelled = false
+    @Volatile var thread: Thread? = null
+    @Volatile var connection: HttpURLConnection? = null
+  }
   private data class TrustedServer(var url: String)
 }
