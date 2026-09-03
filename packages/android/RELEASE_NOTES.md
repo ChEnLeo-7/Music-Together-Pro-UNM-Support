@@ -9,6 +9,7 @@
 - 修复 Android 调整进度时进度条短暂跳回旧位置的问题。
 - Android 播放器支持隐藏状态栏和导航栏的沉浸式全屏。
 - 移动端封面切换歌词时，标题和作者使用平滑的 Apple 风格非线性动效。
+- 移动端进入歌词模式后继续保持动态流光背景效果。
 
 ### 安全与可靠性
 
@@ -40,6 +41,7 @@ This release provides an Android Release APK signed with a persistent production
 - Fixed the Android progress bar briefly jumping back to the previous position during a seek.
 - Added immersive player fullscreen that hides the status and navigation bars.
 - Added a smooth Apple-style nonlinear title and artist transition when switching between cover and lyrics on mobile.
+- Mobile lyric mode now keeps the dynamic flowing background effect active.
 
 - The native bridge only connects to the server approved in the Activity; pages can no longer choose the Cookie domain or Socket.IO target.
 - Fixed rejoin-token contention between the WebView and native playback service in password-protected rooms.

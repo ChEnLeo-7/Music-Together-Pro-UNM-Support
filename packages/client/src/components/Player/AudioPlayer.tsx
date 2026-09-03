@@ -225,7 +225,7 @@ export function AudioPlayer({
         <div className="pointer-events-none absolute inset-0 z-0 opacity-80 saturate-[1.3]">
           <BackgroundRender
             album={proxiedCover}
-            playing={!isPortrait || (!lyricExpanded && !mobileTransitioning)}
+            playing={!mobileTransitioning}
             fps={bgFps}
             flowSpeed={bgFlowSpeed}
             renderScale={bgRenderScale}
