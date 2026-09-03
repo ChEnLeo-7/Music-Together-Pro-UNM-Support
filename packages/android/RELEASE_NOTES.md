@@ -4,6 +4,8 @@
 
 ### 本次更新
 
+- 完善系统媒体通知，支持通知栏、锁屏、蓝牙和耳机按键通过统一的 MediaSession 控制房间播放。
+- 媒体通知现在由 Media3 管理，并自动同步歌曲标题、作者、封面和播放状态。
 - 支持应用内跟随初始 HTTP(S) 服务端跨域、跨端口重定向，并将原生播放安全绑定到最终地址。
 - 网页重载后继续恢复正在播放歌曲的服务端时间位置，暂停歌曲保持暂停位置。
 - 修复 Android 调整进度时进度条短暂跳回旧位置的问题。
@@ -33,6 +35,11 @@
 ## English
 
 This release provides an Android Release APK signed with a persistent production key, enabling in-place upgrades for future releases.
+
+### What's new
+
+- Improved the system media notification so notification shade, lock screen, Bluetooth, and headset controls all operate through the shared MediaSession.
+- Media3 now owns the media notification lifecycle and keeps the track title, artist, artwork, and playback state synchronized.
 
 ### Security and reliability
 
