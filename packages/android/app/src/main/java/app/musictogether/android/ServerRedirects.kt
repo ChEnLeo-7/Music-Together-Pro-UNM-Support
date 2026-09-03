@@ -9,11 +9,16 @@ internal object ServerRedirects {
   private const val MAX_REDIRECTS = 10
 
   fun normalize(raw: String): URI? {
-    val value = raw.trim().trimEnd('/')
+    val value = raw.trim()
     if (value.isBlank()) return null
     val withScheme = if ("://" in value) value else "http://$value"
     val uri = runCatching { URI(withScheme) }.getOrNull() ?: return null
-    return uri.takeIf { it.isHttpOrHttps() && it.userInfo == null }
+    val valid = uri.takeIf { it.isHttpOrHttps() && it.userInfo == null } ?: return null
+    return if (valid.rawPath == "/" && valid.rawQuery == null && valid.rawFragment == null) {
+      URI(valid.toString().removeSuffix("/"))
+    } else {
+      valid
+    }
   }
 
   fun resolve(initial: URI, request: (URI) -> RedirectResponse): RedirectResolution {
@@ -28,7 +33,9 @@ internal object ServerRedirects {
       if (redirectCount >= MAX_REDIRECTS) return RedirectResolution(current, false)
       val next = runCatching { current.resolve(response.location).normalize() }.getOrNull()
         ?: return RedirectResolution(current, false)
-      if (!next.isHttpOrHttps() || next.userInfo != null || !visited.add(next)) return RedirectResolution(current, false)
+      if (!next.isHttpOrHttps() || next.userInfo != null || isHttpsDowngrade(current, next) || !visited.add(next)) {
+        return RedirectResolution(current, false)
+      }
       current = next
       redirectCount += 1
     }
@@ -37,20 +44,27 @@ internal object ServerRedirects {
   fun origin(uri: URI): String = buildString {
     append(uri.scheme.lowercase())
     append("://")
-    append(uri.host)
+    val host = uri.host
+    if (host.contains(':') && !host.startsWith('[')) append('[')
+    append(host)
+    if (host.contains(':') && !host.startsWith('[')) append(']')
     val port = effectivePort(uri)
     val defaultPort = if (uri.scheme.equals("https", ignoreCase = true)) 443 else 80
     if (port != defaultPort) append(":$port")
   }
 
   private fun URI.isHttpOrHttps(): Boolean =
-    (scheme.equals("http", ignoreCase = true) || scheme.equals("https", ignoreCase = true)) && !host.isNullOrBlank()
+    (scheme?.equals("http", ignoreCase = true) == true || scheme?.equals("https", ignoreCase = true) == true) &&
+      !host.isNullOrBlank()
 
   private fun isRedirectStatus(statusCode: Int): Boolean = statusCode in setOf(300, 301, 302, 303, 307, 308)
 
+  private fun isHttpsDowngrade(current: URI, next: URI): Boolean =
+    current.scheme?.equals("https", ignoreCase = true) == true && next.scheme?.equals("http", ignoreCase = true) == true
+
   private fun effectivePort(uri: URI): Int = when {
     uri.port >= 0 -> uri.port
-    uri.scheme.equals("https", ignoreCase = true) -> 443
+    uri.scheme?.equals("https", ignoreCase = true) == true -> 443
     else -> 80
   }
 }
