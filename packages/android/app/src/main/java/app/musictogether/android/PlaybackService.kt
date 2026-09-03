@@ -2,7 +2,6 @@ package app.musictogether.android
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
 import android.net.Uri
@@ -18,7 +17,7 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.core.app.NotificationCompat
+import androidx.media3.session.DefaultMediaNotificationProvider
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONArray
@@ -107,7 +106,25 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       it.addListener(this)
       it.setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
     }
-    mediaSession = MediaSession.Builder(this, createSessionPlayer(player)).build()
+    setMediaNotificationProvider(
+      DefaultMediaNotificationProvider.Builder(this)
+        .setNotificationId(NOTIFICATION_ID)
+        .setChannelId(NOTIFICATION_CHANNEL_ID)
+        .setChannelName(R.string.playback_channel_name)
+        .build()
+        .also { it.setSmallIcon(R.drawable.ic_notification) },
+    )
+    mediaSession = MediaSession.Builder(this, createSessionPlayer(player))
+      .setSessionActivity(packageManager.getLaunchIntentForPackage(packageName)?.let {
+        android.app.PendingIntent.getActivity(
+          this,
+          0,
+          it,
+          android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+      })
+      .build()
+    addSession(mediaSession)
     updateSnapshot()
     handler.post(snapshotTicker)
     handler.post(syncTicker)
@@ -154,6 +171,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       ACTION_RATE -> player.setPlaybackSpeed(intent.getFloatExtra(EXTRA_RATE, 1f).coerceIn(0.5f, 2f))
       ACTION_RELEASE_SOURCE -> releaseSource(intent.getStringExtra(EXTRA_SOURCE).orEmpty())
       ACTION_RELEASE_SESSION -> releaseSession()
+      else -> return super.onStartCommand(intent, flags, startId)
     }
     updateSnapshot()
     return START_NOT_STICKY
@@ -556,7 +574,6 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     }
 
     val metadata = parseMetadata(rawMetadata)
-    startForeground(NOTIFICATION_ID, buildNotification(metadata.mediaMetadata))
     val item = MediaItem.Builder()
       .setUri(source)
       .setMimeType(normalizeMimeType(mimeType))
@@ -583,7 +600,6 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     currentSource = null
     currentTrackId = null
     updateSnapshot()
-    stopForeground(STOP_FOREGROUND_REMOVE)
   }
 
   private fun releaseSession() {
@@ -608,7 +624,6 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     lastNtpRttMs = 0
     player.stop()
     player.clearMediaItems()
-    stopForeground(STOP_FOREGROUND_REMOVE)
     updateSnapshot()
     stopSelf()
   }
@@ -653,27 +668,6 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     }
     getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
   }
-
-  private fun buildNotification(metadata: MediaMetadata) = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-    .setSmallIcon(R.drawable.ic_notification)
-    .setContentTitle(metadata.title ?: getString(R.string.playback_notification_title))
-    .setContentText(metadata.artist ?: getString(R.string.playback_notification_connecting))
-    .setContentIntent(PendingIntent.getActivity(
-      this,
-      0,
-      packageManager.getLaunchIntentForPackage(packageName),
-      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-    ))
-    .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-    .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-    .setPublicVersion(NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-      .setSmallIcon(R.drawable.ic_notification)
-      .setContentTitle(getString(R.string.playback_notification_title))
-      .setContentText(getString(R.string.playback_notification_connecting))
-      .build())
-    .setOnlyAlertOnce(true)
-    .setOngoing(true)
-    .build()
 
   override fun onPlaybackStateChanged(playbackState: Int) {
     updateSnapshot()
