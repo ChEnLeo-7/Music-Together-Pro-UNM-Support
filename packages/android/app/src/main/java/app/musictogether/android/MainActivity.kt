@@ -19,6 +19,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.webkit.CookieManager
@@ -49,9 +50,10 @@ class MainActivity : ComponentActivity() {
   private var playerFullscreen = false
   private var connectionAttempt = 0L
   private var activityStarted = false
-  private var pendingRestore: RestoreRequest? = null
   private var serverProbe: ServerProbe? = null
   private var serverConnectButton: MaterialButton? = null
+  private var serverConnectionProgress: ProgressBar? = null
+  private var serverConnectionStatus: View? = null
 
   private val playbackEvents = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -68,18 +70,7 @@ class MainActivity : ComponentActivity() {
   @SuppressLint("SetJavaScriptEnabled")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    val savedUrl = savedInstanceState?.getString(STATE_URL)
-    val preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-    val savedServer = ServerUrlMemory.preferred(
-      preferences.getString(INITIAL_SERVER_URL, null),
-      preferences.getString(SERVER_URL, null),
-    )
-    if (!savedServer.isNullOrBlank()) {
-      showServerPicker()
-      restoreSavedServer(savedServer, savedUrl.orEmpty())
-    } else {
-      showServerPicker()
-    }
+    showServerPicker()
 
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
@@ -103,9 +94,10 @@ class MainActivity : ComponentActivity() {
 
   private fun openServer(initialServerUrl: String, trustedServerUrl: String, initialUrl: String = trustedServerUrl) {
     cancelServerProbe()
-    pendingRestore = null
-    getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(INITIAL_SERVER_URL, initialServerUrl).apply()
     serverConnectButton = null
+    serverConnectionProgress = null
+    serverConnectionStatus = null
+    getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putString(INITIAL_SERVER_URL, initialServerUrl).apply()
     requestNotificationPermission()
     webView?.destroy()
     val trustedServer = TrustedServer(trustedServerUrl)
@@ -142,9 +134,10 @@ class MainActivity : ComponentActivity() {
 
   private fun showServerPicker() {
     cancelServerProbe()
-    pendingRestore = null
     connectionAttempt += 1
     serverConnectButton = null
+    serverConnectionProgress = null
+    serverConnectionStatus = null
     if (webView != null) {
       startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_RELEASE_SESSION))
     }
@@ -224,12 +217,37 @@ class MainActivity : ComponentActivity() {
       insetBottom = 0
       backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(208, 188, 255))
     }
+    val connectionProgress = ProgressBar(this, null, android.R.attr.progressBarStyleSmall).apply {
+      isIndeterminate = true
+      contentDescription = getString(R.string.server_connecting)
+      indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.rgb(208, 188, 255))
+    }
+    val connectionStatusText = TextView(this).apply {
+      text = getString(R.string.server_connecting)
+      textSize = 13f
+      setTextColor(Color.rgb(202, 196, 208))
+    }
+    val connectionStatus = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      visibility = View.GONE
+      addView(connectionProgress, LinearLayout.LayoutParams(dp(20), dp(20)))
+      addView(connectionStatusText, LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+      ).apply {
+        setMargins(dp(10), dp(2), 0, 0)
+      })
+    }
     serverConnectButton = connect
+    serverConnectionProgress = connectionProgress
+    serverConnectionStatus = connectionStatus
     val form = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       setPadding(dp(20), dp(20), dp(20), dp(20))
       addView(addressField, matchWrap())
       addView(connect, matchHeight(dp(56), top = dp(20)))
+      addView(connectionStatus, matchWrap())
     }
     val formCard = MaterialCardView(this).apply {
       radius = dp(28).toFloat()
@@ -269,7 +287,6 @@ class MainActivity : ComponentActivity() {
 
     val connectToServer = {
       cancelServerProbe()
-      pendingRestore = null
       val attempt = ++connectionAttempt
       val normalized = ServerRedirects.normalize(address.text.toString())
       if (normalized == null) {
@@ -280,10 +297,10 @@ class MainActivity : ComponentActivity() {
         getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
           .putString(INITIAL_SERVER_URL, normalized.toString())
           .apply()
-        connect.isEnabled = false
+        setServerConnectionLoading(true)
         startServerProbe(normalized) { resolution ->
           if (attempt != connectionAttempt || isFinishing || (Build.VERSION.SDK_INT >= 17 && isDestroyed)) return@startServerProbe
-          connect.isEnabled = true
+          setServerConnectionLoading(false)
           if (!activityStarted) return@startServerProbe
           when {
             resolution == null -> {
@@ -331,7 +348,6 @@ class MainActivity : ComponentActivity() {
       ContextCompat.RECEIVER_NOT_EXPORTED,
     )
     dispatchPlaybackSnapshot()
-    startSavedServerRestore()
   }
 
   private fun dispatchPlaybackSnapshot() {
@@ -347,22 +363,20 @@ class MainActivity : ComponentActivity() {
   override fun onStop() {
     activityStarted = false
     cancelServerProbe()
+    setServerConnectionLoading(false)
     connectionAttempt += 1
-    serverConnectButton?.isEnabled = true
     runCatching { unregisterReceiver(playbackEvents) }
     super.onStop()
-  }
-
-  override fun onSaveInstanceState(outState: Bundle) {
-    outState.putString(STATE_URL, webView?.url)
-    super.onSaveInstanceState(outState)
   }
 
   override fun onDestroy() {
     activityStarted = false
     cancelServerProbe()
+    setServerConnectionLoading(false)
     connectionAttempt += 1
     serverConnectButton = null
+    serverConnectionProgress = null
+    serverConnectionStatus = null
     setPlayerFullscreen(false)
     webView?.removeJavascriptInterface("MusicTogetherAndroid")
     webView?.destroy()
@@ -417,48 +431,18 @@ class MainActivity : ComponentActivity() {
   }
 
   private fun cancelServerProbe() {
-    val probe = serverProbe ?: return
+    val probe = serverProbe
     serverProbe = null
-    probe.cancelled = true
-    probe.thread?.interrupt()
-    probe.connection?.disconnect()
+    probe?.cancelled = true
+    probe?.thread?.interrupt()
+    probe?.connection?.disconnect()
+    setServerConnectionLoading(false)
   }
 
-  private fun restoreSavedServer(initialServerUrl: String, savedPageUrl: String) {
-    pendingRestore = RestoreRequest(initialServerUrl, savedPageUrl)
-    startSavedServerRestore()
-  }
-
-  private fun startSavedServerRestore() {
-    val request = pendingRestore ?: return
-    if (!activityStarted || serverProbe != null) return
-
-    val initial = ServerRedirects.normalize(request.initialServerUrl)
-    if (initial == null) {
-      pendingRestore = null
-      showServerPicker()
-      return
-    }
-
-    val attempt = ++connectionAttempt
-    startServerProbe(initial) { resolution ->
-      if (attempt != connectionAttempt || isFinishing || (Build.VERSION.SDK_INT >= 17 && isDestroyed)) {
-        if (activityStarted && pendingRestore != null) startSavedServerRestore()
-        return@startServerProbe
-      }
-      if (!activityStarted) return@startServerProbe
-      if (resolution?.accepted != true) {
-        pendingRestore = null
-        showServerPicker()
-        return@startServerProbe
-      }
-
-      val trustedServerUrl = ServerRedirects.origin(resolution.uri)
-      val restoredPage = runCatching { Uri.parse(request.savedPageUrl) }.getOrNull()
-        ?.takeIf { it.isHttpOrHttps() && sameOrigin(it, Uri.parse(trustedServerUrl)) }
-        ?.toString()
-      openServer(initial.toString(), trustedServerUrl, restoredPage ?: resolution.uri.toString())
-    }
+  private fun setServerConnectionLoading(loading: Boolean) {
+    serverConnectButton?.isEnabled = !loading
+    serverConnectionProgress?.visibility = if (loading) View.VISIBLE else View.GONE
+    serverConnectionStatus?.visibility = if (loading) View.VISIBLE else View.GONE
   }
 
   private fun Uri.isHttpOrHttps(): Boolean =
@@ -593,14 +577,12 @@ class MainActivity : ComponentActivity() {
   }
 
   companion object {
-    private const val STATE_URL = "url"
     private const val PREFERENCES = "music-together"
     private const val INITIAL_SERVER_URL = "initial-server-url"
     /** Legacy preference retained as a fallback for existing installations. */
     private const val SERVER_URL = "server-url"
   }
 
-  private data class RestoreRequest(val initialServerUrl: String, val savedPageUrl: String)
   private class ServerProbe {
     @Volatile var cancelled = false
     @Volatile var thread: Thread? = null
