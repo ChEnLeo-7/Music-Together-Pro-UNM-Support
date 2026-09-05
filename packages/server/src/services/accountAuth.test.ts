@@ -14,7 +14,14 @@ function setup(options: { initialized?: boolean } = {}) {
   runMigrations(db)
   const users = createUserRepository(db)
   if (options.initialized !== false) {
-    users.create({ id: 'initial-admin', kind: 'account', username: 'InitialAdmin', nickname: 'Admin', passwordHash: 'not-used', role: 'admin' })
+    users.create({
+      id: 'initial-admin',
+      kind: 'account',
+      username: 'InitialAdmin',
+      nickname: 'Admin',
+      passwordHash: 'not-used',
+      role: 'admin',
+    })
   }
   const sessions = createSessionRepository(db)
   const sessionManager = createSessionManager(sessions, users, { ttlMs: 30 * 24 * 60 * 60 * 1000 })
@@ -118,7 +125,11 @@ test('unknown username and wrong password use the same external error', async ()
 
 test('deleting a user invalidates old tokens without recreating the user', async () => {
   const { accountAuth, sessionManager, users } = setup()
-  const registered = await accountAuth.register({ username: 'DeleteMe', password: 'delete-password', nickname: 'Delete' })
+  const registered = await accountAuth.register({
+    username: 'DeleteMe',
+    password: 'delete-password',
+    nickname: 'Delete',
+  })
 
   assert.equal(users.delete(registered.user.id), true)
   assert.equal(await sessionManager.authenticate(registered.session.token), null)
@@ -127,7 +138,11 @@ test('deleting a user invalidates old tokens without recreating the user', async
 
 test('concurrent password changes cannot both replace the same credential', async () => {
   const { accountAuth } = setup()
-  const registered = await accountAuth.register({ username: 'Concurrent', password: 'old-password', nickname: 'Concurrent' })
+  const registered = await accountAuth.register({
+    username: 'Concurrent',
+    password: 'old-password',
+    nickname: 'Concurrent',
+  })
 
   const results = await Promise.allSettled([
     accountAuth.changePassword(registered.user.id, 'old-password', 'new-password-a'),
@@ -151,7 +166,7 @@ test('bootstrap administrator must replace both username and password', async ()
     mustChangeUsername: true,
   })
 
-  const changed = await accountAuth.changeBootstrapCredentials(bootstrap.id, 'admin', 'NewAdmin', 'new-password')
+  const changed = await accountAuth.changeBootstrapCredentials(bootstrap.id, 'NewAdmin', 'new-password')
   assert.equal(changed.user.username, 'NewAdmin')
   assert.equal(changed.user.mustChangeUsername, false)
   assert.equal(changed.user.mustChangePassword, false)

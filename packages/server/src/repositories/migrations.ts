@@ -156,6 +156,50 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 4,
+    sql: `
+      CREATE TABLE room_media (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL,
+        origin TEXT NOT NULL CHECK (origin IN ('upload', 'direct-url', 'yt-dlp')),
+        status TEXT NOT NULL CHECK (status IN ('processing', 'ready', 'failed', 'deleted')),
+        storage_path TEXT,
+        cover_path TEXT,
+        source_url TEXT,
+        mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+        byte_size INTEGER NOT NULL DEFAULT 0,
+        sha256 TEXT,
+        title TEXT NOT NULL DEFAULT '',
+        artist_json TEXT NOT NULL DEFAULT '[]',
+        album TEXT NOT NULL DEFAULT '',
+        duration_seconds REAL NOT NULL DEFAULT 0,
+        lyrics_text TEXT,
+        translated_lyrics_text TEXT,
+        lyric_source TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_referenced_at INTEGER NOT NULL,
+        last_accessed_at INTEGER,
+        failed_at INTEGER,
+        deleted_at INTEGER
+      );
+      CREATE INDEX room_media_room_status_idx ON room_media(room_id, status);
+      CREATE INDEX room_media_cleanup_idx ON room_media(status, last_referenced_at, last_accessed_at);
+
+      CREATE TABLE room_media_credentials (
+        room_id TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK (platform IN ('youtube', 'bilibili')),
+        cookie_encrypted TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (room_id, platform)
+      );
+    `,
+  },
 ]
 
 function hasTable(db: Database, table: string): boolean {

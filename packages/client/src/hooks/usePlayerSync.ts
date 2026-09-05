@@ -195,11 +195,10 @@ export function usePlayerSync(
       scheduledTimerRef.current = setTimeout(() => {
         if (actionIdRef.current !== id) return // stale callback
         if (!howlRef.current) return
-        // Seek to the expected position at this moment
-        if (data.playState.currentTime > 0) {
-          howlRef.current.seek(data.playState.currentTime)
-          setCurrentTime(data.playState.currentTime)
-        }
+        // Always seek before resuming. This also restarts a track that was
+        // paused exactly at its duration by the end-of-playlist setting.
+        howlRef.current.seek(data.playState.currentTime)
+        setCurrentTime(data.playState.currentTime)
         if (howlRef.current.rate() !== 1) howlRef.current.rate(1)
         smoothedDriftRef.current = 0
         emaColdStartRef.current = true

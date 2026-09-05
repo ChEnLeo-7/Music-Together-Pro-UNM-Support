@@ -37,6 +37,7 @@ export interface RoomData {
   currentTrack: Track | null
   playState: PlayState
   playMode: PlayMode
+  pauseAtQueueEnd: boolean
   unmServerUrl: string
 }
 

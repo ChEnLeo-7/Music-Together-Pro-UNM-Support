@@ -331,7 +331,9 @@ export function PlatformHub() {
                             className={
                               option.platform === 'unm'
                                 ? 'text-[10px] text-muted-foreground'
-                                : `text-[10px] ${PLATFORM_TEXT[option.platform]}`
+                                : option.platform === 'custom'
+                                  ? 'text-[10px] text-violet-500'
+                                  : `text-[10px] ${PLATFORM_TEXT[option.platform]}`
                             }
                           >
                             {platformLabel(option.platform)}

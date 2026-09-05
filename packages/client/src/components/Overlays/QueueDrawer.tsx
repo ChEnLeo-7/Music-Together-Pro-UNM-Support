@@ -4,9 +4,10 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { isServerAssetUrl, resolveServerAssetUrl } from '@/lib/config'
 import { useRoomStore } from '@/stores/roomStore'
 import { useSocketContext } from '@/providers/SocketProvider'
-import type { MusicSource, Track } from '@music-together/shared'
+import type { Track } from '@music-together/shared'
 import { EVENTS } from '@music-together/shared'
 import { useHasHover } from '@/hooks/useHasHover'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -15,7 +16,7 @@ import { AbilityContext } from '@/providers/AbilityProvider'
 import { ArrowUpToLine, ChevronDown, ChevronUp, ListX, Music, Play, Search, Trash2, User, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
-import { PLATFORM_SHORT_LABELS } from '@/lib/platform'
+import { TRACK_SOURCE_SHORT_LABELS } from '@/lib/platform'
 
 const EMPTY_QUEUE: Track[] = []
 const DESKTOP_ROW_HEIGHT = 64
@@ -28,10 +29,11 @@ const QUEUE_ROW_STYLE = {
   containIntrinsicSize: `${DESKTOP_ROW_HEIGHT}px`,
 } as CSSProperties
 
-const SOURCE_STYLE: Record<MusicSource, { labelKey: 'netease' | 'tencent' | 'kugou'; className: string }> = {
-  netease: { labelKey: 'netease', className: 'text-white bg-red-500 ring-red-600/50' },
-  tencent: { labelKey: 'tencent', className: 'text-white bg-green-500 ring-green-600/50' },
-  kugou: { labelKey: 'kugou', className: 'text-white bg-blue-500 ring-blue-600/50' },
+const SOURCE_STYLE: Record<Track['source'], { className: string }> = {
+  netease: { className: 'text-white bg-red-500 ring-red-600/50' },
+  tencent: { className: 'text-white bg-green-500 ring-green-600/50' },
+  kugou: { className: 'text-white bg-blue-500 ring-blue-600/50' },
+  custom: { className: 'text-white bg-violet-500 ring-violet-600/50' },
 }
 
 interface QueueDrawerProps {
@@ -137,7 +139,8 @@ const QueueItem = memo(function QueueItem({
         <div className="relative shrink-0">
           {track.cover ? (
             <img
-              src={track.cover}
+              src={resolveServerAssetUrl(track.cover)}
+              crossOrigin={isServerAssetUrl(track.cover) ? 'use-credentials' : undefined}
               alt={track.title}
               loading="lazy"
               decoding="async"
@@ -151,14 +154,14 @@ const QueueItem = memo(function QueueItem({
           <div className={cn('flex h-9 w-9 items-center justify-center rounded bg-muted', track.cover && 'hidden')}>
             <Music className="h-4 w-4 text-muted-foreground" />
           </div>
-          {track.source && SOURCE_STYLE[track.source] && (
+          {SOURCE_STYLE[track.source] && (
             <span
               className={cn(
                 'absolute -bottom-1 -right-1 whitespace-nowrap rounded px-0.5 text-[8px] font-bold leading-tight ring-1',
                 SOURCE_STYLE[track.source].className,
               )}
             >
-              {PLATFORM_SHORT_LABELS[track.source]}
+              {TRACK_SOURCE_SHORT_LABELS[track.source]}
             </span>
           )}
         </div>

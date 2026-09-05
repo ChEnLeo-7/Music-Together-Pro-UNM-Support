@@ -7,7 +7,7 @@
   setRoleSchema,
 } from '@music-together/shared'
 import type { TypedServer, TypedSocket } from '../middleware/types.js'
-import { createWithOwnerOnly } from '../middleware/withControl.js'
+import { createWithOwnerOnly, createWithRoomManager } from '../middleware/withControl.js'
 import { createWithRoom } from '../middleware/withRoom.js'
 import { cleanupSocketRateLimit } from '../middleware/socketRateLimiter.js'
 import { roomRepo } from '../repositories/roomRepository.js'
@@ -23,6 +23,7 @@ import { getSocketSourceIp } from '../utils/sourceIp.js'
 
 export function registerRoomController(io: TypedServer, socket: TypedSocket) {
   const withOwnerOnly = createWithOwnerOnly(io)
+  const withRoomManager = createWithRoomManager(io)
   const withRoom = createWithRoom(io)
 
   // ---- Room list (涓嶉渶瑕佸湪鎴块棿鍐? ----
@@ -219,7 +220,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
   // ---- Room settings (浠呮埧涓伙紝鍚瘑鐮佺鐞? ----
   socket.on(
     EVENTS.ROOM_SETTINGS,
-    withOwnerOnly((ctx, raw) => {
+    withRoomManager((ctx, raw) => {
       const parsed = roomSettingsSchema.safeParse(raw)
       if (!parsed.success) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
@@ -229,15 +230,32 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         return
       }
 
-      roomService.updateSettings(ctx.roomId, {
-        name: parsed.data.name,
-        password: parsed.data.password,
-        audioQuality: parsed.data.audioQuality,
-        sourcePriority: parsed.data.sourcePriority,
-        hidden: parsed.data.hidden,
-        permanent: parsed.data.permanent,
-        chatHistoryForNewUsers: parsed.data.chatHistoryForNewUsers,
-      })
+      const isOwner = ctx.user.role === 'owner'
+      const isServerAdmin = roomService.isServerAdminUser(ctx.socket.data.identityUserId)
+      const ownerOnlyRequested =
+        parsed.data.name !== undefined ||
+        parsed.data.password !== undefined ||
+        parsed.data.hidden !== undefined ||
+        parsed.data.permanent !== undefined ||
+        parsed.data.chatHistoryForNewUsers !== undefined
+      if (!isOwner && !isServerAdmin && ownerOnlyRequested) {
+        ctx.socket.emit(EVENTS.ROOM_ERROR, {
+          code: ERROR_CODE.NO_PERMISSION,
+          message: '只有房主或服务器管理员可以修改此房间设置',
+        })
+        return
+      }
+
+      roomService.updateSettings(
+        ctx.roomId,
+        isOwner || isServerAdmin
+          ? parsed.data
+          : {
+              audioQuality: parsed.data.audioQuality,
+              sourcePriority: parsed.data.sourcePriority,
+              pauseAtQueueEnd: parsed.data.pauseAtQueueEnd,
+            },
+      )
 
       const updatedRoom = roomRepo.get(ctx.roomId)
       if (!updatedRoom) return
@@ -251,6 +269,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         hidden: updatedRoom.hidden,
         permanent: updatedRoom.permanent,
         chatHistoryForNewUsers: updatedRoom.chatHistoryForNewUsers,
+        pauseAtQueueEnd: updatedRoom.pauseAtQueueEnd,
       }
       ctx.io.to(ctx.roomId).emit(EVENTS.ROOM_SETTINGS, baseSettings)
       emitRoomStateByPermission(io, ctx.roomId, updatedRoom)

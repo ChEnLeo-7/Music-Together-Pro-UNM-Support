@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        YTDLP_VERSION: '${YTDLP_VERSION:-latest}'
     container_name: music-together
     restart: unless-stopped
     init: true
@@ -26,6 +28,20 @@ services:
       AUTO_FALLBACK_ENABLED: '${AUTO_FALLBACK_ENABLED:-true}'
       UNM_SERVER_URL: '${UNM_SERVER_URL:-}'
       UNM_SERVER_TIMEOUT_MS: '${UNM_SERVER_TIMEOUT_MS:-10000}'
+      MEDIA_ROOT: '${MEDIA_ROOT:-/app/data/media}'
+      MEDIA_MAX_UPLOAD_BYTES: '${MEDIA_MAX_UPLOAD_BYTES:-209715200}'
+      MEDIA_MAX_DURATION_SECONDS: '${MEDIA_MAX_DURATION_SECONDS:-14400}'
+      MEDIA_MAX_ROOM_BYTES: '${MEDIA_MAX_ROOM_BYTES:-2147483648}'
+      MEDIA_MAX_TOTAL_BYTES: '${MEDIA_MAX_TOTAL_BYTES:-10737418240}'
+      MEDIA_INACTIVITY_MS: '${MEDIA_INACTIVITY_MS:-604800000}'
+      MEDIA_CLEANUP_INTERVAL_MS: '${MEDIA_CLEANUP_INTERVAL_MS:-900000}'
+      MEDIA_JOB_TIMEOUT_MS: '${MEDIA_JOB_TIMEOUT_MS:-600000}'
+      YTDLP_PATH: '${YTDLP_PATH:-yt-dlp}'
+      YTDLP_AUTO_UPDATE: '${YTDLP_AUTO_UPDATE:-false}'
+      YTDLP_UPDATE_VERSION: '${YTDLP_UPDATE_VERSION:-}'
+      YOUTUBE_COOKIE: '${YOUTUBE_COOKIE:-}'
+      BILIBILI_COOKIE: '${BILIBILI_COOKIE:-}'
+      FFMPEG_PATH: '${FFMPEG_PATH:-ffmpeg}'
     volumes:
       - music-together-data:/app/data
     networks:

@@ -34,6 +34,7 @@ interface RoomSettingsJson {
   audioQuality?: AudioQuality
   sourcePriority?: SourcePriority
   playMode?: PlayMode
+  pauseAtQueueEnd?: boolean
   adminUserIds?: string[]
   hiddenMemberUserIds?: string[]
   chatHistoryForNewUsers?: boolean
@@ -100,6 +101,7 @@ function roomSettings(room: RoomData): RoomSettingsJson {
     audioQuality: room.audioQuality,
     sourcePriority: room.sourcePriority,
     playMode: room.playMode,
+    pauseAtQueueEnd: room.pauseAtQueueEnd,
     adminUserIds: Array.from(room.adminUserIds),
     hiddenMemberUserIds: Array.from(room.hiddenMemberUserIds),
     chatHistoryForNewUsers: room.chatHistoryForNewUsers,
@@ -205,6 +207,7 @@ export const persistentRoomRepo = {
           playbackRevision: 0,
         },
         playMode: settings.playMode ?? 'loop-all',
+        pauseAtQueueEnd: settings.pauseAtQueueEnd ?? false,
         unmServerUrl: settings.unmServerUrl ?? '',
       }
     })

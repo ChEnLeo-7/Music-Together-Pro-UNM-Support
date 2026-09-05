@@ -10,6 +10,7 @@ import { storage } from '@/lib/storage'
 import { useSocketContext } from '@/providers/SocketProvider'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useRoomStore } from '@/stores/roomStore'
+import { useAccountStore } from '@/stores/accountStore'
 import type { AudioQuality } from '@music-together/shared'
 import { EVENTS, LIMITS, roomPasswordSchema } from '@music-together/shared'
 import { Check, Copy, Loader2, Lock, LockOpen, Pencil, X } from 'lucide-react'
@@ -25,6 +26,7 @@ interface RoomSettingsSectionProps {
     hidden?: boolean
     permanent?: boolean
     chatHistoryForNewUsers?: boolean
+    pauseAtQueueEnd?: boolean
   }) => void
   onDissolveRoom?: () => void
 }
@@ -36,7 +38,10 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
   const currentUser = useRoomStore((s) => s.currentUser)
   const syncDrift = usePlayerStore((s) => s.syncDrift)
   const isOwner = currentUser?.role === 'owner'
-  const canManageRoom = isOwner
+  const isRoomAdmin = currentUser?.role === 'admin'
+  const isServerAdmin = useAccountStore((s) => s.me?.role === 'admin')
+  const canManageRoom = isOwner || isRoomAdmin || isServerAdmin
+  const canEditOwnerSettings = isOwner || isServerAdmin
   const t = useI18n((s) => s.t)
 
   const [passwordInput, setPasswordInput] = useState('')
@@ -71,7 +76,7 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
         credentials: 'include',
         cache: 'no-store',
       })
-       if (!response.ok) throw new Error('room password request failed')
+      if (!response.ok) throw new Error('room password request failed')
       const data = (await response.json()) as { password: string | null }
       if (requestId !== passwordRequestRef.current) return
       setRoomPassword(data.password)
@@ -81,7 +86,7 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
       if (requestId !== passwordRequestRef.current) return
       setRoomPassword(null)
       setPasswordInput('')
-       toast.error(t('roomPasswordLoadFailed'))
+      toast.error(t('roomPasswordLoadFailed'))
     } finally {
       if (requestId === passwordRequestRef.current) setPasswordLoading(false)
     }
@@ -116,11 +121,11 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
   const handleManualSync = () => {
     if (!room) return
     if (room.hostId === storage.getUserId()) {
-       toast.info(t('syncSourceNotice'))
+      toast.info(t('syncSourceNotice'))
       return
     }
     socket.emit(EVENTS.PLAYER_SYNC_REQUEST)
-     toast.success(t('syncRequested'))
+    toast.success(t('syncRequested'))
   }
 
   const handlePasswordToggle = (checked: boolean) => {
@@ -138,7 +143,7 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
   const handleSetPassword = () => {
     const result = roomPasswordSchema.safeParse(passwordInput)
     if (!result.success) {
-       toast.error(t('enterPassword'))
+      toast.error(t('enterPassword'))
       return
     }
     onUpdateSettings({ password: result.data })
@@ -208,18 +213,36 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
                 }}
                 autoFocus
               />
-                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleSaveName} aria-label={t('saveRoomName')}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleSaveName}
+                aria-label={t('saveRoomName')}
+              >
                 <Check className="h-3.5 w-3.5" />
               </Button>
-               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCancelEditName} aria-label={t('cancelEdit')}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleCancelEditName}
+                aria-label={t('cancelEdit')}
+              >
                 <X className="h-3.5 w-3.5" />
               </Button>
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
               <span className="text-sm">{room?.name}</span>
-              {canManageRoom && (
-                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleStartEditName} aria-label={t('editRoomName')}>
+              {canEditOwnerSettings && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleStartEditName}
+                  aria-label={t('editRoomName')}
+                >
                   <Pencil className="h-3 w-3" />
                 </Button>
               )}
@@ -232,7 +255,13 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
             <code className="rounded bg-muted px-2 py-0.5 text-sm">{room?.id}</code>
             <Tooltip>
               <TooltipTrigger asChild>
-                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyRoomLink} aria-label={t('copyRoomLink')}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={copyRoomLink}
+                  aria-label={t('copyRoomLink')}
+                >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
@@ -247,9 +276,9 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
           </span>
         </SettingRow>
 
-         <SettingRow label={t('manualSync')} description={t('manualSyncDesc')}>
+        <SettingRow label={t('manualSync')} description={t('manualSyncDesc')}>
           <Button type="button" variant="outline" size="sm" onClick={handleManualSync}>
-             {t('syncNow')}
+            {t('syncNow')}
           </Button>
         </SettingRow>
 
@@ -295,7 +324,7 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
           <h3 className="text-base font-semibold">{t('ownerSettings')}</h3>
           <Separator className="mt-2 mb-4" />
 
-          {isOwner && (
+          {canEditOwnerSettings && (
             <div className="space-y-2">
               <SettingRow label={t('roomPassword')} description={t('roomPasswordDesc')}>
                 <Switch checked={passwordEnabled} onCheckedChange={handlePasswordToggle} />
@@ -320,37 +349,55 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
             </div>
           )}
 
-          <SettingRow label={t('hiddenRoom')} description={t('hiddenRoomDesc')}>
-            <Switch checked={room?.hidden ?? false} onCheckedChange={(checked) => onUpdateSettings({ hidden: checked })} />
-          </SettingRow>
+          {canEditOwnerSettings && (
+            <>
+              <SettingRow label={t('hiddenRoom')} description={t('hiddenRoomDesc')}>
+                <Switch
+                  checked={room?.hidden ?? false}
+                  onCheckedChange={(checked) => onUpdateSettings({ hidden: checked })}
+                />
+              </SettingRow>
 
-          <SettingRow label={t('permanentRoom')} description={t('permanentRoomDesc')}>
-            <Switch checked={room?.permanent ?? false} onCheckedChange={(checked) => onUpdateSettings({ permanent: checked })} />
-          </SettingRow>
+              <SettingRow label={t('permanentRoom')} description={t('permanentRoomDesc')}>
+                <Switch
+                  checked={room?.permanent ?? false}
+                  onCheckedChange={(checked) => onUpdateSettings({ permanent: checked })}
+                />
+              </SettingRow>
 
-          <SettingRow
-             label={t('chatHistoryForNewUsers')}
-             description={t('chatHistoryForNewUsersDesc')}
-          >
+              <SettingRow label={t('chatHistoryForNewUsers')} description={t('chatHistoryForNewUsersDesc')}>
+                <Switch
+                  checked={room?.chatHistoryForNewUsers ?? true}
+                  onCheckedChange={(checked) => onUpdateSettings({ chatHistoryForNewUsers: checked })}
+                />
+              </SettingRow>
+            </>
+          )}
+
+          <SettingRow label={t('pauseAtQueueEnd')} description={t('pauseAtQueueEndDesc')}>
             <Switch
-              checked={room?.chatHistoryForNewUsers ?? true}
-              onCheckedChange={(checked) => onUpdateSettings({ chatHistoryForNewUsers: checked })}
+              checked={room?.pauseAtQueueEnd ?? false}
+              onCheckedChange={(checked) => onUpdateSettings({ pauseAtQueueEnd: checked })}
             />
           </SettingRow>
 
-          <Separator className="my-4" />
+          {canEditOwnerSettings && (
+            <>
+              <Separator className="my-4" />
 
-           <SettingRow label={t('dissolveRoomConfirm')} description={t('dissolveRoomDesc')}>
-            <Button
-              type="button"
-              variant={confirmDissolve ? 'destructive' : 'outline'}
-              size="sm"
-              className={confirmDissolve ? '' : 'border-destructive/40 text-destructive hover:text-destructive'}
-              onClick={handleDissolveRoom}
-            >
-               {confirmDissolve ? t('confirmAgain') : t('dissolve')}
-            </Button>
-          </SettingRow>
+              <SettingRow label={t('dissolveRoomConfirm')} description={t('dissolveRoomDesc')}>
+                <Button
+                  type="button"
+                  variant={confirmDissolve ? 'destructive' : 'outline'}
+                  size="sm"
+                  className={confirmDissolve ? '' : 'border-destructive/40 text-destructive hover:text-destructive'}
+                  onClick={handleDissolveRoom}
+                >
+                  {confirmDissolve ? t('confirmAgain') : t('dissolve')}
+                </Button>
+              </SettingRow>
+            </>
+          )}
         </div>
       )}
     </div>

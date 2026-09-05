@@ -50,6 +50,7 @@ export const roomSettingsSchema = z.object({
   hidden: z.boolean().optional(),
   permanent: z.boolean().optional(),
   chatHistoryForNewUsers: z.boolean().optional(),
+  pauseAtQueueEnd: z.boolean().optional(),
 })
 
 export const setRoleSchema = z.object({
@@ -107,24 +108,36 @@ export const playerSetModeSchema = z.object({
 // Queue
 // ---------------------------------------------------------------------------
 
-const trackSchema = z.object({
-  id: z.string().max(200),
-  title: z.string().max(500),
-  artist: z.array(z.string().max(200)).max(20),
-  album: z.string().max(500),
-  duration: z.number().finite().nonnegative(),
-  cover: z.string().max(2000),
-  source: z.enum(['netease', 'tencent', 'kugou']),
-  sourceId: z.string().max(200),
-  urlId: z.string().max(200),
-  lyricId: z.string().max(200).optional(),
-  picId: z.string().max(200).optional(),
-  streamUrl: z.string().max(2000).optional(),
-  streamSource: z.enum(['netease', 'tencent', 'kugou', 'unm']).optional(),
-  streamQuality: audioQualitySchema.optional(),
-  availableStreamQualities: z.array(audioQualitySchema).optional(),
-  vip: z.boolean().optional(),
-})
+const trackSchema = z
+  .object({
+    id: z.string().max(200),
+    title: z.string().max(500),
+    artist: z.array(z.string().max(200)).max(20),
+    album: z.string().max(500),
+    duration: z.number().finite().nonnegative(),
+    cover: z.string().max(2000),
+    source: z.enum(['netease', 'tencent', 'kugou', 'custom']),
+    sourceId: z.string().max(200),
+    urlId: z.string().max(200),
+    kind: z.enum(['platform', 'custom']).optional(),
+    mediaId: z.string().max(200).optional(),
+    mediaOrigin: z.enum(['upload', 'direct-url', 'yt-dlp']).optional(),
+    mimeType: z.string().max(100).optional(),
+    lyricsUrl: z.string().max(2000).optional(),
+    lyricId: z.string().max(200).optional(),
+    picId: z.string().max(200).optional(),
+    streamUrl: z.string().max(2000).optional(),
+    streamSource: z.enum(['netease', 'tencent', 'kugou', 'unm', 'custom']).optional(),
+    streamQuality: audioQualitySchema.optional(),
+    availableStreamQualities: z.array(audioQualitySchema).optional(),
+    vip: z.boolean().optional(),
+    requestedBy: z.string().max(200).optional(),
+  })
+  .superRefine((track, ctx) => {
+    if (track.source === 'custom' && !track.mediaId) {
+      ctx.addIssue({ code: 'custom', path: ['mediaId'], message: 'Custom tracks require a media ID' })
+    }
+  })
 
 export const queueAddSchema = z.object({
   track: trackSchema,

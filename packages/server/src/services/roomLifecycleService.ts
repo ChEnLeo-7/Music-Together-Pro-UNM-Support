@@ -27,6 +27,7 @@ import { cleanupRoom as cleanupPlayerRoom } from './playerService.js'
 import { cleanupRoom as cleanupVoteRoom } from './voteService.js'
 import { revokeRoomAdmissionGrants } from './roomAdmissionService.js'
 import { persistentRoomRepo } from '../repositories/persistentRoomRepository.js'
+import { cleanupRoomMedia } from './customMediaService.js'
 
 // ---------------------------------------------------------------------------
 // Module-level state
@@ -59,6 +60,7 @@ export function scheduleDeletion(roomId: string, io?: TypedServer): void {
       cleanupPlayerRoom(roomId)
       cleanupVoteRoom(roomId)
       cleanupAuthRoom(roomId)
+      void cleanupRoomMedia(roomId)
       revokeRoomAdmissionGrants(roomId)
       roomDeletionTimers.delete(roomId)
       logger.info(`Room ${roomId} deleted after grace period`, { roomId })
@@ -98,6 +100,7 @@ export function destroyRoom(roomId: string, io?: TypedServer): boolean {
   cleanupPlayerRoom(roomId)
   cleanupVoteRoom(roomId)
   cleanupAuthRoom(roomId)
+  void cleanupRoomMedia(roomId)
   revokeRoomAdmissionGrants(roomId)
   persistentRoomRepo.markDissolved(roomId)
 

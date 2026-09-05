@@ -11,8 +11,8 @@ android {
     applicationId = "app.musictogether.android"
     minSdk = 26
     targetSdk = 35
-    versionCode = 16
-    versionName = "0.10.4"
+    versionCode = 17
+    versionName = "0.10.5"
   }
 
   compileOptions {
@@ -44,6 +44,7 @@ android {
 dependencies {
   implementation("androidx.activity:activity-ktx:1.10.0")
   implementation("androidx.core:core-ktx:1.15.0")
+  implementation("androidx.media3:media3-datasource:1.5.1")
   implementation("androidx.media3:media3-exoplayer:1.5.1")
   implementation("androidx.media3:media3-session:1.5.1")
   implementation("com.google.android.material:material:1.12.0")

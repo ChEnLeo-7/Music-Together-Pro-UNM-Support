@@ -74,6 +74,7 @@ class NativeAudioEngine implements AudioEngine {
   constructor(private readonly options: NativeAudioOptions) {
     this.audio = document.createElement('audio')
     this.audio.preload = 'auto'
+    if (options.src.startsWith(`${SERVER_URL}/`)) this.audio.crossOrigin = 'use-credentials'
     this.audio.volume = options.volume
 
     const source = document.createElement('source')
@@ -385,6 +386,22 @@ function resolveStreamUrl(url: string): string {
 function inferAudioFormat(track: Track, resolvedUrl: string): string | undefined {
   if (track.streamQuality === 'netease_dolby') return 'dolby'
 
+  const mime = track.mimeType?.toLowerCase().split(';')[0]?.trim()
+  if (mime) {
+    const mimeFormat: Record<string, string> = {
+      'audio/mpeg': 'mp3',
+      'audio/mp4': 'm4a',
+      'audio/aac': 'aac',
+      'audio/flac': 'flac',
+      'audio/ogg': 'ogg',
+      'audio/opus': 'opus',
+      'audio/wav': 'wav',
+      'audio/x-wav': 'wav',
+      'audio/webm': 'webm',
+    }
+    if (mimeFormat[mime]) return mimeFormat[mime]
+  }
+
   try {
     const parsed = new URL(resolvedUrl, window.location.href)
     const proxiedUrl = parsed.searchParams.get('url')
@@ -646,16 +663,16 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
         howl = new AndroidMediaEngine(
           {
             src: resolvedUrl,
-            type: audioFormat === 'dolby' ? 'audio/mp4; codecs="ec-3"' : undefined,
+            type: audioFormat === 'dolby' ? 'audio/mp4; codecs="ec-3"' : track.mimeType,
             volume: 0,
             ...commonOptions,
           },
           track.id,
         )
-      } else if (audioFormat === 'dolby') {
+      } else if (audioFormat === 'dolby' || track.source === 'custom') {
         howl = new NativeAudioEngine({
           src: resolvedUrl,
-          type: 'audio/mp4; codecs="ec-3"',
+          type: audioFormat === 'dolby' ? 'audio/mp4; codecs="ec-3"' : track.mimeType,
           volume: 0,
           ...commonOptions,
         })

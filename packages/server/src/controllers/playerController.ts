@@ -120,7 +120,9 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
         if (parsed.data.trackId !== ctx.room.currentTrack?.id) return
         if (parsed.data.playbackRevision !== ctx.room.playState.playbackRevision) return
       }
-      await playerService.playNextTrackInRoom(ctx.io, ctx.roomId, ctx.room.playMode)
+      await playerService.playNextTrackInRoom(ctx.io, ctx.roomId, ctx.room.playMode, {
+        pauseAtQueueEnd: parsed.data?.reason === 'ended' && ctx.room.pauseAtQueueEnd,
+      })
     }),
   )
 

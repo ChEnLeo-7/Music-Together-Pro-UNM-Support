@@ -23,6 +23,7 @@ export function toPublicRoomState(data: RoomData, options: PublicRoomStateOption
     currentTrack: data.currentTrack,
     playState: data.playState,
     playMode: data.playMode,
+    pauseAtQueueEnd: data.pauseAtQueueEnd,
     unmConfigured: Boolean(getUnmServerUrl(data.id)),
   }
 

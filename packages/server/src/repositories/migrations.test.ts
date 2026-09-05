@@ -11,6 +11,8 @@ test('migrations create a versioned schema and are idempotent', () => {
   const versions = database.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: number }>
   assert.deepEqual(versions, Array.from({ length: latestSchemaVersion }, (_, index) => ({ version: index + 1 })))
   assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'").get())
+  assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'room_media'").get())
+  assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'room_media_credentials'").get())
   const roomColumns = database.prepare('PRAGMA table_info(rooms)').all() as Array<{ name: string }>
   assert.ok(roomColumns.some(({ name }) => name === 'password_ciphertext'))
   assert.ok(roomColumns.some(({ name }) => name === 'password_version'))
@@ -24,7 +26,7 @@ test('migrations reject an unversioned application database instead of mutating 
   assert.equal(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get(), undefined)
 })
 
-test('v3 accepts databases where an older image already created encrypted password columns', () => {
+test('migrations accept databases where an older image already created encrypted password columns', () => {
   const database = new Database(':memory:')
   database.exec(`
     CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
@@ -42,7 +44,7 @@ test('v3 accepts databases where an older image already created encrypted passwo
   runMigrations(database)
 
   const versions = database.prepare('SELECT version FROM schema_migrations ORDER BY version').all()
-  assert.deepEqual(versions, [{ version: 1 }, { version: 2 }, { version: 3 }])
+  assert.deepEqual(versions, [{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }])
   const roomColumns = database.prepare('PRAGMA table_info(rooms)').all() as Array<{ name: string }>
   assert.equal(roomColumns.filter(({ name }) => name === 'password_ciphertext').length, 1)
 })

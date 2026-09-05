@@ -17,7 +17,10 @@ function beginAuthMutation(): void {
 
 function serializeAuthMutation<T>(operation: () => Promise<T>): Promise<T> {
   const result = authMutationQueue.then(operation, operation)
-  authMutationQueue = result.then(() => undefined, () => undefined)
+  authMutationQueue = result.then(
+    () => undefined,
+    () => undefined,
+  )
   return result
 }
 
@@ -122,10 +125,12 @@ export async function createGuestIdentity(socket: TypedSocket, nickname: string)
 }
 
 export async function updateProfile(nickname: string): Promise<AccountMe> {
-  return applyAccount(await requestJson<AccountMe>('/api/auth/me', {
-    method: 'PATCH',
-    body: JSON.stringify({ nickname: nickname.trim() }),
-  }))
+  return applyAccount(
+    await requestJson<AccountMe>('/api/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ nickname: nickname.trim() }),
+    }),
+  )
 }
 
 export async function changePassword(
@@ -147,7 +152,6 @@ export async function changePassword(
 
 export async function changeBootstrapCredentials(
   socket: TypedSocket,
-  currentPassword: string,
   newUsername: string,
   newPassword: string,
 ): Promise<AccountMe> {
@@ -155,7 +159,7 @@ export async function changeBootstrapCredentials(
     beginAuthMutation()
     const me = await requestJson<AccountMe>('/api/auth/credentials/bootstrap-change', {
       method: 'POST',
-      body: JSON.stringify({ currentPassword, newUsername: newUsername.trim(), newPassword }),
+      body: JSON.stringify({ newUsername: newUsername.trim(), newPassword }),
     })
     applyAccount(me)
     reconnectSocket(socket)

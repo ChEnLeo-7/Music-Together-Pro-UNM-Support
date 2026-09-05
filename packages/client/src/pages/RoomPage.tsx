@@ -69,11 +69,12 @@ export default function RoomPage() {
   // Gate: audio must be unlocked before joining the room.
   // From lobby: isAudioUnlocked() is already true → gate skipped, auto-join runs immediately.
   // Direct URL / page refresh: gate blocks until user clicks "开始收听".
-  const [gateOpen, setGateOpen] = useState(() =>
-    isAudioUnlocked() || Boolean(getNativePlaybackBridge()) || Boolean(roomId && storage.getRejoinToken(roomId)),
+  const [gateOpen, setGateOpen] = useState(
+    () => isAudioUnlocked() || Boolean(getNativePlaybackBridge()) || Boolean(roomId && storage.getRejoinToken(roomId)),
   )
 
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchInitialSource, setSearchInitialSource] = useState<'netease' | 'custom'>('netease')
   const [queueOpen, setQueueOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined)
@@ -497,8 +498,9 @@ export default function RoomPage() {
       >
         <div className="flex h-dvh flex-col bg-background">
           <RoomHeader
-            onOpenSearch={() => {
+            onOpenSearch={(source) => {
               closeOtherOverlays('search')
+              setSearchInitialSource(source ?? 'netease')
               setSearchOpen(true)
             }}
             onOpenSettings={() => {
@@ -598,9 +600,13 @@ export default function RoomPage() {
 
           <SearchDialog
             open={searchOpen}
-            onOpenChange={setSearchOpen}
+            onOpenChange={(open) => {
+              setSearchOpen(open)
+              if (!open) setSearchInitialSource('netease')
+            }}
             onAddToQueue={addTrack}
             onInsertAfterCurrent={insertAfterCurrent}
+            initialSource={searchInitialSource}
             focusSignal={searchFocusSignal}
           />
           <QueueDrawer

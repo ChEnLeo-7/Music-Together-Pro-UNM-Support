@@ -68,7 +68,13 @@ export function createAccountAuth(users: UserRepository, sessions: SessionManage
         })
       }
       return users.transaction(() => {
-        const user = users.create({ id: randomUUID(), kind: 'guest', username: null, nickname: cleanNickname, passwordHash: null })
+        const user = users.create({
+          id: randomUUID(),
+          kind: 'guest',
+          username: null,
+          nickname: cleanNickname,
+          passwordHash: null,
+        })
         return { user, session: sessions.issue(user.id) }
       })
     },
@@ -86,7 +92,13 @@ export function createAccountAuth(users: UserRepository, sessions: SessionManage
             user = users.upgradeGuest(guest.id, { username, passwordHash, nickname: input.nickname.trim() })!
             sessions.revokeAllForUser(user.id)
           } else {
-            user = users.create({ id: randomUUID(), kind: 'account', username, nickname: input.nickname.trim(), passwordHash })
+            user = users.create({
+              id: randomUUID(),
+              kind: 'account',
+              username,
+              nickname: input.nickname.trim(),
+              passwordHash,
+            })
           }
           return { user, session: sessions.issue(user.id) }
         })
@@ -122,14 +134,19 @@ export function createAccountAuth(users: UserRepository, sessions: SessionManage
     },
     async changeBootstrapCredentials(
       userId: string,
-      currentPassword: string,
       newUsernameInput: string,
       newPassword: string,
     ): Promise<AuthResult> {
       const newUsername = normalizeUsername(newUsernameInput)
       validateAccountPassword(newPassword)
       const user = users.get(userId)
-      if (!user?.passwordHash || !user.mustChangeUsername || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      if (
+        !user?.passwordHash ||
+        user.kind !== 'account' ||
+        user.role !== 'admin' ||
+        !user.mustChangeUsername ||
+        !user.mustChangePassword
+      ) {
         throw new AccountAuthError('INVALID_CREDENTIALS')
       }
       const passwordHash = await bcrypt.hash(newPassword, options.bcryptRounds)
@@ -156,7 +173,9 @@ export function createAccountAuth(users: UserRepository, sessions: SessionManage
         sessions.revokeAllForUser(targetUserId)
       })
     },
-    logout(sessionId: string): void { sessions.revoke(sessionId) },
+    logout(sessionId: string): void {
+      sessions.revoke(sessionId)
+    },
   }
 }
 

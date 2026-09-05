@@ -4,7 +4,7 @@ import { useContainerPortrait } from '@/hooks/useContainerPortrait'
 import { useCoverWidth } from '@/hooks/useCoverWidth'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useVote } from '@/hooks/useVote'
-import { SERVER_URL } from '@/lib/config'
+import { resolveServerAssetUrl, SERVER_URL } from '@/lib/config'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { usePlayerStore } from '@/stores/playerStore'
@@ -43,15 +43,16 @@ const PROXY_COVER_HOSTS = [
  * 如果封面 URL 属于需要代理的域名，则返回服务端代理 URL；否则原样返回
  */
 function getProxiedCoverUrl(coverUrl: string): string {
+  const resolvedCoverUrl = resolveServerAssetUrl(coverUrl)
   try {
-    const { hostname } = new URL(coverUrl)
+    const { hostname } = new URL(resolvedCoverUrl)
     if (PROXY_COVER_HOSTS.includes(hostname)) {
-      return `${SERVER_URL}/api/music/cover-proxy?url=${encodeURIComponent(coverUrl)}`
+      return `${SERVER_URL}/api/music/cover-proxy?url=${encodeURIComponent(resolvedCoverUrl)}`
     }
   } catch {
     // URL 解析失败，原样返回
   }
-  return coverUrl
+  return resolvedCoverUrl
 }
 
 interface AudioPlayerProps {
