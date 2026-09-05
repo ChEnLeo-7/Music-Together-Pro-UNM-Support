@@ -1,5 +1,6 @@
 import { MarqueeText } from '@/components/ui/marquee-text'
 import { cn } from '@/lib/utils'
+import { isServerAssetUrl, resolveServerAssetUrl } from '@/lib/config'
 import { useRoomStore } from '@/stores/roomStore'
 import { Disc3 } from 'lucide-react'
 import { motion } from 'motion/react'
@@ -42,7 +43,8 @@ export function NowPlaying({
 
   const coverContent = showCover ? (
     <img
-      src={currentTrack.cover}
+      src={resolveServerAssetUrl(currentTrack.cover)}
+      crossOrigin={isServerAssetUrl(currentTrack.cover) ? 'use-credentials' : undefined}
       alt={currentTrack.title}
       className="h-full w-full object-cover"
       onError={() => setCoverError(true)}

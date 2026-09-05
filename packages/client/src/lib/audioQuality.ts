@@ -67,6 +67,7 @@ export function platformLabel(platform: StreamSource): string {
   if (platform === 'netease') return '网易云'
   if (platform === 'tencent') return 'QQ'
   if (platform === 'kugou') return '酷狗'
+  if (platform === 'custom') return '自定义'
   return 'UNM'
 }
 
@@ -114,6 +115,7 @@ export function getAudioQualityOptionsForSource(
   }
 
   if (source === 'unm') return filterAvailable([...BASE_AUDIO_QUALITY_OPTIONS, ...UNM_OPTIONS])
+  if (source === 'custom') return []
   if (!source) return []
 
   const options: AudioQualityOption[] = [...BASE_AUDIO_QUALITY_OPTIONS]

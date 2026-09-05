@@ -44,3 +44,6 @@ export function decryptPlatformCredential(serialized: string): string {
     decipher.final(),
   ]).toString('utf8')
 }
+
+export const encryptMediaCredential = encryptPlatformCredential
+export const decryptMediaCredential = decryptPlatformCredential

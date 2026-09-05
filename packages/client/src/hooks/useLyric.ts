@@ -1,4 +1,4 @@
-import { SERVER_URL } from '@/lib/config'
+import { resolveServerAssetUrl, SERVER_URL } from '@/lib/config'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { parseTTML, parseYrc } from '@applemusic-like-lyrics/lyric'
@@ -102,7 +102,7 @@ export function useLyric() {
 
   const fetchLyric = useCallback(
     (track: Track) => {
-      const lyricKey = `${track.source}:${track.lyricId ?? track.sourceId}`
+      const lyricKey = `${track.source}:${track.lyricsUrl ?? track.lyricId ?? track.sourceId}`
       if (lyricKeyRef.current === lyricKey && lyricRequestRef.current) return lyricRequestRef.current
       if (lyricCacheRef.current?.key === lyricKey) {
         setTtmlLines(lyricCacheRef.current.ttmlLines)
@@ -178,12 +178,12 @@ export function useLyric() {
           wordByWord?: AMLLLyricLine[]
         } | null = null
 
-        if (track.lyricId) {
+        if (track.lyricsUrl || track.lyricId) {
           try {
-            const res = await fetch(
-              `${SERVER_URL}/api/music/lyric?source=${track.source}&lyricId=${encodeURIComponent(track.lyricId)}`,
-              { signal: controller.signal, credentials: 'include' },
-            )
+            const lyricUrl = track.lyricsUrl
+              ? resolveServerAssetUrl(track.lyricsUrl)
+              : `${SERVER_URL}/api/music/lyric?source=${track.source}&lyricId=${encodeURIComponent(track.lyricId!)}`
+            const res = await fetch(lyricUrl, { signal: controller.signal, credentials: 'include' })
             if (res.ok) {
               lyricData = await res.json()
             }

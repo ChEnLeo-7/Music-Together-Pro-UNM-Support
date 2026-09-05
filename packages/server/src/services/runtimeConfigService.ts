@@ -6,11 +6,12 @@ function normalizeUrl(url: string): string {
 }
 
 export function getUnmServerUrl(roomId?: string): string {
-  if (roomId) {
-    const roomUrl = roomRepo.get(roomId)?.unmServerUrl
-    if (roomUrl) return roomUrl
-  }
-  return config.unm.serverUrl
+  const roomUrl = roomId ? roomRepo.get(roomId)?.unmServerUrl : undefined
+  return resolveUnmServerUrl(roomUrl, config.unm.serverUrl)
+}
+
+export function resolveUnmServerUrl(roomUrl: string | undefined, environmentUrl: string): string {
+  return roomUrl || environmentUrl
 }
 
 export function normalizeUnmServerUrl(url: string): string {

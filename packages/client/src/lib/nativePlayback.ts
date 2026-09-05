@@ -75,5 +75,6 @@ export function nativeTrackMetadata(track: Track): string {
     artist: track.artist.join(' / '),
     album: track.album,
     cover: track.cover,
+    mimeType: track.mimeType ?? '',
   })
 }

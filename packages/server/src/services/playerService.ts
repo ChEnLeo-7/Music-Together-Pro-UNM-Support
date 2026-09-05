@@ -22,6 +22,11 @@ import { config } from '../config.js'
 import { logger } from '../utils/logger.js'
 import type { RoomData } from '../repositories/types.js'
 import type { TypedServer, TypedSocket } from '../middleware/types.js'
+import { canonicalizeTrackForRoom, markMediaReferenced } from './customMediaService.js'
+
+function isPlatformSource(source: Track['source']): source is MusicSource {
+  return source !== 'custom'
+}
 
 // ---------------------------------------------------------------------------
 // Per-room mutex for playTrackInRoom (prevents concurrent execution)
@@ -427,16 +432,29 @@ async function _playTrackInRoom(
   const room = roomRepo.get(roomId)
   if (!room) return false
 
-  const resolved = { ...track }
-  if (options.forceRefreshStream) {
+  let resolved: Track = { ...track }
+  if (options.forceRefreshStream && isPlatformSource(resolved.source)) {
     delete resolved.streamUrl
     delete resolved.streamSource
     delete resolved.streamQuality
     delete resolved.availableStreamQualities
   }
+  if (resolved.source === 'custom') {
+    const canonical = await canonicalizeTrackForRoom(roomId, resolved)
+    if (!canonical) {
+      queueService.removeTrack(roomId, resolved.id)
+      io.to(roomId).emit(EVENTS.QUEUE_UPDATED, { queue: room.queue })
+      io.to(roomId).emit(EVENTS.ROOM_ERROR, {
+        code: ERROR_CODE.STREAM_FAILED,
+        message: `无法读取「${resolved.title}」的媒体文件，已从列表移除`,
+      })
+      return false
+    }
+    resolved = { ...canonical, requestedBy: track.requestedBy }
+  }
 
   // Fetch stream URL if missing
-  if (!resolved.streamUrl) {
+  if (!resolved.streamUrl && isPlatformSource(resolved.source)) {
     try {
       // Get cookie from the room's pool for this platform (enables VIP access)
       const cookie = authService.getAnyCookie(resolved.source, roomId)
@@ -520,73 +538,63 @@ async function _playTrackInRoom(
             try {
               const best = await trackFallbackService.findBestAlternativeTrack(resolved, toSource)
               if (best) {
-                const cookie2 = authService.getAnyCookie(best.track.source, roomId)
-                const fallbackHasVipCookie = authService.hasVipCookie(best.track.source, roomId)
-                const fallbackAvailableQualities =
-                  best.track.source === 'netease' && fallbackHasVipCookie
-                    ? await musicProvider.getNeteaseAvailableQualities(best.track.urlId, cookie2 ?? undefined)
-                    : undefined
-                const fallbackPlatformQuality = getSupportedPlatformQuality(
-                  best.track.source,
-                  getPlatformRequestQuality(requestedSourcePriority, requestedAudioQuality, fallbackHasVipCookie),
-                  fallbackHasVipCookie,
-                  fallbackAvailableQualities,
-                  { preferRequestedQuality: preferRequestedPlatformQuality },
-                )
-                const stream2 = await resolveStreamByPolicy(
-                  roomId,
-                  best.track.source,
-                  best.track.urlId,
-                  requestedSourcePriority,
-                  requestedAudioQuality,
-                  fallbackPlatformQuality,
-                  cookie2 ?? undefined,
-                  fallbackHasVipCookie,
-                  best.track.vip,
-                  fallbackAvailableQualities,
-                  { preferRequestedQuality: preferRequestedPlatformQuality },
-                )
-                if (stream2) {
-                  const replacement: Track = {
-                    ...best.track,
-                    id: resolved.id, // keep stable id so queue/current references remain consistent
-                    requestedBy: resolved.requestedBy,
-                    streamUrl: stream2.url,
-                    streamSource: stream2.streamSource,
-                    streamQuality: stream2.streamQuality,
-                    availableStreamQualities: stream2.availableStreamQualities,
+                if (isPlatformSource(best.track.source)) {
+                  const fallbackSource = best.track.source
+                  const cookie2 = authService.getAnyCookie(fallbackSource, roomId)
+                  const fallbackHasVipCookie = authService.hasVipCookie(fallbackSource, roomId)
+                  const fallbackAvailableQualities =
+                    fallbackSource === 'netease' && fallbackHasVipCookie
+                      ? await musicProvider.getNeteaseAvailableQualities(best.track.urlId, cookie2 ?? undefined)
+                      : undefined
+                  const fallbackPlatformQuality = getSupportedPlatformQuality(
+                    fallbackSource,
+                    getPlatformRequestQuality(requestedSourcePriority, requestedAudioQuality, fallbackHasVipCookie),
+                    fallbackHasVipCookie,
+                    fallbackAvailableQualities,
+                    { preferRequestedQuality: preferRequestedPlatformQuality },
+                  )
+                  const stream2 = await resolveStreamByPolicy(
+                    roomId,
+                    fallbackSource,
+                    best.track.urlId,
+                    requestedSourcePriority,
+                    requestedAudioQuality,
+                    fallbackPlatformQuality,
+                    cookie2 ?? undefined,
+                    fallbackHasVipCookie,
+                    best.track.vip,
+                    fallbackAvailableQualities,
+                    { preferRequestedQuality: preferRequestedPlatformQuality },
+                  )
+                  if (stream2) {
+                    const replacement: Track = {
+                      ...best.track,
+                      id: resolved.id, // keep stable id so queue/current references remain consistent
+                      requestedBy: resolved.requestedBy,
+                      streamUrl: stream2.url,
+                      streamSource: stream2.streamSource,
+                      streamQuality: stream2.streamQuality,
+                      availableStreamQualities: stream2.availableStreamQualities,
+                    }
+
+                    // Replace in queue (if present) before playing
+                    const roomBefore = roomRepo.get(roomId)
+                    if (roomBefore) {
+                      roomBefore.queue = roomBefore.queue.map((t) => (t.id === resolved.id ? replacement : t))
+                      io.to(roomId).emit(EVENTS.QUEUE_UPDATED, { queue: roomBefore.queue })
+                    }
+
+                    io.to(roomId).emit(EVENTS.ROOM_AUTO_FALLBACK, {
+                      attemptId,
+                      status: 'success',
+                      fromSource,
+                      toSource,
+                      trackTitle,
+                    })
+
+                    // Continue playback with replacement
+                    resolved = replacement
                   }
-
-                  // Replace in queue (if present) before playing
-                  const roomBefore = roomRepo.get(roomId)
-                  if (roomBefore) {
-                    roomBefore.queue = roomBefore.queue.map((t) => (t.id === resolved.id ? replacement : t))
-                    io.to(roomId).emit(EVENTS.QUEUE_UPDATED, { queue: roomBefore.queue })
-                  }
-
-                  io.to(roomId).emit(EVENTS.ROOM_AUTO_FALLBACK, {
-                    attemptId,
-                    status: 'success',
-                    fromSource,
-                    toSource,
-                    trackTitle,
-                  })
-
-                  // Continue playback with replacement
-                  resolved.source = replacement.source
-                  resolved.sourceId = replacement.sourceId
-                  resolved.urlId = replacement.urlId
-                  resolved.lyricId = replacement.lyricId
-                  resolved.picId = replacement.picId
-                  resolved.vip = replacement.vip
-                  resolved.album = replacement.album
-                  resolved.artist = replacement.artist
-                  resolved.title = replacement.title
-                  resolved.cover = replacement.cover
-                  resolved.streamUrl = replacement.streamUrl
-                  resolved.streamSource = replacement.streamSource
-                  resolved.streamQuality = replacement.streamQuality
-                  resolved.availableStreamQualities = replacement.availableStreamQualities
                 }
               }
             } catch (fallbackErr) {
@@ -648,7 +656,7 @@ async function _playTrackInRoom(
   }
 
   // Fetch cover if missing
-  if (!resolved.cover && resolved.picId) {
+  if (isPlatformSource(resolved.source) && !resolved.cover && resolved.picId) {
     try {
       const cover = await musicProvider.getCover(resolved.source, resolved.picId)
       if (cover) resolved.cover = cover
@@ -676,6 +684,10 @@ async function _playTrackInRoom(
   if (roomRepo.get(roomId) !== room) return false
 
   room.currentTrack = resolved
+  if (resolved.source === 'custom') {
+    room.queue = room.queue.map((queued) => (queued.id === resolved.id ? resolved : queued))
+  }
+  markMediaReferenced(resolved)
   const scheduleTime = getScheduleTime(roomId)
   room.playState = {
     isPlaying: true,
@@ -711,9 +723,14 @@ function resumeTrackLocked(io: TypedServer, roomId: string): void {
   if (room.playState.isPlaying) return
 
   const scheduleTime = getScheduleTime(roomId)
+  const resumeTime =
+    room.currentTrack.duration > 0 && room.playState.currentTime >= room.currentTrack.duration
+      ? 0
+      : room.playState.currentTime
   room.playState = {
     ...room.playState,
     isPlaying: true,
+    currentTime: resumeTime,
     serverTimestamp: scheduleTime,
     playbackRevision: nextPlaybackRevision(room),
   }
@@ -725,14 +742,14 @@ export function pauseTrack(io: TypedServer, roomId: string, _initiatorSocket?: T
   return withPlayMutex(roomId, async () => pauseTrackLocked(io, roomId))
 }
 
-function pauseTrackLocked(io: TypedServer, roomId: string): void {
+function pauseTrackLocked(io: TypedServer, roomId: string, atTrackEnd = false): void {
   const room = roomRepo.get(roomId)
   if (!room || !room.currentTrack) return
   if (!room.playState.isPlaying) return
 
   const scheduleTime = getScheduleTime(roomId)
   const scheduleDelay = room.playState.isPlaying ? (scheduleTime - Date.now()) / 1000 : 0
-  const pauseTime = estimateCurrentTime(roomId) + scheduleDelay
+  const pauseTime = atTrackEnd ? room.currentTrack.duration : estimateCurrentTime(roomId) + scheduleDelay
   const snapshotTime = room.currentTrack.duration > 0 ? Math.min(room.currentTrack.duration, pauseTime) : pauseTime
   room.playState = {
     isPlaying: false,
@@ -835,13 +852,19 @@ export function playNextTrackInRoom(
   io: TypedServer,
   roomId: string,
   playMode: PlayMode,
-  options?: { skipDebounce?: boolean },
+  options?: { skipDebounce?: boolean; pauseAtQueueEnd?: boolean },
 ): Promise<void> {
   return withPlayMutex(roomId, async () => {
     if (options?.skipDebounce) {
       // Still update the timestamp so a normal NEXT right after is debounced
       lastNextTimestamp.set(roomId, Date.now())
     } else if (_isNextDebounced(roomId)) {
+      return
+    }
+
+    const room = roomRepo.get(roomId)
+    if (room && options?.pauseAtQueueEnd && isAtQueueEnd(room, playMode)) {
+      pauseTrackLocked(io, roomId, true)
       return
     }
 
@@ -863,6 +886,13 @@ export function playNextTrackInRoom(
     // stream URL resolution), causing a double-skip.
     lastNextTimestamp.set(roomId, Date.now())
   })
+}
+
+function isAtQueueEnd(room: RoomData, playMode: PlayMode): boolean {
+  if (playMode !== 'sequential' && playMode !== 'loop-all') return false
+  if (!room.currentTrack || room.queue.length === 0) return false
+  const currentIndex = room.queue.findIndex((track) => track.id === room.currentTrack?.id)
+  return currentIndex >= 0 && currentIndex === room.queue.length - 1
 }
 
 /**

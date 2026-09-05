@@ -35,6 +35,7 @@ function protectedRoom(): RoomData {
     currentTrack: null,
     playState: { isPlaying: false, currentTime: 0, serverTimestamp: Date.now(), playbackRevision: 0 },
     playMode: 'loop-all',
+    pauseAtQueueEnd: false,
     unmServerUrl: '',
   }
 }
@@ -69,6 +70,7 @@ test('room password schemas enforce 6-64 exact characters and null removal', () 
   assert.equal(roomCreateSchema.safeParse({ nickname: 'n', password: ' 1234 ' }).success, true)
   assert.equal(roomJoinSchema.safeParse({ roomId: 'R', nickname: 'n', password: 'x'.repeat(65) }).success, false)
   assert.equal(roomSettingsSchema.safeParse({ password: null }).success, true)
+  assert.equal(roomSettingsSchema.safeParse({ pauseAtQueueEnd: true }).success, true)
 })
 
 test('only creator bypasses a protected room password', () => {

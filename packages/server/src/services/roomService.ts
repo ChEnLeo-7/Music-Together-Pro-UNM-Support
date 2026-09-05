@@ -199,6 +199,7 @@ export function createRoom(
       playbackRevision: 0,
     },
     playMode: 'loop-all',
+    pauseAtQueueEnd: false,
     unmServerUrl: '',
   }
 
@@ -360,6 +361,7 @@ export function updateSettings(
     hidden?: boolean
     permanent?: boolean
     chatHistoryForNewUsers?: boolean
+    pauseAtQueueEnd?: boolean
     unmServerUrl?: string
   },
 ): void {
@@ -396,6 +398,10 @@ export function updateSettings(
 
   if (settings.chatHistoryForNewUsers !== undefined) {
     room.chatHistoryForNewUsers = settings.chatHistoryForNewUsers
+  }
+
+  if (settings.pauseAtQueueEnd !== undefined) {
+    room.pauseAtQueueEnd = settings.pauseAtQueueEnd
   }
 
   if (settings.unmServerUrl !== undefined) {

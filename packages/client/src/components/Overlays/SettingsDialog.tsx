@@ -8,7 +8,18 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useI18n, type I18nKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { useAccountStore } from '@/stores/accountStore'
-import { Keyboard, Languages, KeyRound, Palette, Settings2, Shield, Type, UserCircle, Users, type LucideIcon } from 'lucide-react'
+import {
+  Keyboard,
+  Languages,
+  KeyRound,
+  Palette,
+  Settings2,
+  Shield,
+  Type,
+  UserCircle,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AccountSection } from './Settings/AccountSection'
 import { AdminSection } from './Settings/AdminSection'
@@ -20,7 +31,16 @@ import { PlatformHub } from './Settings/PlatformHub'
 import { RoomSettingsSection } from './Settings/RoomSettingsSection'
 import { ShortcutsSection } from './Settings/ShortcutsSection'
 
-export type SettingsTab = 'room' | 'members' | 'identity' | 'accounts' | 'admin' | 'appearance' | 'lyrics' | 'language' | 'shortcuts'
+export type SettingsTab =
+  | 'room'
+  | 'members'
+  | 'identity'
+  | 'accounts'
+  | 'admin'
+  | 'appearance'
+  | 'lyrics'
+  | 'language'
+  | 'shortcuts'
 
 interface SettingsDialogProps {
   open: boolean
@@ -33,6 +53,7 @@ interface SettingsDialogProps {
     hidden?: boolean
     permanent?: boolean
     chatHistoryForNewUsers?: boolean
+    pauseAtQueueEnd?: boolean
   }) => void
   onDissolveRoom?: () => void
   onSetUserRole?: (userId: string, role: 'admin' | 'member') => void
@@ -108,8 +129,14 @@ export function SettingsDialog({
         <ResponsiveDialogDescription className="sr-only">{t('settingsDesc')}</ResponsiveDialogDescription>
         <div className="flex h-[70vh] min-w-0 max-w-full flex-col overflow-hidden md:flex-row">
           <div className="flex min-w-0 shrink-0 flex-col overflow-hidden border-b md:hidden">
-            <ResponsiveDialogTitle className="px-4 pt-4 pb-2 text-lg font-semibold">{t('settings')}</ResponsiveDialogTitle>
-            <nav className="scrollbar-hide flex max-w-full gap-1 overflow-x-auto px-4 pb-2" role="tablist" aria-label="Settings sections">
+            <ResponsiveDialogTitle className="px-4 pt-4 pb-2 text-lg font-semibold">
+              {t('settings')}
+            </ResponsiveDialogTitle>
+            <nav
+              className="scrollbar-hide flex max-w-full gap-1 overflow-x-auto px-4 pb-2"
+              role="tablist"
+              aria-label="Settings sections"
+            >
               {tabs.map((item) => (
                 <button
                   key={item.id}
@@ -131,11 +158,21 @@ export function SettingsDialog({
             </nav>
           </div>
 
-          <nav className="hidden w-48 shrink-0 flex-col border-r p-4 md:flex" role="tablist" aria-label="Settings sections">
+          <nav
+            className="hidden w-48 shrink-0 flex-col border-r p-4 md:flex"
+            role="tablist"
+            aria-label="Settings sections"
+          >
             <ResponsiveDialogTitle className="mb-4 px-3 text-lg font-semibold">{t('settings')}</ResponsiveDialogTitle>
             <div className="space-y-1">
               {tabs.map((item) => (
-                <NavItem key={item.id} icon={item.icon} label={t(item.labelKey)} active={tab === item.id} onClick={() => setTab(item.id)} />
+                <NavItem
+                  key={item.id}
+                  icon={item.icon}
+                  label={t(item.labelKey)}
+                  active={tab === item.id}
+                  onClick={() => setTab(item.id)}
+                />
               ))}
             </div>
           </nav>
@@ -155,7 +192,9 @@ export function SettingsDialog({
           ) : (
             <ScrollArea className="min-h-0 min-w-0 flex-1 overflow-x-hidden">
               <div className="min-w-0 max-w-full overflow-x-hidden p-4 sm:p-6">
-                {tab === 'room' && <RoomSettingsSection onUpdateSettings={onUpdateSettings} onDissolveRoom={onDissolveRoom} />}
+                {tab === 'room' && (
+                  <RoomSettingsSection onUpdateSettings={onUpdateSettings} onDissolveRoom={onDissolveRoom} />
+                )}
                 {tab === 'members' && <MembersSection onSetUserRole={onSetUserRole} />}
                 {tab === 'admin' && <AdminSection />}
                 {tab === 'lyrics' && <LyricsSection />}

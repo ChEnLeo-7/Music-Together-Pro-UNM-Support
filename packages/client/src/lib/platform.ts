@@ -1,4 +1,6 @@
-import type { MusicSource, MyPlatformAuth, PlatformAuthStatus } from '@music-together/shared'
+import type { MusicSource, MyPlatformAuth, PlatformAuthStatus, TrackSource } from '@music-together/shared'
+
+export const CUSTOM_SOURCE = 'custom' as const
 
 /** Full platform display names (used in dialogs, titles, descriptions) */
 export const PLATFORM_LABELS: Record<MusicSource, string> = {
@@ -33,6 +35,21 @@ export const PLATFORM_TEXT: Record<MusicSource, string> = {
   netease: 'text-red-500',
   tencent: 'text-green-500',
   kugou: 'text-blue-500',
+}
+
+export const TRACK_SOURCE_SHORT_LABELS: Record<TrackSource, string> = {
+  ...PLATFORM_SHORT_LABELS,
+  custom: '自定义',
+}
+
+export const TRACK_SOURCE_ACTIVE: Record<TrackSource, string> = {
+  ...PLATFORM_ACTIVE,
+  custom: 'bg-violet-500/15',
+}
+
+export const TRACK_SOURCE_TEXT: Record<TrackSource, string> = {
+  ...PLATFORM_TEXT,
+  custom: 'text-violet-500',
 }
 
 /** VIP level display labels (Netease vipType values) */

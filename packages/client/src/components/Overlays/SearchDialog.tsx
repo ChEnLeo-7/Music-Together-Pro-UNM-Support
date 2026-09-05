@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { VirtualTrackList, type VirtualTrackListRef } from '@/components/VirtualTrackList'
 import { VirtualPlaylistList } from '@/components/VirtualPlaylistList'
-import { PLATFORM_ACTIVE, PLATFORM_TEXT } from '@/lib/platform'
+import { TRACK_SOURCE_ACTIVE, TRACK_SOURCE_TEXT } from '@/lib/platform'
 import { cn, trackKey } from '@/lib/utils'
 import { useRoomStore } from '@/stores/roomStore'
 import { useSearch } from '@/hooks/useSearch'
@@ -25,13 +25,18 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } fr
 import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
 import { PlaylistDetail } from './Settings/PlaylistDetail'
+import { CustomMediaPanel } from './CustomMediaPanel'
+import type { I18nKey } from '@/lib/i18n'
 
 const EMPTY_QUEUE: Track[] = []
 
-const SOURCES: { id: MusicSource; labelKey: 'netease' | 'tencent' | 'kugou' }[] = [
+type SearchSource = MusicSource | 'custom'
+
+const SOURCES: { id: SearchSource; labelKey: I18nKey }[] = [
   { id: 'netease', labelKey: 'netease' },
   { id: 'tencent', labelKey: 'tencent' },
   { id: 'kugou', labelKey: 'kugou' },
+  { id: 'custom', labelKey: 'customMedia' },
 ]
 
 interface SearchDialogProps {
@@ -39,15 +44,23 @@ interface SearchDialogProps {
   onOpenChange: (open: boolean) => void
   onAddToQueue: (track: Track) => void
   onInsertAfterCurrent: (track: Track) => void
+  initialSource?: SearchSource
   focusSignal?: number
 }
 
-export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCurrent, focusSignal = 0 }: SearchDialogProps) {
+export function SearchDialog({
+  open,
+  onOpenChange,
+  onAddToQueue,
+  onInsertAfterCurrent,
+  initialSource,
+  focusSignal = 0,
+}: SearchDialogProps) {
   const t = useI18n((s) => s.t)
   const isMobile = useIsMobile()
   const [mobileViewport, setMobileViewport] = useState({ height: 0, bottom: 0 })
   const mobileViewportMaxHeightRef = useRef(0)
-  const [source, setSource] = useState<MusicSource>('netease')
+  const [source, setSource] = useState<SearchSource>('netease')
   const [searchType, setSearchType] = useState<'song' | 'album' | 'playlist'>('song')
   const [keyword, setKeyword] = useState('')
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set())
@@ -96,7 +109,11 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
     loadMoreTracks,
   } = usePlaylist()
 
-  const { results, loading, loadingMore, hasMore, hasSearched, search, loadMore, resetState } = useSearch(source, searchType)
+  const platformSource: MusicSource = source === 'custom' ? 'netease' : source
+  const { results, loading, loadingMore, hasMore, hasSearched, search, loadMore, resetState } = useSearch(
+    platformSource,
+    searchType,
+  )
 
   // Auto re-search when source or type changes
   const prevSourceRef = useRef(source)
@@ -106,7 +123,7 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
     const typeChanged = prevTypeRef.current !== searchType
     prevSourceRef.current = source
     prevTypeRef.current = searchType
-    if ((sourceChanged || typeChanged) && keyword.trim()) {
+    if (source !== 'custom' && (sourceChanged || typeChanged) && keyword.trim()) {
       setAddedIds(new Set())
       search(keyword.trim())
       if (searchType === 'song') listRef.current?.scrollToTop()
@@ -142,9 +159,18 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
     if (!open) setSelectedAlbum(null)
   }, [open])
 
+  useEffect(() => {
+    if (!open) return
+    const nextSource = initialSource ?? 'netease'
+    setSource((current) => (current === nextSource ? current : nextSource))
+    resetState()
+    setAddedIds(new Set())
+    setSelectedAlbum(null)
+  }, [initialSource, open, resetState])
+
   const handleSearch = (overrideKeyword?: string) => {
     const searchKeyword = (overrideKeyword ?? keyword).trim()
-    if (!searchKeyword) return
+    if (!searchKeyword || source === 'custom') return
     if (isMobile) searchInputRef.current?.blur()
     if (overrideKeyword !== undefined) setKeyword(overrideKeyword)
     setAddedIds(new Set())
@@ -158,12 +184,12 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
     (track: Track) => {
       const key = trackKey(track)
       if (queueKeys.has(key) || addedIds.has(key)) {
-         toast.info(t('queueDuplicate', { track: track.title }))
+        toast.info(t('queueDuplicate', { track: track.title }))
         return
       }
       onAddToQueue(track)
       setAddedIds((prev) => new Set(prev).add(key))
-      // Removed duplicate toast.success since onAddToQueue (from useQueue) usually already handles it 
+      // Removed duplicate toast.success since onAddToQueue (from useQueue) usually already handles it
       // or the UI handles feedback.
     },
     [onAddToQueue, queueKeys, addedIds],
@@ -173,7 +199,7 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
     (track: Track) => {
       const key = trackKey(track)
       if (queueKeys.has(key) || addedIds.has(key)) {
-         toast.info(t('queueDuplicate', { track: track.title }))
+        toast.info(t('queueDuplicate', { track: track.title }))
         return
       }
       onInsertAfterCurrent(track)
@@ -192,9 +218,9 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
         for (const t of tracks) next.add(trackKey(t))
         return next
       })
-       toast.success(t('songsAdded', { count: tracks.length }))
+      toast.success(t('songsAdded', { count: tracks.length }))
     },
-    [socket]
+    [socket],
   )
 
   const isTrackAdded = useCallback(
@@ -207,7 +233,7 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
 
   const handleSelectAlbum = (album: Playlist) => {
     setSelectedAlbum(album)
-    fetchPlaylistTracks(source, album.id, album.trackCount, searchType as 'album' | 'playlist')
+    fetchPlaylistTracks(platformSource, album.id, album.trackCount, searchType as 'album' | 'playlist')
   }
 
   return (
@@ -232,7 +258,7 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
             {!selectedAlbum && (
               <div ref={sourceContainerRef} className="bg-muted/50 relative flex items-center rounded-lg p-0.5">
                 <motion.div
-                  className={cn('absolute inset-y-0.5 rounded-md', PLATFORM_ACTIVE[source])}
+                  className={cn('absolute inset-y-0.5 rounded-md', TRACK_SOURCE_ACTIVE[source])}
                   animate={{ left: pillStyle.left, width: pillStyle.width }}
                   transition={{ type: 'spring', bounce: 0.15, duration: 0.3 }}
                 />
@@ -242,12 +268,13 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
                     data-source={s.id}
                     className={cn(
                       'relative z-10 rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors',
-                      source === s.id ? PLATFORM_TEXT[s.id] : 'text-muted-foreground hover:text-foreground',
+                      source === s.id ? TRACK_SOURCE_TEXT[s.id] : 'text-muted-foreground hover:text-foreground',
                     )}
                     onClick={() => {
                       setSource(s.id)
                       resetState()
                       setAddedIds(new Set())
+                      setSelectedAlbum(null)
                     }}
                   >
                     {t(s.labelKey)}
@@ -273,6 +300,8 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
               onAddAll={handleAddBatch}
               onLoadMore={loadMoreTracks}
             />
+          ) : source === 'custom' ? (
+            <CustomMediaPanel onAddTrack={handleAdd} onInsertAfterCurrent={handleInsertAfterCurrent} />
           ) : (
             <>
               {/* Type tabs */}
@@ -285,9 +314,15 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
                 }}
               >
                 <TabsList className="w-full">
-                  <TabsTrigger value="song" className="flex-1 text-xs sm:text-sm">{t('songs')}</TabsTrigger>
-                  <TabsTrigger value="album" className="flex-1 text-xs sm:text-sm">{t('albums')}</TabsTrigger>
-                  <TabsTrigger value="playlist" className="flex-1 text-xs sm:text-sm">{t('playlists')}</TabsTrigger>
+                  <TabsTrigger value="song" className="flex-1 text-xs sm:text-sm">
+                    {t('songs')}
+                  </TabsTrigger>
+                  <TabsTrigger value="album" className="flex-1 text-xs sm:text-sm">
+                    {t('albums')}
+                  </TabsTrigger>
+                  <TabsTrigger value="playlist" className="flex-1 text-xs sm:text-sm">
+                    {t('playlists')}
+                  </TabsTrigger>
                 </TabsList>
               </Tabs>
 
@@ -295,7 +330,13 @@ export function SearchDialog({ open, onOpenChange, onAddToQueue, onInsertAfterCu
               <div className="flex gap-2">
                 <Input
                   ref={searchInputRef}
-                  placeholder={t(searchType === 'song' ? 'songSearchPlaceholder' : searchType === 'album' ? 'albumSearchPlaceholder' : 'playlistSearchPlaceholder')}
+                  placeholder={t(
+                    searchType === 'song'
+                      ? 'songSearchPlaceholder'
+                      : searchType === 'album'
+                        ? 'albumSearchPlaceholder'
+                        : 'playlistSearchPlaceholder',
+                  )}
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                   onKeyDown={(e) => {

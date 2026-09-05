@@ -20,6 +20,8 @@ import { logger } from './utils/logger.js'
 import { createAdminRoutes } from './routes/admin.js'
 import { restorePermanentRooms } from './services/roomService.js'
 import { databasePath } from './repositories/database.js'
+import mediaRoutes from './routes/media.js'
+import { startMediaCleanup, stopMediaCleanup } from './services/customMediaService.js'
 
 const app = express()
 if (config.trustProxyHops > 0) app.set('trust proxy', config.trustProxyHops)
@@ -50,6 +52,7 @@ app.use('/uploads/avatars', express.static(path.join(path.dirname(databasePath),
 // REST API routes
 app.use('/api/auth', authRoutes)
 app.use('/api/music', musicRoutes)
+app.use('/api/media', mediaRoutes)
 app.use('/api/rooms', roomRoutes)
 app.use('/api/admin', createAdminRoutes(io))
 app.use('/api/settings', createSettingsRoutes(io))
@@ -102,6 +105,7 @@ if (fs.existsSync(indexHtml)) {
 attachSocketIdentity(io)
 initializeSocket(io)
 restorePermanentRooms()
+startMediaCleanup()
 
 httpServer.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
@@ -126,6 +130,7 @@ httpServer.listen(config.port, () => {
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down gracefully...`)
   clearAllTimers()
+  stopMediaCleanup()
   io.close(() => {
     httpServer.close(() => {
       logger.info('Server closed')

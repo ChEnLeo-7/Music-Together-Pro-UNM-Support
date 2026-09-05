@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/stargazers"><img src="https://img.shields.io/github/stars/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Stars"></a>
-  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/network/members"><img src="https://img.shields.io/github/forks/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Forks"></a>
-  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/issues"><img src="https://img.shields.io/github/issues/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Issues"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/ChEnLeo-7/Music-Together-unm-support?style=flat" alt="License"></a>
+  <a href="https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/stargazers"><img src="https://img.shields.io/github/stars/ChEnLeo-7/Music-Together-Pro-UNM-Support?style=flat&logo=github" alt="Stars"></a>
+  <a href="https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/network/members"><img src="https://img.shields.io/github/forks/ChEnLeo-7/Music-Together-Pro-UNM-Support?style=flat&logo=github" alt="Forks"></a>
+  <a href="https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/issues"><img src="https://img.shields.io/github/issues/ChEnLeo-7/Music-Together-Pro-UNM-Support?style=flat&logo=github" alt="Issues"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ChEnLeo-7/Music-Together-Pro-UNM-Support?style=flat" alt="License"></a>
 </p>
 
 <p align="center">
@@ -70,7 +70,9 @@
 14. **🌟 UI & Detail Optimizations**: Added full‑screen button, click lyrics to jump to timestamp, hide played lyrics (toggle), UI detail tweaks, layout improvements
 15. **🏘️ Permanent Rooms**: When enabled, the room will not be destroyed except by the room owner or server admin (Cookie, UNM server info, etc., persist)
 16. **Song/Album/Playlist ID Search**: Supports searching by NetEase Cloud `song`/`playlist`/`album` ID
-17. **Native Android Background Playback**: Provides an Android app with Media3 foreground playback, lock-screen and background audio, system media controls, stable play/pause state synchronization, and an interactive seek bar. The app can connect to a self-hosted HTTP or HTTPS server at startup.
+17. **Custom Media & Video Imports**: Room members can upload audio, import direct audio URLs, or extract audio from YouTube/Bilibili URLs with `yt-dlp` and FFmpeg. Titles, artists, albums, lyrics, and video artwork are supported, and processed media is shared within the room
+18. **Native Android Background Playback**: Provides an Android app with Media3 foreground playback, lock-screen and background audio, system media controls, stable play/pause state synchronization, and an interactive seek bar. The app can connect to a self-hosted HTTP or HTTPS server at startup.
+19. **Pause at Playlist End**: Room settings can pause sequential or loop-all playback after the final track instead of automatically returning to the first track.
 
 ## Important Note
 
@@ -86,8 +88,8 @@ This project was secondarily developed using AI (GPT‑5.5), adding UNM support 
 ### Installation & Development
 
 ```bash
-git clone https://github.com/ChEnLeo-7/Music-Together-unm-support.git
-cd music-together
+git clone https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support.git
+cd Music-Together-Pro-UNM-Support
 pnpm install
 pnpm dev
 ```
@@ -96,13 +98,22 @@ Frontend: http://localhost:5173 | Backend: http://localhost:3001
 
 ### Android App
 
-Download and install the latest APK from [GitHub Releases](https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/releases/latest). On first launch, enter your Music Together server address, such as `https://music.example.com`; trusted LAN testing may use an address such as `http://192.168.1.10:3001`.
+Download and install the `v0.10.5` APK or a newer build from [GitHub Releases](https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/releases/latest). On first launch, enter your Music Together server address, such as `https://music.example.com`; trusted LAN testing may use an address such as `http://192.168.1.10:3001`.
 
-The Android app uses a Media3 foreground playback service and supports background/lock-screen playback plus system media controls. Version `v0.7.0` fixes stale play-button state, false pause transitions while buffering, seek-bar touch offset and snap-back, duplicate playback commands, and native playback continuing after leaving a room.
+The Android app uses a Media3 foreground playback service and supports background/lock-screen playback plus system media controls, including server-hosted custom media. `v0.10.5` also passes custom-media MIME types and authenticated media streams through native playback.
+
+### Custom Media and Video Artwork
+
+- Room members can upload MP3, FLAC, M4A, OGG, and WAV files, or import public direct audio URLs.
+- YouTube and Bilibili URLs are extracted to MP3 by server-side `yt-dlp` and FFmpeg. The video platform thumbnail is downloaded and stored as the player artwork.
+- Artwork, lyrics, and media files are stored locally on the server and served through room-authorized endpoints. Trusted video CDN artwork continues to work when the gateway uses fake-IP DNS.
+- Room owners can save YouTube and Bilibili Cookie text in the Custom media panel. Room cookies override the environment defaults `YOUTUBE_COOKIE` and `BILIBILI_COOKIE`, and credentials are encrypted at rest.
+- Default limits are 200 MiB per file, 4 hours per file, 2 GiB per room, and 10 GiB for the server. Unreferenced media is automatically cleaned up after 7 days of inactivity.
+- Direct URLs must be reachable by the server over HTTP(S); media playback and download are restricted to room members.
 
 ## Docker Local Deployment
 
-The repository's `docker-compose.yml` builds the application image locally from the checked-out source and includes a health check, log rotation, and a persistent data volume:
+The repository's `docker-compose.yml` builds the application image locally from the checked-out source and includes a health check, log rotation, and a persistent data volume. Video imports require `yt-dlp` and FFmpeg; the production image installs both during the build:
 
 ```bash
 cp .env.example .env
@@ -134,6 +145,10 @@ docker compose up -d --build
 The reset removes old users, permanent rooms, platform authorizations, and avatars. After restart, sign in once with `admin/admin` and immediately change both the username and password when prompted; public registration opens after that bootstrap step.
 
 Refer to the repository root `Dockerfile` for image build details so documentation cannot drift from the production image configuration.
+
+`yt-dlp` is installed when the image is built. Set `YTDLP_VERSION` to pin a build version, or set `YTDLP_AUTO_UPDATE=true` to upgrade it when the container starts. For a persistent manual replacement, place the executable at `/app/data/bin/yt-dlp` and set `YTDLP_PATH=/app/data/bin/yt-dlp`; see the deployment document for the full procedure.
+
+Set `YOUTUBE_COOKIE` and `BILIBILI_COOKIE` to provide default video cookies for every room. A room automatically uses the environment default until its owner saves a room-specific override. `UNM_SERVER_URL` uses the same global-fallback behavior, so newly created rooms use it unless they configure their own UNM URL.
 
 ## Project Structure
 

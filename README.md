@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/stargazers"><img src="https://img.shields.io/github/stars/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Stars"></a>
-  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/network/members"><img src="https://img.shields.io/github/forks/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Forks"></a>
-  <a href="https://github.com/ChEnLeo-7/Music-Together-unm-support/issues"><img src="https://img.shields.io/github/issues/ChEnLeo-7/Music-Together-unm-support?style=flat&logo=github" alt="Issues"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/ChEnLeo-7/Music-Together-unm-support?style=flat" alt="License"></a>
+  <a href="https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/stargazers"><img src="https://img.shields.io/github/stars/ChEnLeo-7/Music-Together-Pro-UNM-Support?style=flat&logo=github" alt="Stars"></a>
+  <a href="https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/network/members"><img src="https://img.shields.io/github/forks/ChEnLeo-7/Music-Together-Pro-UNM-Support?style=flat&logo=github" alt="Forks"></a>
+  <a href="https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/issues"><img src="https://img.shields.io/github/issues/ChEnLeo-7/Music-Together-Pro-UNM-Support?style=flat&logo=github" alt="Issues"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ChEnLeo-7/Music-Together-Pro-UNM-Support?style=flat" alt="License"></a>
 </p>
 
 <p align="center">
@@ -70,7 +70,9 @@
 14. **🌟UI以及细节优化**：添加全屏按钮、点击歌词跳转对应时间点、隐藏已播放的歌词（开关）、界面细节优化调整、排版优化  
 15. **🏘️永久房间**：开启后除了房主、服务器管理员能解散其他情况都不会销毁（Cookie、UNM服务器等信息会跟随保存）  
 16. **歌曲/专辑/歌单 ID搜索**：支持用网易云的 `歌曲`/`歌单`/`专辑`ID 搜索
-17. **Android 原生后台播放**：提供 Android App，通过 Media3 前台服务支持锁屏和后台播放、系统媒体控制、稳定的播放/暂停状态同步及可拖动进度条；App 启动时可连接自托管的 HTTP 或 HTTPS 服务器
+17. **自定义媒体与视频导入**：房间成员可以上传音频、导入音频直链，或通过 YouTube/Bilibili 视频 URL 使用 `yt-dlp` 和 FFmpeg 提取音频；支持标题、歌手、专辑、歌词和视频封面，处理后的媒体会在房间内共享
+18. **Android 原生后台播放**：提供 Android App，通过 Media3 前台服务支持锁屏和后台播放、系统媒体控制、稳定的播放/暂停状态同步及可拖动进度条；App 启动时可连接自托管的 HTTP 或 HTTPS 服务器
+19. **播放列表结束后暂停**：可在房间设置中让顺序播放或列表循环播放在最后一首结束后暂停，而不是自动回到第一首
 
 ## 温馨提示
 本项目使用 GPT5.5 AI 二改而来，添加了 UNM 以及一些自己个性化需求的功能，可能会有些小bug小瑕疵（某个功能无效），一般不会有更新，如有冒犯，请联系我删除
@@ -85,8 +87,8 @@
 ### 安装与开发
 
 ```bash
-git clone https://github.com/ChEnLeo-7/Music-Together-unm-support.git
-cd music-together
+git clone https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support.git
+cd Music-Together-Pro-UNM-Support
 pnpm install
 pnpm dev
 ```
@@ -95,13 +97,22 @@ pnpm dev
 
 ### Android App
 
-从 [GitHub Releases](https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/releases/latest) 下载最新 APK 并安装。首次启动时输入 Music Together 服务端地址，例如 `https://music.example.com`；可信局域网调试也可使用 `http://192.168.1.10:3001`。
+从 [GitHub Releases](https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/releases/latest) 下载 `v0.10.5` 或更新版本的 APK 并安装。首次启动时输入 Music Together 服务端地址，例如 `https://music.example.com`；可信局域网调试也可使用 `http://192.168.1.10:3001`。
 
-Android App 使用 Media3 前台播放服务，支持后台/锁屏播放和系统媒体控制。`v0.7.0` 修复了播放按钮状态不同步、缓冲时错误切换暂停状态、进度条触摸偏移与拖动回跳、重复执行播放指令，以及离开房间后原生服务未停止等问题。
+Android App 使用 Media3 前台播放服务，支持后台/锁屏播放和系统媒体控制，并支持播放服务端保存的自定义媒体。`v0.10.5` 同步包含自定义媒体的 MIME 类型、认证媒体流和后台播放支持。
+
+### 自定义媒体与视频封面
+
+- 房间成员可以上传 MP3、FLAC、M4A、OGG、WAV 等音频，或导入公开音频直链。
+- YouTube 和 Bilibili 视频链接由服务端使用 `yt-dlp` 和 FFmpeg 提取为 MP3；视频平台返回的缩略图会下载并保存为播放器封面。
+- 封面、歌词和媒体文件会在服务端本地保存，客户端通过房间授权接口访问。fake-ip 网关环境下，受信任的视频平台 CDN 仍可正常获取封面。
+- 房主可以在自定义媒体面板保存 YouTube/Bilibili Cookie；房间 Cookie 优先于环境变量 `YOUTUBE_COOKIE` 和 `BILIBILI_COOKIE`，Cookie 会加密保存。
+- 默认限制为单文件 200 MiB、单文件时长 4 小时、单房间 2 GiB、服务器总计 10 GiB；连续 7 天未被引用的媒体会自动清理。
+- 直链必须是可由服务端访问的 HTTP(S) 地址，媒体播放和下载仅对房间成员开放。
 
 ## Docker 本地部署
 
-仓库中的 `docker-compose.yml` 使用当前目录的源码在部署机器本地构建镜像，并包含健康检查、日志轮转和持久化数据卷：
+仓库中的 `docker-compose.yml` 使用当前目录的源码在部署机器本地构建镜像，并包含健康检查、日志轮转和持久化数据卷。自定义视频导入需要镜像内的 `yt-dlp` 和 FFmpeg，配置会在构建时自动安装：
 
 ```bash
 cp .env.example .env
@@ -133,6 +144,10 @@ docker compose up -d --build
 重置会删除旧用户、永久房间、平台授权和头像。重新启动后使用一次性账号 `admin/admin` 登录，并按界面要求立即修改用户名和密码；完成后普通注册才会开放。
 
 镜像构建细节以仓库根目录的 `Dockerfile` 为准，避免文档副本与实际生产镜像配置漂移。
+
+`yt-dlp` 默认在镜像构建时安装最新版。可通过 `YTDLP_VERSION` 固定构建版本；如需启动时自动更新，设置 `YTDLP_AUTO_UPDATE=true`。手动替换版本时可将可执行文件放入持久化数据卷 `/app/data/bin/yt-dlp`，并在 `.env` 中设置 `YTDLP_PATH=/app/data/bin/yt-dlp`，详见部署文档。
+
+可通过 `YOUTUBE_COOKIE` 和 `BILIBILI_COOKIE` 设置所有房间共用的默认视频 Cookie。房间没有单独配置时会自动使用环境默认值；房主在界面保存的房间 Cookie 优先。`UNM_SERVER_URL` 采用相同的全局回退语义，新建房间会自动使用该地址，除非房间配置了自己的 UNM 地址。
 
 ## 项目结构
 

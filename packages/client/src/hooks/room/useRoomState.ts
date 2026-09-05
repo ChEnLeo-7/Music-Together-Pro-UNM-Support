@@ -87,6 +87,7 @@ export function useRoomState() {
       hidden?: boolean
       permanent?: boolean
       chatHistoryForNewUsers?: boolean
+      pauseAtQueueEnd?: boolean
     }) => {
       useRoomStore.getState().updateRoom(settings)
     }

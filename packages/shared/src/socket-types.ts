@@ -37,6 +37,7 @@ export interface ServerToClientEvents {
     hidden: boolean
     permanent: boolean
     chatHistoryForNewUsers: boolean
+    pauseAtQueueEnd: boolean
   }) => void
   [EVENTS.ROOM_LIST_UPDATE]: (rooms: RoomListItem[]) => void
   [EVENTS.ROOM_ROLE_CHANGED]: (data: { userId: string; role: UserRole }) => void
@@ -114,6 +115,7 @@ export interface ClientToServerEvents {
     hidden?: boolean
     permanent?: boolean
     chatHistoryForNewUsers?: boolean
+    pauseAtQueueEnd?: boolean
   }) => void
   [EVENTS.ROOM_SET_ROLE]: (data: { userId: string; role: 'admin' | 'member' }) => void
   [EVENTS.ROOM_HIDE_MEMBER]: (data: { userId: string }) => void

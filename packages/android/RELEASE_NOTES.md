@@ -4,6 +4,11 @@
 
 ### 本次更新
 
+- 新增服务端自定义媒体播放：支持上传音频、音频直链以及 YouTube/Bilibili 视频提取后的媒体。
+- 支持服务端媒体流 MIME 类型和认证 Cookie 传递，确保自定义媒体可在 Android 后台和锁屏状态播放。
+- 视频 URL 导入时保存平台缩略图作为播放器封面；fake-ip 网关环境下的受信任视频 CDN 也可正常获取封面。
+- 新增房间级 YouTube/Bilibili Cookie 配置，房间 Cookie 优先于环境默认 Cookie。
+- 新增播放列表结束后暂停设置，并改善房间播放设置权限。
 - 修复媒体通知接入的 Android 编译兼容性，并继续完善系统媒体控制。
 - 完善系统媒体通知，支持通知栏、锁屏、蓝牙和耳机按键通过统一的 MediaSession 控制房间播放。
 - 媒体通知现在由 Media3 管理，并自动同步歌曲标题、作者、封面和播放状态。
@@ -39,6 +44,11 @@ This release provides an Android Release APK signed with a persistent production
 
 ### What's new
 
+- Added playback support for server-hosted custom media, including uploaded audio, direct audio URLs, and audio extracted from YouTube/Bilibili videos.
+- Custom media MIME types and authenticated session cookies now pass through to native playback, including Android background and lock-screen playback.
+- Video URL imports persist the platform thumbnail as player artwork; trusted video CDNs also work behind fake-IP gateways.
+- Added room-level YouTube/Bilibili Cookie configuration, with room cookies taking precedence over environment defaults.
+- Added the pause-at-playlist-end room setting and improved playback-setting permissions.
 - Fixed Android build compatibility for the media notification integration.
 - Improved the system media notification so notification shade, lock screen, Bluetooth, and headset controls all operate through the shared MediaSession.
 - Media3 now owns the media notification lifecycle and keeps the track title, artist, artwork, and playback state synchronized.

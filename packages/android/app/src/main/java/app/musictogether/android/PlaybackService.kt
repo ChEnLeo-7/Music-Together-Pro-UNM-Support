@@ -14,7 +14,12 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -57,6 +62,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   }
   private var socket: Socket? = null
   private var sessionConfig: SessionConfig? = null
+  private var sessionCookie: String = ""
   private var currentSource: String? = null
   private var currentTrackId: String? = null
   private var pendingPlayback: Runnable? = null
@@ -102,7 +108,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
   override fun onCreate() {
     super.onCreate()
     createNotificationChannel()
-    player = ExoPlayer.Builder(this).build().also {
+    player = buildPlayer().also {
       it.addListener(this)
       it.setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
     }
@@ -160,6 +166,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
         intent.getStringExtra(EXTRA_SOURCE).orEmpty(),
         intent.getStringExtra(EXTRA_MIME_TYPE).orEmpty(),
         intent.getStringExtra(EXTRA_METADATA).orEmpty(),
+        autoPlay = false,
       )
       // Web controls already emit these commands through the browser Socket.IO
       // client. Keep native playback passive here; the service socket applies
@@ -179,6 +186,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
   private fun configure(rawConfig: String, cookie: String) {
     val parsed = SessionConfig.from(rawConfig) ?: return
+    sessionCookie = cookie
     if (sessionConfig?.sameConnection(parsed) == true && socket?.connected() == true) return
     pendingPlayback?.let(handler::removeCallbacks)
     pendingPlayback = null
@@ -374,7 +382,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     releasePreparedPlayer()
     preparedSource = source
     preparedTrackId = track.optString("id")
-    preparedPlayer = ExoPlayer.Builder(this).build().also { preload ->
+    preparedPlayer = buildPlayer().also { preload ->
       preload.setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
       preload.addListener(object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -391,6 +399,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
       preload.setMediaItem(MediaItem.Builder()
         .setUri(source)
         .setMediaId(preparedTrackId.orEmpty())
+        .setMimeType(normalizeMimeType(track.optString("mimeType")))
         .setMediaMetadata(metadata.mediaMetadata)
         .build())
       preload.prepare()
@@ -550,7 +559,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     val source = resolveSource(track.optString("streamUrl"))
     if (source.isBlank()) return
     currentTrackId = track.optString("id")
-    load(source, "", track.toString(), positionSeconds, autoPlay)
+    load(source, track.optString("mimeType"), track.toString(), positionSeconds, autoPlay)
   }
 
   private fun resolveSource(source: String): String {
@@ -589,6 +598,31 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     suppressEnded = false
   }
 
+  private fun buildPlayer(): ExoPlayer {
+    val httpFactory = DefaultHttpDataSource.Factory().setUserAgent("MusicTogetherAndroid/1")
+    val defaultFactory = DefaultDataSource.Factory(this, httpFactory)
+    val dataSourceFactory = ResolvingDataSource.Factory(defaultFactory, object : ResolvingDataSource.Resolver {
+      override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
+        val server = sessionConfig?.serverUrl?.let(Uri::parse) ?: return dataSpec
+        val uri = dataSpec.uri
+        if (sessionCookie.isBlank() || !sameOrigin(uri, server)) return dataSpec
+        return dataSpec.withAdditionalHeaders(mapOf("Cookie" to sessionCookie))
+      }
+    })
+    return ExoPlayer.Builder(this, DefaultMediaSourceFactory(dataSourceFactory)).build()
+  }
+
+  private fun sameOrigin(left: Uri, right: Uri): Boolean {
+    fun effectivePort(uri: Uri): Int = when {
+      uri.port != -1 -> uri.port
+      uri.scheme.equals("https", ignoreCase = true) -> 443
+      else -> 80
+    }
+    return left.scheme.equals(right.scheme, ignoreCase = true) &&
+      left.host.equals(right.host, ignoreCase = true) &&
+      effectivePort(left) == effectivePort(right)
+  }
+
   private fun releaseSource(source: String) {
     // WebView may unload a stale wrapper after the service has already received
     // the next track over its own socket. Never release the newer native source.
@@ -613,6 +647,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     socket?.off()
     socket = null
     sessionConfig = null
+    sessionCookie = ""
     currentSource = null
     currentTrackId = null
     ntpPings.clear()
@@ -644,7 +679,7 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
   private fun parseMetadata(raw: String): ParsedMetadata {
     val json = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
-    val artwork = json.optString("cover").takeIf(String::isNotBlank)?.let(Uri::parse)
+    val artwork = json.optString("cover").takeIf(String::isNotBlank)?.let { Uri.parse(resolveSource(it)) }
     return ParsedMetadata(
       id = json.optString("id"),
       mediaMetadata = MediaMetadata.Builder()

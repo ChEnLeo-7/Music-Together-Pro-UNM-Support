@@ -24,6 +24,9 @@ export type ErrorCode = (typeof ERROR_CODE)[keyof typeof ERROR_CODE]
 
 export type MusicSource = 'netease' | 'tencent' | 'kugou'
 
+export type TrackSource = MusicSource | 'custom'
+export type CustomMediaOrigin = 'upload' | 'direct-url' | 'yt-dlp'
+
 export type AutoFallbackStatus = 'trying' | 'success' | 'failed'
 
 export type AutoFallbackReasonType = 'VIP_REQUIRED' | 'COPYRIGHT_RESTRICTED' | 'NO_RESOURCE' | 'TIMEOUT' | 'UNKNOWN'
@@ -60,7 +63,7 @@ export type AudioQuality =
   | 'kugou_hires'
   | 'kugou_master'
 
-export type StreamSource = MusicSource | 'unm'
+export type StreamSource = MusicSource | 'unm' | 'custom'
 
 export type SourcePriority = 'smart' | 'platform-first' | 'platform-only' | 'unm-first' | 'unm-only'
 
@@ -71,9 +74,15 @@ export interface Track {
   album: string
   duration: number
   cover: string
-  source: MusicSource
+  source: TrackSource
   sourceId: string
   urlId: string
+  /** Present for media uploaded/imported through the custom source. */
+  kind?: 'platform' | 'custom'
+  mediaId?: string
+  mediaOrigin?: CustomMediaOrigin
+  mimeType?: string
+  lyricsUrl?: string
   lyricId?: string
   picId?: string
   streamUrl?: string
@@ -104,6 +113,7 @@ export interface RoomState {
   currentTrack: Track | null
   playState: PlayState
   playMode: PlayMode
+  pauseAtQueueEnd: boolean
   unmConfigured: boolean
 }
 

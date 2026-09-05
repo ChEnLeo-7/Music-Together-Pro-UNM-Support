@@ -41,5 +41,5 @@
 | 6. 代码规范     | [coding-standards.md](architecture/coding-standards.md)       | 语言模块、路径别名、状态更新、错误处理                                            |
 | 7. UI 设计规范  | [ui-design.md](architecture/ui-design.md)                     | 组件库、颜色系统、动画、歌词、响应式                                              |
 | 8. 开发指南     | [dev-guide.md](architecture/dev-guide.md)                     | 快速启动、构建、添加组件、注意事项                                                |
-| 9. 部署方案     | [deployment.md](architecture/deployment.md)                   | Docker、CORS、Watchtower、1Panel                                                  |
+| 9. 部署方案     | [deployment.md](architecture/deployment.md)                   | Docker 本地构建、CORS、1Panel                                                    |
 | 账号与房间门禁重设计 | [account-and-room-access-redesign.md](architecture/account-and-room-access-redesign.md) | 用户名账号、可撤销会话、房间密码加密、严格准入和分阶段实施 TODO                  |

@@ -27,3 +27,11 @@ function resolveServerUrl(): string {
 }
 
 export const SERVER_URL = resolveServerUrl()
+
+export function resolveServerAssetUrl(url: string): string {
+	return url.startsWith('/') ? `${SERVER_URL}${url}` : url
+}
+
+export function isServerAssetUrl(url: string): boolean {
+	return resolveServerAssetUrl(url).startsWith(`${SERVER_URL}/`)
+}

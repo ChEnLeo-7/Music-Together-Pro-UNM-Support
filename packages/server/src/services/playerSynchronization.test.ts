@@ -140,3 +140,31 @@ test('reload recovery preserves a sole user paused state and revision', async ()
     playerService.cleanupRoom(room.id)
   }
 })
+
+test('pause-at-queue-end keeps the final track loaded', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const track = createTrack(`final-track-${sequence}`)
+  room.queue = [track]
+  room.currentTrack = track
+  room.pauseAtQueueEnd = true
+  room.playState = { isPlaying: true, currentTime: 239, serverTimestamp: Date.now(), playbackRevision: 0 }
+
+  try {
+    await playerService.playNextTrackInRoom(fakeIo(), room.id, 'loop-all', {
+      pauseAtQueueEnd: true,
+      skipDebounce: true,
+    })
+
+    assert.equal(room.currentTrack?.id, track.id)
+    assert.equal(room.playState.isPlaying, false)
+    assert.equal(room.playState.currentTime, track.duration)
+
+    await playerService.resumeTrack(fakeIo(), room.id)
+    assert.equal(room.playState.isPlaying, true)
+    assert.equal(room.playState.currentTime, 0)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})

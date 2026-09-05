@@ -47,6 +47,7 @@ export function useRoom() {
       hidden?: boolean
       permanent?: boolean
       chatHistoryForNewUsers?: boolean
+      pauseAtQueueEnd?: boolean
     }) => {
       socket.emit(EVENTS.ROOM_SETTINGS, settings)
     },

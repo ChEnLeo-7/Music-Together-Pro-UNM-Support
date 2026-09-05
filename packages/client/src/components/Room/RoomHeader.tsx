@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAuth } from '@/hooks/useAuth'
 import { getAudioQualityOptionsForSource, platformLabel, sourceToPriority } from '@/lib/audioQuality'
 import { getMedianRTT } from '@/lib/clockSync'
-import { PLATFORM_ACTIVE, PLATFORM_TEXT } from '@/lib/platform'
+import { TRACK_SOURCE_ACTIVE, TRACK_SOURCE_TEXT } from '@/lib/platform'
 import { useSocketContext } from '@/providers/SocketProvider'
 import { useAccountStore } from '@/stores/accountStore'
 import { useRoomStore } from '@/stores/roomStore'
@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
 
 interface RoomHeaderProps {
-  onOpenSearch: () => void
+  onOpenSearch: (source?: 'custom') => void
   onOpenSettings: () => void
   onOpenMembers: () => void
   onLeaveRoom: () => void
@@ -34,6 +34,7 @@ function getSourceLabel(source?: StreamSource): string {
   if (source === 'netease') return '网易云'
   if (source === 'tencent') return 'QQ'
   if (source === 'kugou') return '酷狗'
+  if (source === 'custom') return '自定义'
   return ''
 }
 
@@ -83,7 +84,7 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
   const copyRoomLink = () => {
     if (!roomId) return
     navigator.clipboard.writeText(window.location.href)
-     toast.success(t('roomLinkCopied'))
+    toast.success(t('roomLinkCopied'))
   }
 
   const sourceLabel = getSourceLabel(streamSource)
@@ -91,7 +92,7 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
     streamSource === 'unm'
       ? 'bg-muted/70 text-muted-foreground'
       : streamSource
-        ? `${PLATFORM_ACTIVE[streamSource]} ${PLATFORM_TEXT[streamSource]}`
+        ? `${TRACK_SOURCE_ACTIVE[streamSource]} ${TRACK_SOURCE_TEXT[streamSource]}`
         : 'bg-muted/50 text-muted-foreground'
   const qualityOptions = getAudioQualityOptionsForSource(streamSource, auth.platformStatus, availableStreamQualities)
   const isSelectedQuality = (option: (typeof qualityOptions)[number]) => {
@@ -123,7 +124,13 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
             </span>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" className="hidden h-7 gap-1 rounded-md border-border/50 px-2 font-mono text-xs sm:flex" onClick={copyRoomLink} aria-label="复制房间链接">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="hidden h-7 gap-1 rounded-md border-border/50 px-2 font-mono text-xs sm:flex"
+                  onClick={copyRoomLink}
+                  aria-label="复制房间链接"
+                >
                   {roomId}
                   <Copy className="h-3 w-3" />
                 </Button>
@@ -132,7 +139,13 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 gap-1 px-1.5 text-sm text-muted-foreground" onClick={onOpenMembers} aria-label="查看成员">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-1.5 text-sm text-muted-foreground"
+                  onClick={onOpenMembers}
+                  aria-label="查看成员"
+                >
                   <Users className="h-3.5 w-3.5" />
                   {userCount}
                 </Button>
@@ -144,58 +157,96 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="flex items-center gap-1" role="status" aria-live="polite" aria-label={isConnected ? `已连接，延迟 ${Math.round(rtt)}ms` : '连接断开，正在重连'}>
-              {isConnected ? <Wifi className={`h-4 w-4 ${rttColor}`} /> : <WifiOff className="h-4 w-4 animate-pulse text-destructive" />}
+            <span
+              className="flex items-center gap-1"
+              role="status"
+              aria-live="polite"
+              aria-label={isConnected ? `已连接，延迟 ${Math.round(rtt)}ms` : '连接断开，正在重连'}
+            >
+              {isConnected ? (
+                <Wifi className={`h-4 w-4 ${rttColor}`} />
+              ) : (
+                <WifiOff className="h-4 w-4 animate-pulse text-destructive" />
+              )}
               {isConnected && <span className={`font-mono text-xs tabular-nums ${rttColor}`}>{Math.round(rtt)}ms</span>}
             </span>
           </TooltipTrigger>
           <TooltipContent>{isConnected ? `已连接，延迟 ${Math.round(rtt)}ms` : '连接断开，正在重连...'}</TooltipContent>
         </Tooltip>
 
-        {sourceLabel && !hideSourcePill && (
-          <Popover>
-            <PopoverTrigger asChild>
+        {sourceLabel &&
+          !hideSourcePill &&
+          (streamSource === 'custom' ? (
+            <span
+              className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-md px-2 text-xs font-medium leading-none ${sourceClass}`}
+            >
               <button
                 type="button"
-                disabled={!canManageRoom}
-                className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-md px-2 text-xs font-medium leading-none transition-colors disabled:pointer-events-none ${sourceClass}`}
+                className="cursor-pointer transition-opacity hover:opacity-80 active:opacity-60"
+                onClick={() => onOpenSearch('custom')}
+                aria-label="打开自定义媒体"
               >
                 {sourceLabel}
               </button>
-            </PopoverTrigger>
-            <PopoverContent side="bottom" align="start" className="w-60 rounded-xl p-1">
-              <div className="max-h-72 overflow-y-auto">
-                {qualityOptions.map((option) => (
-                  <button
-                    key={`${option.platform ?? 'base'}:${option.value}`}
-                    type="button"
-                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent ${
-                      isSelectedQuality(option) ? 'bg-accent text-accent-foreground' : ''
-                    }`}
-                    disabled={!canManageRoom}
-                    onClick={() => selectQuality(option.value)}
-                  >
-                    <span className="inline-flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 truncate">{option.label}</span>
-                      {isSelectedQuality(option) && <Check className="h-3.5 w-3.5 shrink-0" />}
-                    </span>
-                    {option.platform && (
-                      <span className={option.platform === 'unm' ? 'shrink-0 text-[10px] text-muted-foreground' : `shrink-0 text-[10px] ${PLATFORM_TEXT[option.platform]}`}>
-                        {platformLabel(option.platform)}
+            </span>
+          ) : (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  disabled={!canManageRoom}
+                  className={`inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-md px-2 text-xs font-medium leading-none transition-colors disabled:pointer-events-none ${sourceClass}`}
+                >
+                  {sourceLabel}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="start" className="w-60 rounded-xl p-1">
+                <div className="max-h-72 overflow-y-auto">
+                  {qualityOptions.map((option) => (
+                    <button
+                      key={`${option.platform ?? 'base'}:${option.value}`}
+                      type="button"
+                      className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent ${
+                        isSelectedQuality(option) ? 'bg-accent text-accent-foreground' : ''
+                      }`}
+                      disabled={!canManageRoom}
+                      onClick={() => selectQuality(option.value)}
+                    >
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <span className="min-w-0 truncate">{option.label}</span>
+                        {isSelectedQuality(option) && <Check className="h-3.5 w-3.5 shrink-0" />}
                       </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
+                      {option.platform && (
+                        <span
+                          className={
+                            option.platform === 'unm'
+                              ? 'shrink-0 text-[10px] text-muted-foreground'
+                              : option.platform === 'custom'
+                                ? 'shrink-0 text-[10px] text-violet-500'
+                                : `shrink-0 text-[10px] ${TRACK_SOURCE_TEXT[option.platform]}`
+                          }
+                        >
+                          {platformLabel(option.platform)}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          ))}
       </div>
 
       <div className="flex items-center gap-0.5 sm:gap-1">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0" onClick={onOpenSearch} aria-label="搜索点歌">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
+              onClick={() => onOpenSearch()}
+              aria-label="搜索点歌"
+            >
               <Search className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
@@ -204,7 +255,13 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="hidden h-8 w-8 min-h-11 min-w-11 sm:flex sm:min-h-0 sm:min-w-0" onClick={onOpenSettings} aria-label="设置">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden h-8 w-8 min-h-11 min-w-11 sm:flex sm:min-h-0 sm:min-w-0"
+              onClick={onOpenSettings}
+              aria-label="设置"
+            >
               <Settings className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
@@ -213,7 +270,13 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="hidden h-8 w-8 min-h-11 min-w-11 sm:flex sm:min-h-0 sm:min-w-0" onClick={onLeaveRoom} aria-label="离开房间">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden h-8 w-8 min-h-11 min-w-11 sm:flex sm:min-h-0 sm:min-w-0"
+              onClick={onLeaveRoom}
+              aria-label="离开房间"
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
@@ -222,7 +285,12 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 min-h-11 min-w-11 sm:hidden sm:min-h-0 sm:min-w-0" aria-label="更多操作">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 min-h-11 min-w-11 sm:hidden sm:min-h-0 sm:min-w-0"
+              aria-label="更多操作"
+            >
               <Ellipsis className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>

@@ -126,7 +126,10 @@ export function usePlayer() {
       preparedRef.current?.audio.removeAttribute('src')
       const audio = new Audio()
       audio.preload = 'auto'
-      audio.src = data.track.streamUrl?.startsWith('/') ? `${SERVER_URL}${data.track.streamUrl}` : (data.track.streamUrl ?? '')
+      if (data.track.source === 'custom') audio.crossOrigin = 'use-credentials'
+      audio.src = data.track.streamUrl?.startsWith('/')
+        ? `${SERVER_URL}${data.track.streamUrl}`
+        : (data.track.streamUrl ?? '')
       preparedRef.current = { trackId: data.track.id, playbackRevision: data.playbackRevision, audio }
       fetchLyric(data.track)
 
@@ -187,12 +190,7 @@ export function usePlayer() {
           isPlaying: data.playState.isPlaying,
           duration: data.track.duration,
         }
-        loadTrack(
-          data.track,
-          projectPlaybackPosition(anchor, getServerTime()),
-          data.playState.isPlaying,
-          anchor,
-        )
+        loadTrack(data.track, projectPlaybackPosition(anchor, getServerTime()), data.playState.isPlaying, anchor)
         fetchLyric(data.track)
         return
       }
@@ -369,12 +367,7 @@ export function usePlayer() {
             isPlaying: ps.isPlaying,
             duration: latestRoom.currentTrack.duration,
           }
-          loadTrack(
-            latestRoom.currentTrack,
-            projectPlaybackPosition(anchor, getServerTime()),
-            ps.isPlaying,
-            anchor,
-          )
+          loadTrack(latestRoom.currentTrack, projectPlaybackPosition(anchor, getServerTime()), ps.isPlaying, anchor)
           fetchLyric(latestRoom.currentTrack)
         }, 1_500)
       }

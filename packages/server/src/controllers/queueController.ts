@@ -15,6 +15,7 @@ import * as chatService from '../services/chatService.js'
 import * as playerService from '../services/playerService.js'
 import * as queueService from '../services/queueService.js'
 import { logger } from '../utils/logger.js'
+import { canonicalizeTrackForRoom } from '../services/customMediaService.js'
 
 export function registerQueueController(io: TypedServer, socket: TypedSocket) {
   const withPermission = createWithPermission(io)
@@ -28,7 +29,12 @@ export function registerQueueController(io: TypedServer, socket: TypedSocket) {
         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '无效的歌曲数据' })
         return
       }
-      const track: Track = { ...parsed.data.track, requestedBy: ctx.user.nickname }
+       const requestedTrack: Track = { ...parsed.data.track, requestedBy: ctx.user.nickname }
+       const track = await canonicalizeTrackForRoom(ctx.roomId, requestedTrack)
+       if (!track) {
+         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '自定义媒体不存在或已失效' })
+         return
+       }
 
       const added = queueService.addTrack(ctx.roomId, track)
       if (!added) {
@@ -60,7 +66,12 @@ export function registerQueueController(io: TypedServer, socket: TypedSocket) {
         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '无效的歌曲数据' })
         return
       }
-      const track: Track = { ...parsed.data.track, requestedBy: ctx.user.nickname }
+       const requestedTrack: Track = { ...parsed.data.track, requestedBy: ctx.user.nickname }
+       const track = await canonicalizeTrackForRoom(ctx.roomId, requestedTrack)
+       if (!track) {
+         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '自定义媒体不存在或已失效' })
+         return
+       }
 
       const added = queueService.insertAfterCurrent(ctx.roomId, track)
       if (!added) {
@@ -90,7 +101,13 @@ export function registerQueueController(io: TypedServer, socket: TypedSocket) {
         return
       }
       const { tracks: rawTracks, playlistName } = parsed.data
-      const tracks: Track[] = rawTracks.map((t) => ({ ...t, requestedBy: ctx.user.nickname }))
+       const tracks = (await Promise.all(
+         rawTracks.map((t) => canonicalizeTrackForRoom(ctx.roomId, { ...t, requestedBy: ctx.user.nickname })),
+       )).filter((track): track is Track => track !== null)
+       if (tracks.length === 0) {
+         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '自定义媒体不存在或已失效' })
+         return
+       }
 
       const addedCount = queueService.addBatchTracks(ctx.roomId, tracks)
       if (addedCount === 0) {

@@ -10,13 +10,16 @@ import { clearSessionCookie, setSessionCookie } from '../services/identityServic
 import { logger } from '../utils/logger.js'
 
 const router: RouterType = Router()
-const registerSchema = z.object({ username: z.string().max(64), password: z.string().max(128), nickname: z.string().max(40).default('') })
+const registerSchema = z.object({
+  username: z.string().max(64),
+  password: z.string().max(128),
+  nickname: z.string().max(40).default(''),
+})
 const loginSchema = z.object({ username: z.string().max(64), password: z.string().max(128) })
 const guestSchema = z.object({ nickname: z.string().trim().min(1).max(40) })
 const profileSchema = z.object({ nickname: z.string().trim().min(1).max(40) })
 const passwordSchema = z.object({ currentPassword: z.string(), newPassword: z.string() })
 const bootstrapCredentialsSchema = z.object({
-  currentPassword: z.string(),
   newUsername: z.string().max(64),
   newPassword: z.string().max(128),
 })
@@ -52,7 +55,16 @@ function allowAuthAttempt(req: Request, username?: string): boolean {
 }
 
 function accountDto(user: PersistedUser) {
-  return { userId: user.id, kind: user.kind, username: user.username, nickname: user.nickname, avatarUrl: user.avatarUrl, role: user.role, mustChangePassword: user.mustChangePassword, mustChangeUsername: user.mustChangeUsername }
+  return {
+    userId: user.id,
+    kind: user.kind,
+    username: user.username,
+    nickname: user.nickname,
+    avatarUrl: user.avatarUrl,
+    role: user.role,
+    mustChangePassword: user.mustChangePassword,
+    mustChangeUsername: user.mustChangeUsername,
+  }
 }
 
 function sendAuthError(res: Response, error: unknown): void {
@@ -61,10 +73,16 @@ function sendAuthError(res: Response, error: unknown): void {
     res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Account operation failed' })
     return
   }
-  const status = error.code === 'INVALID_CREDENTIALS' ? 401
-    : error.code === 'USERNAME_TAKEN' || error.code === 'ALREADY_REGISTERED' ? 409
-      : error.code === 'REGISTRATION_UNAVAILABLE' ? 503
-        : error.code === 'USER_NOT_FOUND' ? 404 : 400
+  const status =
+    error.code === 'INVALID_CREDENTIALS'
+      ? 401
+      : error.code === 'USERNAME_TAKEN' || error.code === 'ALREADY_REGISTERED'
+        ? 409
+        : error.code === 'REGISTRATION_UNAVAILABLE'
+          ? 503
+          : error.code === 'USER_NOT_FOUND'
+            ? 404
+            : 400
   res.status(status).json({ code: error.code, error: error.message })
 }
 
@@ -76,30 +94,40 @@ router.post('/guest', (req, res) => {
     const result = accountAuth.createGuest(parsed.data.nickname, req.authPrincipal)
     setSessionCookie(req, res, result.session.token)
     res.status(201).json(accountDto(result.user))
-  } catch (error) { sendAuthError(res, error) }
+  } catch (error) {
+    sendAuthError(res, error)
+  }
 })
 
 router.post('/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body)
   if (!parsed.success) return void res.status(400).json({ code: 'INVALID_INPUT', error: 'Invalid registration' })
-  if (!allowAuthAttempt(req, parsed.data.username)) return void res.status(429).json({ code: 'RATE_LIMITED', error: 'Too many attempts' })
-  if (req.authPrincipal?.user.kind === 'account') return void res.status(409).json({ code: 'ALREADY_REGISTERED', error: 'Already registered' })
+  if (!allowAuthAttempt(req, parsed.data.username))
+    return void res.status(429).json({ code: 'RATE_LIMITED', error: 'Too many attempts' })
+  if (req.authPrincipal?.user.kind === 'account')
+    return void res.status(409).json({ code: 'ALREADY_REGISTERED', error: 'Already registered' })
   try {
     const result = await accountAuth.register(parsed.data, req.authPrincipal?.session)
     setSessionCookie(req, res, result.session.token)
     res.status(201).json(accountDto(result.user))
-  } catch (error) { sendAuthError(res, error) }
+  } catch (error) {
+    sendAuthError(res, error)
+  }
 })
 
 router.post('/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body)
-  if (!parsed.success) return void res.status(401).json({ code: 'INVALID_CREDENTIALS', error: 'Invalid username or password' })
-  if (!allowAuthAttempt(req, parsed.data.username)) return void res.status(429).json({ code: 'RATE_LIMITED', error: 'Too many attempts' })
+  if (!parsed.success)
+    return void res.status(401).json({ code: 'INVALID_CREDENTIALS', error: 'Invalid username or password' })
+  if (!allowAuthAttempt(req, parsed.data.username))
+    return void res.status(429).json({ code: 'RATE_LIMITED', error: 'Too many attempts' })
   try {
     const result = await accountAuth.login(parsed.data.username, parsed.data.password, req.authPrincipal?.session.id)
     setSessionCookie(req, res, result.session.token)
     res.json(accountDto(result.user))
-  } catch (error) { sendAuthError(res, error) }
+  } catch (error) {
+    sendAuthError(res, error)
+  }
 })
 
 router.post('/logout', (req, res) => {
@@ -127,10 +155,16 @@ router.post('/password/change', async (req, res) => {
   const parsed = passwordSchema.safeParse(req.body)
   if (!parsed.success) return void res.status(400).json({ code: 'INVALID_PASSWORD', error: 'Invalid password' })
   try {
-    const result = await accountAuth.changePassword(req.authPrincipal.userId, parsed.data.currentPassword, parsed.data.newPassword)
+    const result = await accountAuth.changePassword(
+      req.authPrincipal.userId,
+      parsed.data.currentPassword,
+      parsed.data.newPassword,
+    )
     setSessionCookie(req, res, result.session.token)
     res.json(accountDto(result.user))
-  } catch (error) { sendAuthError(res, error) }
+  } catch (error) {
+    sendAuthError(res, error)
+  }
 })
 
 router.post('/credentials/bootstrap-change', async (req, res) => {
@@ -140,13 +174,14 @@ router.post('/credentials/bootstrap-change', async (req, res) => {
   try {
     const result = await accountAuth.changeBootstrapCredentials(
       req.authPrincipal.userId,
-      parsed.data.currentPassword,
       parsed.data.newUsername,
       parsed.data.newPassword,
     )
     setSessionCookie(req, res, result.session.token)
     res.json(accountDto(result.user))
-  } catch (error) { sendAuthError(res, error) }
+  } catch (error) {
+    sendAuthError(res, error)
+  }
 })
 
 router.post('/me/avatar', async (req, res) => {
@@ -155,9 +190,14 @@ router.post('/me/avatar', async (req, res) => {
   const match = parsed.success ? /^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i.exec(parsed.data.image) : null
   if (!match) return void res.status(400).json({ code: 'INVALID_IMAGE', error: 'Invalid image' })
   const input = Buffer.from(match[2]!, 'base64')
-  if (input.length > 5 * 1024 * 1024) return void res.status(413).json({ code: 'IMAGE_TOO_LARGE', error: 'Avatar must be 5MB or smaller' })
+  if (input.length > 5 * 1024 * 1024)
+    return void res.status(413).json({ code: 'IMAGE_TOO_LARGE', error: 'Avatar must be 5MB or smaller' })
   try {
-    const output = await sharp(input, { failOn: 'error' }).rotate().resize(256, 256, { fit: 'cover' }).webp({ quality: 82 }).toBuffer()
+    const output = await sharp(input, { failOn: 'error' })
+      .rotate()
+      .resize(256, 256, { fit: 'cover' })
+      .webp({ quality: 82 })
+      .toBuffer()
     const avatarsDir = path.join(path.dirname(databasePath), 'avatars')
     await mkdir(avatarsDir, { recursive: true })
     const fileName = `${req.authPrincipal.userId}.webp`
