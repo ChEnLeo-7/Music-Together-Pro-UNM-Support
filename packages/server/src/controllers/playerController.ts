@@ -219,6 +219,7 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
         currentTime,
         serverTimestamp: timestamp,
       }
+      playerService.scheduleTrackEndWatchdog(io, mapping.roomId, false)
     } catch (err) {
       // Sync is best-effort; log but don't emit error to avoid noise
       logger.error('PLAYER_SYNC handler error', err, { socketId: socket.id })

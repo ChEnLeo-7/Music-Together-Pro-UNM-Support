@@ -50,6 +50,21 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test and type-check playback services
+        run: |
+          pnpm test:server
+          pnpm typecheck:server
+          pnpm --filter @music-together/client test
+          pnpm --filter @music-together/client typecheck
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -72,6 +87,25 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test and type-check playback services
+        run: |
+          pnpm test:server
+          pnpm typecheck:server
+          pnpm --filter @music-together/client test
+          pnpm --filter @music-together/client typecheck
 
       - name: Set up Java 17
         uses: actions/setup-java@v5

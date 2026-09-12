@@ -425,6 +425,8 @@ export function usePlayerSync(
           trackId: r.currentTrack?.id,
           playbackRevision: r.playState.playbackRevision,
         })
+      } else if (r && !isConductor) {
+        socket.emit(EVENTS.PLAYER_SYNC_REQUEST)
       }
     }
     document.addEventListener('visibilitychange', onVisibilityChange)

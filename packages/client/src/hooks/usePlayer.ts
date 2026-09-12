@@ -171,6 +171,11 @@ export function usePlayer() {
       }
       loadingRef.current = { trackId: data.track.id, ts: now, serverTimestamp: data.playState.serverTimestamp }
 
+      if (playTimerRef.current) {
+        clearTimeout(playTimerRef.current)
+        playTimerRef.current = null
+      }
+
       // Keep roomStore in sync so recovery effect sees the correct currentTrack
       useRoomStore.getState().updateRoom({
         currentTrack: data.track,
@@ -183,13 +188,13 @@ export function usePlayer() {
       })
 
       const ct = data.playState.currentTime
+      const anchor = {
+        currentTime: ct,
+        serverTimestamp: data.playState.serverTimestamp,
+        isPlaying: data.playState.isPlaying,
+        duration: data.track.duration,
+      }
       if (data.recovery) {
-        const anchor = {
-          currentTime: ct,
-          serverTimestamp: data.playState.serverTimestamp,
-          isPlaying: data.playState.isPlaying,
-          duration: data.track.duration,
-        }
         loadTrack(data.track, projectPlaybackPosition(anchor, getServerTime()), data.playState.isPlaying, anchor)
         fetchLyric(data.track)
         return
@@ -203,7 +208,7 @@ export function usePlayer() {
         if (playTimerRef.current) clearTimeout(playTimerRef.current)
         playTimerRef.current = setTimeout(() => {
           playTimerRef.current = null
-          loadTrack(data.track, ct, data.playState.isPlaying)
+          loadTrack(data.track, projectPlaybackPosition(anchor, getServerTime()), data.playState.isPlaying, anchor)
           fetchLyric(data.track)
         }, executeDelay)
         return
@@ -221,18 +226,13 @@ export function usePlayer() {
           playTimerRef.current = null
           preparedRef.current?.audio.removeAttribute('src')
           preparedRef.current = null
-          loadTrack(data.track, 0, data.playState.isPlaying)
+          loadTrack(data.track, projectPlaybackPosition(anchor, getServerTime()), data.playState.isPlaying, anchor)
           fetchLyric(data.track)
         }, delay)
       } else {
         // Mid-song join or currentTime > 0: load immediately and seek to
-        // the expected position at the scheduled execution time.
-        const elapsed = data.playState.isPlaying
-          ? Math.max(0, (getServerTime() - data.playState.serverTimestamp) / 1000)
-          : 0
-        const adjustedTime = ct + elapsed
-
-        loadTrack(data.track, adjustedTime, data.playState.isPlaying)
+        // the position projected from the authoritative server-time anchor.
+        loadTrack(data.track, projectPlaybackPosition(anchor, getServerTime()), data.playState.isPlaying, anchor)
         fetchLyric(data.track)
       }
     }

@@ -32,23 +32,24 @@
 
 ### Desktop
 
-|            Home            |           Search           |           Player           |           Chat            |
-| :------------------------: | :------------------------: | :------------------------: | :-----------------------: |
+|            Home            |            Search            |            Player            |            Chat            |
+| :------------------------: | :--------------------------: | :--------------------------: | :------------------------: |
 | ![Home](screenshots/1.png) | ![Search](screenshots/2.png) | ![Player](screenshots/3.png) | ![Chat](screenshots/4.png) |
 
 ### Mobile
 
-|            Home             |           Search            |           Player            |            Chat             |
-| :-------------------------: | :-------------------------: | :-------------------------: | :-------------------------: |
+|             Home             |             Search             |             Player             |             Chat             |
+| :--------------------------: | :----------------------------: | :----------------------------: | :--------------------------: |
 | ![Home](screenshots/1_m.png) | ![Search](screenshots/2_m.png) | ![Player](screenshots/3_m.png) | ![Chat](screenshots/4_m.png) |
 
 ### Lyrics Display Comparison
 
-|         Desktop Lyrics         |      Portrait Default (Cover)      |        Portrait Lyrics Mode         |
-| :----------------------------: | :--------------------------------: | :---------------------------------: |
+|            Desktop Lyrics            |         Portrait Default (Cover)         |           Portrait Lyrics Mode           |
+| :----------------------------------: | :--------------------------------------: | :--------------------------------------: |
 | ![Desktop Lyrics](screenshots/3.png) | ![Portrait Default](screenshots/3_m.png) | ![Portrait Lyrics](screenshots/3_m1.png) |
 
 ## Reference Projects:
+
 > - Original project [Yueby/music-together](https://github.com/Yueby/music-together)
 > - Forked branch [Madokamaes/music-together](https://github.com/Madokamaes/music-together)
 
@@ -73,6 +74,7 @@
 17. **Custom Media & Video Imports**: Room members can upload audio, import direct audio URLs, or extract audio from YouTube/Bilibili URLs with `yt-dlp` and FFmpeg. Titles, artists, albums, lyrics, and video artwork are supported, and processed media is shared within the room
 18. **Native Android Background Playback**: Provides an Android app with Media3 foreground playback, lock-screen and background audio, system media controls, stable play/pause state synchronization, and an interactive seek bar. The app can connect to a self-hosted HTTP or HTTPS server at startup.
 19. **Pause at Playlist End**: Room settings can pause sequential or loop-all playback after the final track instead of automatically returning to the first track.
+20. **Reliable Background-Tab Advancement**: The server advances the queue from authoritative playback time when a track ends, while web clients immediately resynchronize after returning from the background instead of requiring the host tab to remain visible.
 
 ## Important Note
 
@@ -98,9 +100,9 @@ Frontend: http://localhost:5173 | Backend: http://localhost:3001
 
 ### Android App
 
-Download and install the `v0.10.5` APK or a newer build from [GitHub Releases](https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/releases/latest). On first launch, enter your Music Together server address, such as `https://music.example.com`; trusted LAN testing may use an address such as `http://192.168.1.10:3001`.
+Download and install the `v0.10.6` APK or a newer build from [GitHub Releases](https://github.com/ChEnLeo-7/Music-Together-Pro-UNM-Support/releases/latest). On first launch, enter your Music Together server address, such as `https://music.example.com`; trusted LAN testing may use an address such as `http://192.168.1.10:3001`.
 
-The Android app uses a Media3 foreground playback service and supports background/lock-screen playback plus system media controls, including server-hosted custom media. `v0.10.5` also passes custom-media MIME types and authenticated media streams through native playback.
+The Android app uses a Media3 foreground playback service and supports background/lock-screen playback plus system media controls, including server-hosted custom media. `v0.10.6` adds a server-side track-end fallback and web foreground resynchronization so a backgrounded host tab cannot block queue advancement for the room.
 
 ### Custom Media and Video Artwork
 
@@ -161,18 +163,18 @@ packages/
 
 ## Acknowledgments
 
-| Library                                                                                       | Description                      |
-| --------------------------------------------------------------------------------------------- | -------------------------------- |
-| [Howler.js](https://github.com/goldfire/howler.js)                                            | Web audio playback               |
-| [Apple Music-like Lyrics](https://github.com/Steve-xmh/applemusic-like-lyrics)                | Lyrics component (GPL-3.0)       |
-| [Meting](https://github.com/metowolf/Meting)                                                  | Multi-platform music API         |
-| [NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced) | NetEase Cloud Music API          |
-| [CASL](https://github.com/stalniy/casl)                                                       | Permission management            |
-| [Zustand](https://github.com/pmndrs/zustand)                                                  | State management                 |
-| [shadcn/ui](https://github.com/shadcn-ui/ui)                                                  | UI component library             |
-| [Motion](https://github.com/motiondivision/motion)                                            | Animation library                |
-| [qq-music-download](https://github.com/tooplick/qq-music-download)                            | QQ Music login reference         |
-| [UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server)                         |Unlock gray-area copyrighted music|
+| Library                                                                                       | Description                        |
+| --------------------------------------------------------------------------------------------- | ---------------------------------- |
+| [Howler.js](https://github.com/goldfire/howler.js)                                            | Web audio playback                 |
+| [Apple Music-like Lyrics](https://github.com/Steve-xmh/applemusic-like-lyrics)                | Lyrics component (GPL-3.0)         |
+| [Meting](https://github.com/metowolf/Meting)                                                  | Multi-platform music API           |
+| [NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced) | NetEase Cloud Music API            |
+| [CASL](https://github.com/stalniy/casl)                                                       | Permission management              |
+| [Zustand](https://github.com/pmndrs/zustand)                                                  | State management                   |
+| [shadcn/ui](https://github.com/shadcn-ui/ui)                                                  | UI component library               |
+| [Motion](https://github.com/motiondivision/motion)                                            | Animation library                  |
+| [qq-music-download](https://github.com/tooplick/qq-music-download)                            | QQ Music login reference           |
+| [UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server)                          | Unlock gray-area copyrighted music |
 
 ## License
 

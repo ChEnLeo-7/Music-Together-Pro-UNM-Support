@@ -1,80 +1,51 @@
 ## 中文
 
-本版本提供使用持久正式密钥签名的 Android Release APK，可覆盖安装后续版本。
+本版本提供使用持久正式密钥签名的 Android Release APK，可在已安装正式版的设备上直接覆盖升级。
 
 ### 本次更新
 
-- 新增服务端自定义媒体播放：支持上传音频、音频直链以及 YouTube/Bilibili 视频提取后的媒体。
-- 支持服务端媒体流 MIME 类型和认证 Cookie 传递，确保自定义媒体可在 Android 后台和锁屏状态播放。
-- 视频 URL 导入时保存平台缩略图作为播放器封面；fake-ip 网关环境下的受信任视频 CDN 也可正常获取封面。
-- 新增房间级 YouTube/Bilibili Cookie 配置，房间 Cookie 优先于环境默认 Cookie。
-- 新增播放列表结束后暂停设置，并改善房间播放设置权限。
-- 修复媒体通知接入的 Android 编译兼容性，并继续完善系统媒体控制。
-- 完善系统媒体通知，支持通知栏、锁屏、蓝牙和耳机按键通过统一的 MediaSession 控制房间播放。
-- 媒体通知现在由 Media3 管理，并自动同步歌曲标题、作者、封面和播放状态。
-- 支持应用内跟随初始 HTTP(S) 服务端跨域、跨端口重定向，并将原生播放安全绑定到最终地址。
-- 网页重载后继续恢复正在播放歌曲的服务端时间位置，暂停歌曲保持暂停位置。
-- 修复 Android 调整进度时进度条短暂跳回旧位置的问题。
-- Android 播放器支持隐藏状态栏和导航栏的沉浸式全屏。
-- 移动端封面切换歌词时，标题和作者使用平滑的 Apple 风格非线性动效。
-- 移动端进入歌词模式后继续保持动态流光背景效果。
+- 新增服务端歌曲结束 watchdog：即使房主网页标签页处于后台、被冻结或未及时发送结束事件，服务端仍会根据权威播放时间推进队列。
+- 后台标签页收到延迟播放命令后，会按照服务端时间投影实际播放位置，不再从旧位置或新歌第 0 秒开始。
+- 网页从后台返回前台时立即请求或上报播放同步，减少浏览器定时器节流造成的恢复延迟。
 
 ### 安全与可靠性
 
-- 原生 Bridge 只连接用户在 Activity 中确认的服务器，页面无法指定 Cookie 域或 Socket.IO 目标。
-- 修复密码房间 WebView 与原生播放服务争用 rejoin token 的问题。
-- 修复服务被系统重启后永久空转，以及 Activity 重建返回服务器选择页的问题。
-- 锁屏通知隐藏完整歌曲标题、作者和封面，仅在设备解锁后显示。
+- 服务端结束兜底绑定当前曲目 ID 和播放 revision，并在房间播放 mutex 内再次校验，避免旧定时器或客户端正常结束事件造成重复切歌。
+- 播放、恢复、seek 和有效的指挥者进度上报都会重置歌曲结束截止时间，避免暂停或进度调整后遗留过期任务。
+- 新播放事件会取消客户端尚未执行的旧播放定时器，防止旧命令覆盖当前歌曲。
 
 ### 播放同步
 
-- 修复锁屏 seek 重复发送旧位置、预加载切歌音量恢复到 100%、元数据丢失和无效预加载未释放的问题。
-- Activity 返回前台后会恢复后台期间发生的暂停和 seek 状态。
-- Android 使用单次快照同步 Web UI，并为 wrapper 加载增加超时，不再永久轮询或每帧重复跨 Bridge 读取。
-- NTP 校准完成前不会按错误设备时钟长时间等待，并向服务端上报 RTT 以改善调度。
-- 新增 Android 同步算法单元测试和跨端协议 CI 触发覆盖。
+- 修复房主网页标签页不在前台时，整个房间可能停留在已结束歌曲、无法同步下一首的问题。
+- 修复后台标签页延迟执行下一首后从错误位置播放的问题。
+- 增加服务端无客户端结束回调自动推进、旧 revision 不误切歌的回归测试。
 
 ### 安装
 
-下载本 Release 中的 `music-together-android-*.apk`。如已安装使用其他签名的旧 Debug APK，需要先卸载旧版本再安装；之后的正式版本可直接覆盖升级。
+下载本 Release 中的 `music-together-android-v0.10.6.apk`。如已安装使用其他签名的旧 Debug APK，需要先卸载旧版本再安装；已安装正式签名版本的设备可直接覆盖升级。
 
 ## English
 
-This release provides an Android Release APK signed with a persistent production key, enabling in-place upgrades for future releases.
+This release provides an Android Release APK signed with the persistent production key and supports in-place upgrades from an installed production build.
 
 ### What's new
 
-- Added playback support for server-hosted custom media, including uploaded audio, direct audio URLs, and audio extracted from YouTube/Bilibili videos.
-- Custom media MIME types and authenticated session cookies now pass through to native playback, including Android background and lock-screen playback.
-- Video URL imports persist the platform thumbnail as player artwork; trusted video CDNs also work behind fake-IP gateways.
-- Added room-level YouTube/Bilibili Cookie configuration, with room cookies taking precedence over environment defaults.
-- Added the pause-at-playlist-end room setting and improved playback-setting permissions.
-- Fixed Android build compatibility for the media notification integration.
-- Improved the system media notification so notification shade, lock screen, Bluetooth, and headset controls all operate through the shared MediaSession.
-- Media3 now owns the media notification lifecycle and keeps the track title, artist, artwork, and playback state synchronized.
+- Added a server-side track-end watchdog. The server now advances the queue from authoritative playback time even when the host web tab is backgrounded, frozen, or unable to deliver its end event promptly.
+- Backgrounded tabs project delayed playback commands from server time instead of starting from a stale position or from zero on the next track.
+- Web clients immediately request or report playback synchronization when returning to the foreground, reducing recovery delays caused by browser timer throttling.
 
 ### Security and reliability
 
-- Initial cross-origin and cross-port HTTP(S) server redirects now stay in-app, with native playback securely rebound to the final origin.
-- Reload recovery resumes from the server-authoritative position, while paused tracks remain paused at their saved position.
-- Fixed the Android progress bar briefly jumping back to the previous position during a seek.
-- Added immersive player fullscreen that hides the status and navigation bars.
-- Added a smooth Apple-style nonlinear title and artist transition when switching between cover and lyrics on mobile.
-- Mobile lyric mode now keeps the dynamic flowing background effect active.
-
-- The native bridge only connects to the server approved in the Activity; pages can no longer choose the Cookie domain or Socket.IO target.
-- Fixed rejoin-token contention between the WebView and native playback service in password-protected rooms.
-- Fixed an endlessly idling service after system restart and restored the current server page after Activity recreation.
-- Lock-screen notifications conceal full track titles, artists, and artwork until the device is unlocked.
+- The server fallback is bound to the current track ID and playback revision, then revalidated inside the room playback mutex to prevent duplicate advancement from stale timers or a normal client end event.
+- Play, resume, seek, and accepted conductor progress reports reschedule the track-end deadline so paused or adjusted playback cannot leave stale work behind.
+- New playback events cancel pending client playback timers, preventing old commands from replacing the current track.
 
 ### Playback synchronization
 
-- Fixed lock-screen seeks sending a stale second position, preloaded tracks resetting volume to 100%, missing metadata, and unreleased invalid preloads.
-- Returning to the foreground now reconciles pause and seek changes that occurred while the Activity was stopped.
-- Android now synchronizes the Web UI through one snapshot and applies a wrapper bootstrap timeout instead of polling forever or making repeated Bridge calls every frame.
-- Playback waits briefly for NTP calibration instead of trusting a badly skewed device clock, and reports RTT to improve server scheduling.
-- Added Android synchronization algorithm tests and CI triggers for cross-platform protocol changes.
+- Fixed rooms getting stuck on a completed track when the host web tab was not in the foreground.
+- Fixed delayed next-track execution in backgrounded tabs starting at the wrong position.
+- Added regression coverage for server advancement without a client end callback and for rejecting stale playback revisions.
 
 ### Installation
 
-Download `music-together-android-*.apk` from this Release. If an older Debug APK uses a different signature, uninstall it once before installing this build; subsequent production releases can be installed in place.
+Download `music-together-android-v0.10.6.apk` from this Release. If an older Debug APK uses a different signature, uninstall it once before installing this build. Devices with a production-signed version can upgrade in place.

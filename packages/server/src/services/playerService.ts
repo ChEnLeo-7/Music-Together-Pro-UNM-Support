@@ -37,6 +37,16 @@ const pendingPrepares = new Map<
   string,
   { trackId: string; revision: number; waiting: Set<string>; resolve: () => void; timer: ReturnType<typeof setTimeout> }
 >()
+const trackEndTimers = new Map<
+  string,
+  { trackId: string; revision: number; endAt: number; timer: ReturnType<typeof setTimeout> }
+>()
+const TRACK_END_WATCHDOG_GRACE_MS = 2_000
+const MAX_TIMEOUT_MS = 2_147_000_000
+
+export function getTrackEndWatchdogDelay(remainingMs: number): number {
+  return Math.min(Math.max(0, remainingMs) + TRACK_END_WATCHDOG_GRACE_MS, MAX_TIMEOUT_MS)
+}
 
 // ---------------------------------------------------------------------------
 // Auto fallback cooldown (prevents repeated attempts / ping-pong)
@@ -94,6 +104,59 @@ function scheduled(ps: PlayState, roomId: string, scheduleTime?: number): Schedu
 
 function nextPlaybackRevision(room: RoomData): number {
   return room.playState.playbackRevision + 1
+}
+
+function clearTrackEndWatchdog(roomId: string): void {
+  const pending = trackEndTimers.get(roomId)
+  if (!pending) return
+  clearTimeout(pending.timer)
+  trackEndTimers.delete(roomId)
+}
+
+function armTrackEndWatchdog(
+  io: TypedServer,
+  roomId: string,
+  trackId: string,
+  revision: number,
+  trackEndAt: number,
+): void {
+  clearTrackEndWatchdog(roomId)
+  const remainingMs = Math.max(0, trackEndAt - Date.now())
+  const timer = setTimeout(() => {
+    const pending = trackEndTimers.get(roomId)
+    if (!pending || pending.timer !== timer) return
+    trackEndTimers.delete(roomId)
+
+    if (Date.now() + 250 < trackEndAt) {
+      armTrackEndWatchdog(io, roomId, trackId, revision, trackEndAt)
+      return
+    }
+
+    void reconcileTrackEnd(io, roomId, trackId, revision, trackEndAt).catch((err) => {
+      logger.error('Track-end watchdog failed', err, { roomId, trackId, revision })
+    })
+  }, getTrackEndWatchdogDelay(remainingMs))
+  timer.unref()
+  trackEndTimers.set(roomId, { trackId, revision, endAt: trackEndAt, timer })
+}
+
+export function scheduleTrackEndWatchdog(io: TypedServer, roomId: string, allowExtension = true): void {
+  const room = roomRepo.get(roomId)
+  const track = room?.currentTrack
+  if (!room || !track || !room.playState.isPlaying || !Number.isFinite(track.duration) || track.duration <= 0) {
+    clearTrackEndWatchdog(roomId)
+    return
+  }
+
+  const trackId = track.id
+  const revision = room.playState.playbackRevision
+  const estimatedEndAt = room.playState.serverTimestamp + (track.duration - room.playState.currentTime) * 1_000
+  const pending = trackEndTimers.get(roomId)
+  const trackEndAt =
+    !allowExtension && pending?.trackId === trackId && pending.revision === revision
+      ? Math.min(pending.endAt, estimatedEndAt)
+      : estimatedEndAt
+  armTrackEndWatchdog(io, roomId, trackId, revision, trackEndAt)
 }
 
 async function waitForPlaybackReady(io: TypedServer, room: RoomData, track: Track, revision: number): Promise<void> {
@@ -700,6 +763,7 @@ async function _playTrackInRoom(
     track: resolved,
     playState: scheduled(room.playState, roomId, scheduleTime),
   })
+  scheduleTrackEndWatchdog(io, roomId)
 
   // 通知大厅用户当前播放曲目变化
   broadcastRoomList(io)
@@ -736,6 +800,7 @@ function resumeTrackLocked(io: TypedServer, roomId: string): void {
   }
   // All clients (including initiator) must execute at the same scheduled moment
   io.to(roomId).emit(EVENTS.PLAYER_RESUME, { playState: scheduled(room.playState, roomId, scheduleTime) })
+  scheduleTrackEndWatchdog(io, roomId)
 }
 
 export function pauseTrack(io: TypedServer, roomId: string, _initiatorSocket?: TypedSocket): Promise<void> {
@@ -746,6 +811,8 @@ function pauseTrackLocked(io: TypedServer, roomId: string, atTrackEnd = false): 
   const room = roomRepo.get(roomId)
   if (!room || !room.currentTrack) return
   if (!room.playState.isPlaying) return
+
+  clearTrackEndWatchdog(roomId)
 
   const scheduleTime = getScheduleTime(roomId)
   const scheduleDelay = room.playState.isPlaying ? (scheduleTime - Date.now()) / 1000 : 0
@@ -785,6 +852,7 @@ function seekTrackLocked(io: TypedServer, roomId: string, currentTime: number): 
   }
   // All clients must seek at the same scheduled moment
   io.to(roomId).emit(EVENTS.PLAYER_SEEK, { playState: scheduled(room.playState, roomId, scheduleTime) })
+  if (room.playState.isPlaying) scheduleTrackEndWatchdog(io, roomId)
 }
 
 export function updatePlayState(roomId: string, update: Partial<PlayState>): void {
@@ -800,6 +868,7 @@ export function updatePlayState(roomId: string, update: Partial<PlayState>): voi
 }
 
 export function setCurrentTrack(roomId: string, track: Track | null): void {
+  clearTrackEndWatchdog(roomId)
   const room = roomRepo.get(roomId)
   if (room) {
     room.currentTrack = track
@@ -854,37 +923,76 @@ export function playNextTrackInRoom(
   playMode: PlayMode,
   options?: { skipDebounce?: boolean; pauseAtQueueEnd?: boolean },
 ): Promise<void> {
-  return withPlayMutex(roomId, async () => {
-    if (options?.skipDebounce) {
-      // Still update the timestamp so a normal NEXT right after is debounced
-      lastNextTimestamp.set(roomId, Date.now())
-    } else if (_isNextDebounced(roomId)) {
-      return
-    }
+  return withPlayMutex(roomId, () => playNextTrackLocked(io, roomId, playMode, options))
+}
 
-    const room = roomRepo.get(roomId)
-    if (room && options?.pauseAtQueueEnd && isAtQueueEnd(room, playMode)) {
-      pauseTrackLocked(io, roomId, true)
-      return
-    }
-
-    const nextTrack = queueService.getNextTrack(roomId, playMode)
-    if (!nextTrack) {
-      stopPlayback(io, roomId)
-      return
-    }
-
-    const success = await _playTrackInRoom(io, roomId, nextTrack)
-    if (!success) {
-      const skipTrack = queueService.getNextTrack(roomId, playMode)
-      if (skipTrack) await _playTrackInRoom(io, roomId, skipTrack)
-    }
-
-    // Refresh debounce timestamp after async work completes.
-    // Without this, a second PLAYER_NEXT waiting on the mutex could pass
-    // the debounce check if _playTrackInRoom took longer than 500ms (e.g.
-    // stream URL resolution), causing a double-skip.
+async function playNextTrackLocked(
+  io: TypedServer,
+  roomId: string,
+  playMode: PlayMode,
+  options?: { skipDebounce?: boolean; pauseAtQueueEnd?: boolean },
+): Promise<void> {
+  if (options?.skipDebounce) {
+    // Still update the timestamp so a normal NEXT right after is debounced
     lastNextTimestamp.set(roomId, Date.now())
+  } else if (_isNextDebounced(roomId)) {
+    return
+  }
+
+  const room = roomRepo.get(roomId)
+  if (room && options?.pauseAtQueueEnd && isAtQueueEnd(room, playMode)) {
+    pauseTrackLocked(io, roomId, true)
+    return
+  }
+
+  const nextTrack = queueService.getNextTrack(roomId, playMode)
+  if (!nextTrack) {
+    stopPlayback(io, roomId)
+    return
+  }
+
+  const success = await _playTrackInRoom(io, roomId, nextTrack)
+  if (!success) {
+    const skipTrack = queueService.getNextTrack(roomId, playMode)
+    if (skipTrack) await _playTrackInRoom(io, roomId, skipTrack)
+  }
+
+  // Refresh debounce timestamp after async work completes.
+  // Without this, a second PLAYER_NEXT waiting on the mutex could pass
+  // the debounce check if _playTrackInRoom took longer than 500ms (e.g.
+  // stream URL resolution), causing a double-skip.
+  lastNextTimestamp.set(roomId, Date.now())
+}
+
+export function reconcileTrackEnd(
+  io: TypedServer,
+  roomId: string,
+  trackId: string,
+  playbackRevision: number,
+  authoritativeEndAt?: number,
+): Promise<void> {
+  return withPlayMutex(roomId, async () => {
+    const room = roomRepo.get(roomId)
+    if (
+      !room ||
+      !room.playState.isPlaying ||
+      room.currentTrack?.id !== trackId ||
+      room.playState.playbackRevision !== playbackRevision
+    ) {
+      return
+    }
+
+    const deadlineReached = authoritativeEndAt !== undefined && Date.now() + 250 >= authoritativeEndAt
+    if (!deadlineReached && estimateCurrentTime(roomId) + 0.25 < room.currentTrack.duration) {
+      scheduleTrackEndWatchdog(io, roomId)
+      return
+    }
+
+    logger.info('Track-end watchdog advancing queue', { roomId, trackId, playbackRevision })
+    await playNextTrackLocked(io, roomId, room.playMode, {
+      skipDebounce: true,
+      pauseAtQueueEnd: room.pauseAtQueueEnd,
+    })
   })
 }
 
@@ -981,6 +1089,7 @@ const CONDUCTOR_REJECT_DRIFT_THRESHOLD_S = 3
 
 /** Remove per-room entries for a deleted room */
 export function cleanupRoom(roomId: string): void {
+  clearTrackEndWatchdog(roomId)
   lastNextTimestamp.delete(roomId)
   conductorRejectCount.delete(roomId)
   playMutexes.delete(roomId)

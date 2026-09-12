@@ -168,3 +168,92 @@ test('pause-at-queue-end keeps the final track loaded', async () => {
     playerService.cleanupRoom(room.id)
   }
 })
+
+test('server advances after track end without a conductor callback', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const io = fakeIo()
+  const firstTrack = createTrack(`watchdog-first-${sequence}`)
+  const secondTrack = createTrack(`watchdog-second-${sequence}`)
+  room.queue = [firstTrack, secondTrack]
+  room.currentTrack = firstTrack
+  room.playMode = 'sequential'
+  room.playState = {
+    isPlaying: true,
+    currentTime: firstTrack.duration,
+    serverTimestamp: Date.now(),
+    playbackRevision: 5,
+  }
+
+  try {
+    const advancePromise = playerService.reconcileTrackEnd(io, room.id, firstTrack.id, 5)
+    setTimeout(() => playerService.markPlaybackReady(room.id, webSocketId, secondTrack.id, 6), 10)
+    await advancePromise
+
+    assert.equal(room.currentTrack?.id, secondTrack.id)
+    assert.equal(room.playState.isPlaying, true)
+    assert.equal(room.playState.playbackRevision, 6)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('track-end reconciliation ignores a stale playback revision', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const track = createTrack(`watchdog-stale-${sequence}`)
+  room.queue = [track]
+  room.currentTrack = track
+  room.playState = {
+    isPlaying: true,
+    currentTime: track.duration,
+    serverTimestamp: Date.now(),
+    playbackRevision: 9,
+  }
+
+  try {
+    await playerService.reconcileTrackEnd(fakeIo(), room.id, track.id, 8)
+
+    assert.equal(room.currentTrack?.id, track.id)
+    assert.equal(room.playState.isPlaying, true)
+    assert.equal(room.playState.playbackRevision, 9)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('authoritative watchdog deadline advances despite a stale conductor anchor', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const io = fakeIo()
+  const firstTrack = createTrack(`deadline-first-${sequence}`)
+  const secondTrack = createTrack(`deadline-second-${sequence}`)
+  room.queue = [firstTrack, secondTrack]
+  room.currentTrack = firstTrack
+  room.playMode = 'sequential'
+  room.playState = {
+    isPlaying: true,
+    currentTime: 10,
+    serverTimestamp: Date.now(),
+    playbackRevision: 11,
+  }
+
+  try {
+    const advancePromise = playerService.reconcileTrackEnd(io, room.id, firstTrack.id, 11, Date.now() - 1)
+    setTimeout(() => playerService.markPlaybackReady(room.id, webSocketId, secondTrack.id, 12), 10)
+    await advancePromise
+
+    assert.equal(room.currentTrack?.id, secondTrack.id)
+    assert.equal(room.playState.playbackRevision, 12)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('watchdog delay safely chunks durations beyond the Node timeout limit', () => {
+  assert.equal(playerService.getTrackEndWatchdogDelay(Number.MAX_SAFE_INTEGER), 2_147_000_000)
+  assert.equal(playerService.getTrackEndWatchdogDelay(5_000), 7_000)
+})
