@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { MediaProcessingError, normalizeMediaCookie, resolveMediaCookie } from './customMediaService.js'
+import {
+  getYtDlpRuntimeArgs,
+  MediaProcessingError,
+  normalizeMediaCookie,
+  resolveMediaCookie,
+} from './customMediaService.js'
 
 test('normalizes a browser Cookie header into Netscape format', () => {
   const normalized = normalizeMediaCookie('Cookie: SID=secret; PREF=lang%3Den', 'youtube')
@@ -33,4 +38,14 @@ test('room media cookies override environment defaults', () => {
   assert.match(roomOverride!, /\tSID\troom$/m)
   assert.doesNotMatch(roomOverride!, /\tSID\tenvironment$/m)
   assert.equal(resolveMediaCookie(null, null, 'youtube'), null)
+})
+
+test('YouTube imports use the JavaScript challenge solver runtime', () => {
+  assert.deepEqual(getYtDlpRuntimeArgs('www.youtube.com'), [
+    '--js-runtimes',
+    'node',
+    '--remote-components',
+    'ejs:github',
+  ])
+  assert.deepEqual(getYtDlpRuntimeArgs('www.bilibili.com'), [])
 })

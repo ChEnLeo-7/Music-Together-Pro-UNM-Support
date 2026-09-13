@@ -294,6 +294,17 @@ function isVideoImportUrl(rawUrl: string): boolean {
   }
 }
 
+function isYoutubeHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase()
+  return ['youtube.com', 'youtu.be', 'youtube-nocookie.com'].some(
+    (host) => normalized === host || normalized.endsWith(`.${host}`),
+  )
+}
+
+export function getYtDlpRuntimeArgs(hostname: string): string[] {
+  return isYoutubeHost(hostname) ? ['--js-runtimes', 'node', '--remote-components', 'ejs:github'] : []
+}
+
 async function runYtDlp(
   url: string,
   destination: string,
@@ -327,6 +338,10 @@ async function runYtDlp(
     outputTemplate,
     '--print-json',
   ]
+  // Current YouTube clients require both a JavaScript runtime and the EJS
+  // challenge solver. Keep this limited to YouTube so Bilibili imports do not
+  // needlessly fetch the remote solver component.
+  args.push(...getYtDlpRuntimeArgs(parsed.hostname))
   // A bare `ffmpeg` uses PATH. Passing it to --ffmpeg-location makes yt-dlp
   // treat it as a directory and prevents discovery of ffprobe beside it.
   if (config.media.ffmpegPath && config.media.ffmpegPath !== 'ffmpeg') {
