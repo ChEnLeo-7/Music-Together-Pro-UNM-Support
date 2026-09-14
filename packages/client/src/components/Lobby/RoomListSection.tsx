@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import type { RoomListItem } from '@music-together/shared'
 import { RoomCard } from './RoomCard'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useI18n } from '@/lib/i18n'
 
 interface RoomListSectionProps {
   rooms: RoomListItem[]
@@ -11,11 +12,12 @@ interface RoomListSectionProps {
 }
 
 export function RoomListSection({ rooms, isLoading, onRoomClick }: RoomListSectionProps) {
+  const t = useI18n((s) => s.t)
   return (
     <>
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-foreground/80">
-          活跃房间
+          {t('activeRooms')}
           {!isLoading && rooms.length > 0 && (
             <span className="ml-2 text-sm font-normal text-muted-foreground">({rooms.length})</span>
           )}
@@ -46,8 +48,8 @@ export function RoomListSection({ rooms, isLoading, onRoomClick }: RoomListSecti
         >
           <Music className="h-10 w-10 text-muted-foreground/25" />
           <div>
-            <p className="text-base font-medium text-foreground/60">还没有活跃的房间</p>
-            <p className="mt-1 text-sm text-muted-foreground">创建一个房间，邀请朋友一起听歌</p>
+            <p className="text-base font-medium text-foreground/60">{t('noActiveRooms')}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{t('noActiveRoomsDescription')}</p>
           </div>
         </motion.div>
       ) : (

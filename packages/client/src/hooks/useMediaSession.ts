@@ -77,9 +77,9 @@ export function useMediaSession({ play, pause, next, prev, seek }: MediaSessionC
       if (now - lastVoteRef.current < TIMING.PLAYER_NEXT_DEBOUNCE_MS) return
       lastVoteRef.current = now
       socket.emit(EVENTS.VOTE_START, { action })
-       toast.info(t('voteStarted', { action: getVoteActionLabel(action) }))
+      toast.info(t('voteStarted', { action: getVoteActionLabel(action) }))
     },
-     [socket, t],
+    [socket, t],
   )
 
   // Register action handlers based on the current ability.

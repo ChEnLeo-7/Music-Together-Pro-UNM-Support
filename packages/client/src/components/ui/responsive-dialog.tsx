@@ -170,6 +170,8 @@ function ResponsiveDialogBody({ className, ...props }: React.ComponentProps<'div
 // Exports
 // ---------------------------------------------------------------------------
 
+// The responsive hook belongs with the dialog primitives so consumers share one viewport implementation.
+/* eslint-disable react-refresh/only-export-components */
 export {
   ResponsiveDialog,
   ResponsiveDialogBody,
@@ -181,3 +183,4 @@ export {
   ResponsiveDialogTitle,
   useIsResponsiveMobile,
 }
+/* eslint-enable react-refresh/only-export-components */

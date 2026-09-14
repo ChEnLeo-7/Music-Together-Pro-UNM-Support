@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType, type Request, type Response } from 'express'
 import * as z from 'zod/v4'
-import { EVENTS } from '@music-together/shared'
+import { EVENTS, ERROR_CODE } from '@music-together/shared'
 import { roomRepo } from '../repositories/roomRepository.js'
 import { persistentRoomRepo } from '../repositories/persistentRoomRepository.js'
 import { canConfigureRoomUnm, getUnmServerUrl, normalizeUnmServerUrl } from '../services/runtimeConfigService.js'
@@ -20,11 +20,11 @@ const updateSettingsSchema = z.object({
 function requireRoomAccess(req: Request, res: Response, roomId: string) {
   const room = roomRepo.get(roomId)
   if (!room) {
-    res.status(404).json({ error: 'Room not found' })
+    res.status(404).json({ code: ERROR_CODE.ROOM_NOT_FOUND, error: '' })
     return null
   }
   if (!req.identityUserId || !room.users.some((user) => user.id === req.identityUserId && user.online !== false)) {
-    res.status(403).json({ error: 'Forbidden' })
+    res.status(403).json({ code: ERROR_CODE.NO_PERMISSION, error: '' })
     return null
   }
   return room
@@ -34,9 +34,7 @@ function requireRoomUnmManagerAccess(req: Request, res: Response, roomId: string
   const room = requireRoomAccess(req, res, roomId)
   if (!room) return null
   if (!canConfigureRoomUnm(room.creatorId, req.identityUserId, userRepo.isServerAdmin(req.identityUserId ?? ''))) {
-    res
-      .status(403)
-      .json({ code: 'UNM_OWNER_REQUIRED', error: 'Only the room owner or a server administrator can configure UNM' })
+    res.status(403).json({ code: 'UNM_OWNER_REQUIRED', error: '' })
     return null
   }
   return room
@@ -59,7 +57,7 @@ export function createSettingsRoutes(io: TypedServer): RouterType {
   router.get('/', (req: Request, res: Response) => {
     const parsed = roomQuerySchema.safeParse(req.query)
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid settings query' })
+      res.status(400).json({ code: ERROR_CODE.INVALID_INPUT, error: '' })
       return
     }
 
@@ -75,7 +73,7 @@ export function createSettingsRoutes(io: TypedServer): RouterType {
   router.patch('/', (req: Request, res: Response) => {
     const parsed = updateSettingsSchema.safeParse(req.body)
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid settings' })
+      res.status(400).json({ code: ERROR_CODE.INVALID_INPUT, error: '' })
       return
     }
 
@@ -84,7 +82,7 @@ export function createSettingsRoutes(io: TypedServer): RouterType {
 
     const requestedUrl = validateUnmServerUrl(parsed.data.unmServerUrl ?? '')
     if (requestedUrl === null) {
-      res.status(400).json({ code: 'INVALID_UNM_URL', error: 'UNM server URL must be a valid HTTP(S) URL' })
+      res.status(400).json({ code: 'INVALID_UNM_URL', error: '' })
       return
     }
     room.unmServerUrl = requestedUrl

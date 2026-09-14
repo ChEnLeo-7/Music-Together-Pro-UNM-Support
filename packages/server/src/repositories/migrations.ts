@@ -141,7 +141,9 @@ const migrations: Migration[] = [
         }
       }
 
-      const corrupted = db.prepare(`
+      const corrupted = db
+        .prepare(
+          `
         SELECT id FROM rooms
         WHERE (
           (password_ciphertext IS NOT NULL) +
@@ -150,7 +152,9 @@ const migrations: Migration[] = [
           (password_key_version IS NOT NULL)
         ) NOT IN (0, 4)
         LIMIT 1
-      `).get() as { id: string } | undefined
+      `,
+        )
+        .get() as { id: string } | undefined
       if (corrupted) {
         throw new Error(`Room ${corrupted.id} has a partial encrypted password credential`)
       }
@@ -208,9 +212,13 @@ function hasTable(db: Database, table: string): boolean {
 
 export function runMigrations(db: Database): void {
   if (!hasTable(db, 'schema_migrations')) {
-    const existingApplicationTables = ['users', 'sessions', 'rooms', 'platform_auth', 'room_members'].some((table) => hasTable(db, table))
+    const existingApplicationTables = ['users', 'sessions', 'rooms', 'platform_auth', 'room_members'].some((table) =>
+      hasTable(db, table),
+    )
     if (existingApplicationTables) {
-      throw new Error('Unversioned database schema detected. Run the explicit account:reset command after taking a backup.')
+      throw new Error(
+        'Unversioned database schema detected. Run the explicit account:reset command after taking a backup.',
+      )
     }
     db.exec('CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)')
   }

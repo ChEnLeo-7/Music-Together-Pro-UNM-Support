@@ -47,6 +47,7 @@ export async function generateQrCode(): Promise<{ key: string; qrimg: string } |
 export async function checkQrStatus(key: string): Promise<{
   status: number
   message: string
+  code?: string
   cookie?: string
 }> {
   try {
@@ -61,14 +62,16 @@ export async function checkQrStatus(key: string): Promise<{
       803: '登录成功',
     }
 
+    const status = code >= 800 && code <= 803 ? code : 800
     return {
-      status: code,
+      status,
       message: messages[code] ?? `未知状态 (${code})`,
+      code: status === code ? undefined : 'QR_CHECK_FAILED',
       cookie: code === 803 ? cookie : undefined,
     }
   } catch (err) {
     logger.error('Netease QR check failed', err)
-    return { status: 800, message: '检查状态失败' }
+    return { status: 800, code: 'QR_CHECK_FAILED', message: '' }
   }
 }
 

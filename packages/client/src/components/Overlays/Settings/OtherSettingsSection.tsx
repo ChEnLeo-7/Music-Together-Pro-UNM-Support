@@ -3,6 +3,7 @@ import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { SettingRow } from './SettingRow'
+import { useI18n } from '@/lib/i18n'
 
 export function OtherSettingsSection() {
   const bgFps = useSettingsStore((s) => s.bgFps)
@@ -11,14 +12,15 @@ export function OtherSettingsSection() {
   const setBgFps = useSettingsStore((s) => s.setBgFps)
   const setBgFlowSpeed = useSettingsStore((s) => s.setBgFlowSpeed)
   const setBgRenderScale = useSettingsStore((s) => s.setBgRenderScale)
+  const t = useI18n((s) => s.t)
 
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-base font-semibold">背景渲染</h3>
+        <h3 className="text-base font-semibold">{t('backgroundRendering')}</h3>
         <Separator className="mt-2 mb-4" />
 
-        <SettingRow label="帧率" description="更高帧率更流畅，但消耗更多性能">
+        <SettingRow label={t('frameRate')} description={t('frameRateDescription')}>
           <Select value={String(bgFps)} onValueChange={(v) => setBgFps(parseInt(v, 10))}>
             <SelectTrigger className="w-24">
               <SelectValue />
@@ -31,7 +33,7 @@ export function OtherSettingsSection() {
           </Select>
         </SettingRow>
 
-        <SettingRow label="流动速度" description={`当前: ${bgFlowSpeed.toFixed(1)}`}>
+        <SettingRow label={t('flowSpeed')} description={t('currentValue', { value: bgFlowSpeed.toFixed(1) })}>
           <Slider
             value={[bgFlowSpeed * 10]}
             min={5}
@@ -42,7 +44,7 @@ export function OtherSettingsSection() {
           />
         </SettingRow>
 
-        <SettingRow label="渲染精度" description="更低精度更省性能">
+        <SettingRow label={t('renderScale')} description={t('renderScaleDescription')}>
           <Select value={String(bgRenderScale)} onValueChange={(v) => setBgRenderScale(parseFloat(v))}>
             <SelectTrigger className="w-24">
               <SelectValue />

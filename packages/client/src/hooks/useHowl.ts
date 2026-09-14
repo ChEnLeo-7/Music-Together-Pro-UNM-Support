@@ -434,7 +434,10 @@ function syncHowlerDolbyCodecSupport(audioFormat: string | undefined): void {
  * Phase 1: Create Howl with volume=0 (silent)
  * Phase 2: onload → seek to target → delay → fade-in unmute
  */
-export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Track) => boolean) {
+export function useHowl(
+  onTrackEnd: (reason?: 'ended' | 'failed') => void,
+  onTrackLoadFailure?: (track: Track) => boolean,
+) {
   const t = useI18n((s) => s.t)
   const howlRef = useRef<AudioEngine | null>(null)
   const soundIdRef = useRef<number | undefined>(undefined)
@@ -488,7 +491,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
               console.warn('Playback stalled, skipping track')
               toast.error(t('playbackInterrupted'))
               stalledRef.current = { lastSeek: -1, since: 0 }
-              onTrackEnd()
+              onTrackEnd('failed')
               return
             }
             // still stalled but not timed out yet — keep since
@@ -614,7 +617,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
           if (howlRef.current !== howl) return
           usePlayerStore.getState().setIsPlaying(false)
           stopTimeUpdate()
-          onTrackEnd()
+          onTrackEnd('ended')
         },
         onloaderror: (_id: number | null, msg: unknown) => {
           // If a newer track has been loaded, this Howl is stale — ignore.
@@ -629,14 +632,18 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
           if (onTrackLoadFailure?.(track)) return
           console.error('Howl load error (after retry):', msg)
           toast.error(t('trackLoadFailed', { track: trackTitleRef.current }))
-          onTrackEnd()
+          onTrackEnd('failed')
         },
         onplayerror: function (soundId: number) {
           if (playbackAnchor) {
             window.dispatchEvent(new Event(AUDIO_UNLOCK_REQUIRED_EVENT))
-            window.addEventListener(AUDIO_UNLOCKED_EVENT, () => {
-              if (howlRef.current === howl) howl.play(soundId)
-            }, { once: true })
+            window.addEventListener(
+              AUDIO_UNLOCKED_EVENT,
+              () => {
+                if (howlRef.current === howl) howl.play(soundId)
+              },
+              { once: true },
+            )
             return
           }
           // Try to recover via Howler unlock; give up after timeout
@@ -646,7 +653,7 @@ export function useHowl(onTrackEnd: () => void, onTrackLoadFailure?: (track: Tra
             if (onTrackLoadFailure?.(track)) return
             console.warn('Howl unlock timeout, skipping track')
             toast.error(t('playbackFailed'))
-            onTrackEnd()
+            onTrackEnd('failed')
           }, PLAY_ERROR_TIMEOUT_MS)
           howl.once('unlock', () => {
             if (howlRef.current !== howl) return // Already switched or unmounted

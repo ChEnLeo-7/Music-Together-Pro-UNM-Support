@@ -8,6 +8,7 @@ import { useContext } from 'react'
 import { AbilityContext } from '@/providers/AbilityProvider'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { SettingRow } from './SettingRow'
+import { useI18n } from '@/lib/i18n'
 
 const BETA_BADGE = (
   <span className="rounded bg-yellow-400/20 px-1 py-0.5 text-[10px] font-semibold leading-none text-yellow-600">
@@ -19,16 +20,17 @@ export function LyricsSection() {
   const s = useSettingsStore()
   const ability = useContext(AbilityContext)
   const canSeek = ability.can('seek', 'Player')
+  const t = useI18n((s) => s.t)
 
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-base font-semibold">歌词源</h3>
+        <h3 className="text-base font-semibold">{t('lyricsSource')}</h3>
         <Separator className="mt-2 mb-4" />
 
         <SettingRow
-          label="TTML 在线逐词歌词"
-          description="启用 AMLL 逐词歌词库，仅网易云/QQ 音乐自动匹配"
+          label={t('onlineWordLyrics')}
+          description={t('onlineWordLyricsDescription')}
           onReset={s.ttmlEnabled !== s.ttmlEnabledDefault ? s.resetTtmlEnabled : undefined}
         >
           <Switch checked={s.ttmlEnabled} onCheckedChange={s.setTtmlEnabled} />
@@ -36,8 +38,8 @@ export function LyricsSection() {
 
         {s.ttmlEnabled && (
           <SettingRow
-            label="TTML 歌词库地址"
-            description="URL 模板，%s 会被替换为歌曲 ID，QQ 音乐会自动替换路径"
+            label={t('lyricsDbUrl')}
+            description={t('lyricsDbUrlDescription')}
             onReset={s.ttmlDbUrl !== s.ttmlDbUrlDefault ? s.resetTtmlDbUrl : undefined}
           >
             <Input
@@ -51,12 +53,12 @@ export function LyricsSection() {
       </div>
 
       <div>
-        <h3 className="text-base font-semibold">歌词布局</h3>
+        <h3 className="text-base font-semibold">{t('lyricsLayout')}</h3>
         <Separator className="mt-2 mb-4" />
 
         <SettingRow
-          label="对齐锚点"
-          description="当前歌词行在视口中的锚定方式"
+          label={t('alignmentAnchor')}
+          description={t('alignmentAnchorDescription')}
           onReset={s.lyricAlignAnchor !== s.lyricAlignAnchorDefault ? s.resetLyricAlignAnchor : undefined}
         >
           <Select
@@ -67,16 +69,16 @@ export function LyricsSection() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="top">顶部</SelectItem>
-              <SelectItem value="center">居中</SelectItem>
-              <SelectItem value="bottom">底部</SelectItem>
+              <SelectItem value="top">{t('top')}</SelectItem>
+              <SelectItem value="center">{t('center')}</SelectItem>
+              <SelectItem value="bottom">{t('bottom')}</SelectItem>
             </SelectContent>
           </Select>
         </SettingRow>
 
         <SettingRow
-          label="对齐位置"
-          description={`当前: ${Math.round(s.lyricAlignPosition * 100)}%`}
+          label={t('alignmentPosition')}
+          description={t('currentValue', { value: `${Math.round(s.lyricAlignPosition * 100)}%` })}
           onReset={s.lyricAlignPosition !== s.lyricAlignPositionDefault ? s.resetLyricAlignPosition : undefined}
         >
           <Slider
@@ -91,14 +93,14 @@ export function LyricsSection() {
       </div>
 
       <div>
-        <h3 className="text-base font-semibold">歌词动画</h3>
+        <h3 className="text-base font-semibold">{t('lyricsAnimation')}</h3>
         <Separator className="mt-2 mb-4" />
 
         {canSeek && (
           <SettingRow
-            label="点击歌词跳转"
+            label={t('clickLyricsToSeek')}
             labelExtra={BETA_BADGE}
-            description="开启后点击歌词会跳转播放，可能出现滚动动画异常"
+            description={t('clickLyricsToSeekDescription')}
             onReset={
               s.lyricClickSeekEnabled !== s.lyricClickSeekEnabledDefault ? s.resetLyricClickSeekEnabled : undefined
             }
@@ -108,32 +110,32 @@ export function LyricsSection() {
         )}
 
         <SettingRow
-          label="弹簧动画"
-          description="歌词行切换时使用物理弹簧效果"
+          label={t('springAnimation')}
+          description={t('springAnimationDescription')}
           onReset={s.lyricEnableSpring !== s.lyricEnableSpringDefault ? s.resetLyricEnableSpring : undefined}
         >
           <Switch checked={s.lyricEnableSpring} onCheckedChange={s.setLyricEnableSpring} />
         </SettingRow>
 
         <SettingRow
-          label="模糊效果"
-          description="非当前行歌词模糊"
+          label={t('blurEffect')}
+          description={t('blurEffectDescription')}
           onReset={s.lyricEnableBlur !== s.lyricEnableBlurDefault ? s.resetLyricEnableBlur : undefined}
         >
           <Switch checked={s.lyricEnableBlur} onCheckedChange={s.setLyricEnableBlur} />
         </SettingRow>
 
         <SettingRow
-          label="缩放效果"
-          description="当前行歌词放大突出显示"
+          label={t('scaleEffect')}
+          description={t('scaleEffectDescription')}
           onReset={s.lyricEnableScale !== s.lyricEnableScaleDefault ? s.resetLyricEnableScale : undefined}
         >
           <Switch checked={s.lyricEnableScale} onCheckedChange={s.setLyricEnableScale} />
         </SettingRow>
 
         <SettingRow
-          label="隐藏已播放歌词"
-          description="当前歌词播放完后逐渐淡出已播放行"
+          label={t('hidePlayedLyrics')}
+          description={t('hidePlayedLyricsDescription')}
           onReset={s.lyricHidePassedLines !== s.lyricHidePassedLinesDefault ? s.resetLyricHidePassedLines : undefined}
         >
           <Switch checked={s.lyricHidePassedLines} onCheckedChange={s.setLyricHidePassedLines} />
@@ -141,28 +143,28 @@ export function LyricsSection() {
       </div>
 
       <div>
-        <h3 className="text-base font-semibold">歌词字体</h3>
+        <h3 className="text-base font-semibold">{t('lyricsFont')}</h3>
         <Separator className="mt-2 mb-4" />
 
         <SettingRow
-          label="字体粗细"
-          description="字体粗细值，范围 100-900"
+          label={t('fontWeight')}
+          description={t('fontWeightDescription')}
           onReset={s.lyricFontWeight !== s.lyricFontWeightDefault ? s.resetLyricFontWeight : undefined}
         >
           <NumericInput value={s.lyricFontWeight} onChange={s.setLyricFontWeight} min={100} max={900} />
         </SettingRow>
 
         <SettingRow
-          label="字体大小"
-          description="主歌词字号比例，范围 10-200"
+          label={t('fontSize')}
+          description={t('fontSizeDescription')}
           onReset={s.lyricFontSize !== s.lyricFontSizeDefault ? s.resetLyricFontSize : undefined}
         >
           <NumericInput value={s.lyricFontSize} onChange={s.setLyricFontSize} />
         </SettingRow>
 
         <SettingRow
-          label="翻译字体大小"
-          description="翻译歌词相对主歌词的字号比例，范围 10-200"
+          label={t('translationFontSize')}
+          description={t('translationFontSizeDescription')}
           onReset={
             s.lyricTranslationFontSize !== s.lyricTranslationFontSizeDefault
               ? s.resetLyricTranslationFontSize
@@ -173,8 +175,8 @@ export function LyricsSection() {
         </SettingRow>
 
         <SettingRow
-          label="罗马音字体大小"
-          description="罗马音歌词相对主歌词的字号比例，范围 10-200"
+          label={t('romanFontSize')}
+          description={t('romanFontSizeDescription')}
           onReset={s.lyricRomanFontSize !== s.lyricRomanFontSizeDefault ? s.resetLyricRomanFontSize : undefined}
         >
           <NumericInput value={s.lyricRomanFontSize} onChange={s.setLyricRomanFontSize} />

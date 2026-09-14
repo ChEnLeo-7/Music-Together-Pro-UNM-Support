@@ -11,17 +11,18 @@ import { EVENTS, TIMING } from '@music-together/shared'
 import { ArrowRightToLine, ListMusic, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { memo, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useI18n, type I18nKey } from '@/lib/i18n'
 
 /** Must match SongInfoBar so both modules scale identically with the cover. */
 const DESIGN_WIDTH = 300
 
 const PLAY_MODE_CYCLE: PlayMode[] = ['sequential', 'loop-all', 'loop-one', 'shuffle']
 
-const PLAY_MODE_CONFIG: Record<PlayMode, { icon: typeof Repeat; label: string }> = {
-  sequential: { icon: ArrowRightToLine, label: '顺序播放' },
-  'loop-all': { icon: Repeat, label: '列表循环' },
-  'loop-one': { icon: Repeat1, label: '单曲循环' },
-  shuffle: { icon: Shuffle, label: '随机播放' },
+const PLAY_MODE_CONFIG: Record<PlayMode, { icon: typeof Repeat; labelKey: I18nKey }> = {
+  sequential: { icon: ArrowRightToLine, labelKey: 'modeSequential' },
+  'loop-all': { icon: Repeat, labelKey: 'modeLoopAll' },
+  'loop-one': { icon: Repeat1, labelKey: 'modeLoopOne' },
+  shuffle: { icon: Shuffle, labelKey: 'modeShuffle' },
 }
 
 interface PlayerControlsProps {
@@ -65,6 +66,7 @@ export const PlayerControls = memo(function PlayerControls({
   const wrapperRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const disabled = !currentTrack
+  const t = useI18n((s) => s.t)
 
   useLayoutEffect(() => {
     const wrapper = wrapperRef.current
@@ -88,8 +90,9 @@ export const PlayerControls = memo(function PlayerControls({
   }, [])
 
   useEffect(() => {
-    setIsSeeking(false)
+    const frame = requestAnimationFrame(() => setIsSeeking(false))
     seekDurationRef.current = 0
+    return () => cancelAnimationFrame(frame)
   }, [currentTrack?.id])
 
   const handleSkip = (action: () => void, voteAction: 'next' | 'prev') => {
@@ -107,7 +110,8 @@ export const PlayerControls = memo(function PlayerControls({
   const handlePlayPause = () => {
     if (playCooldown) return
     if (canPlay) {
-      isPlaying ? onPause() : onPlay()
+      if (isPlaying) onPause()
+      else onPlay()
     } else if (canVote) {
       onStartVote(isPlaying ? 'pause' : 'resume')
     }
@@ -128,6 +132,7 @@ export const PlayerControls = memo(function PlayerControls({
 
   const modeConfig = PLAY_MODE_CONFIG[playMode]
   const ModeIcon = modeConfig.icon
+  const modeLabel = t(modeConfig.labelKey)
 
   return (
     <div ref={wrapperRef} className="w-full">
@@ -135,7 +140,9 @@ export const PlayerControls = memo(function PlayerControls({
         {/* 1. Progress bar */}
         <div className="flex w-full flex-col gap-1">
           <Slider
-            value={[duration > 0 ? Math.max(0, Math.min(100, ((isSeeking ? seekTime : currentTime) / duration) * 100)) : 0]}
+            value={[
+              duration > 0 ? Math.max(0, Math.min(100, ((isSeeking ? seekTime : currentTime) / duration) * 100)) : 0,
+            ]}
             max={100}
             step={0.1}
             disabled={disabled || !canSeek || duration <= 0}
@@ -175,7 +182,7 @@ export const PlayerControls = memo(function PlayerControls({
                     className="h-9 w-9 text-white/70 hover:bg-white/10"
                     onClick={handlePlayModeToggle}
                     disabled={!canSetMode && !canVote}
-                    aria-label={modeConfig.label}
+                    aria-label={modeLabel}
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       <motion.div
@@ -191,7 +198,7 @@ export const PlayerControls = memo(function PlayerControls({
                   </Button>
                 </motion.div>
               </TooltipTrigger>
-              <TooltipContent>{modeConfig.label}</TooltipContent>
+              <TooltipContent>{modeLabel}</TooltipContent>
             </Tooltip>
           </div>
 
@@ -206,13 +213,13 @@ export const PlayerControls = memo(function PlayerControls({
                     className="h-9 w-9 text-white/70 hover:bg-white/10"
                     disabled={disabled || skipCooldown}
                     onClick={() => handleSkip(onPrev, 'prev')}
-                    aria-label="上一首"
+                    aria-label={t('previousTrack')}
                   >
                     <SkipBack className="size-5" fill="currentColor" />
                   </Button>
                 </motion.div>
               </TooltipTrigger>
-              <TooltipContent>上一首</TooltipContent>
+              <TooltipContent>{t('previousTrack')}</TooltipContent>
             </Tooltip>
 
             <Tooltip delayDuration={300}>
@@ -224,7 +231,7 @@ export const PlayerControls = memo(function PlayerControls({
                     className="h-14 w-14 rounded-full bg-white/20 text-white/90 hover:bg-white/30 hover:text-white"
                     disabled={disabled || playCooldown || (!canPlay && !canVote)}
                     onClick={handlePlayPause}
-                    aria-label={isPlaying ? '暂停' : '播放'}
+                    aria-label={isPlaying ? t('pause') : t('play')}
                   >
                     {isPlaying ? (
                       <Pause className="size-7" fill="currentColor" />
@@ -234,7 +241,7 @@ export const PlayerControls = memo(function PlayerControls({
                   </Button>
                 </motion.div>
               </TooltipTrigger>
-              <TooltipContent>{isPlaying ? '暂停' : '播放'}</TooltipContent>
+              <TooltipContent>{isPlaying ? t('pause') : t('play')}</TooltipContent>
             </Tooltip>
 
             <Tooltip delayDuration={300}>
@@ -246,13 +253,13 @@ export const PlayerControls = memo(function PlayerControls({
                     className="h-9 w-9 text-white/70 hover:bg-white/10"
                     disabled={disabled || skipCooldown}
                     onClick={() => handleSkip(onNext, 'next')}
-                    aria-label="下一首"
+                    aria-label={t('nextTrack')}
                   >
                     <SkipForward className="size-5" fill="currentColor" />
                   </Button>
                 </motion.div>
               </TooltipTrigger>
-              <TooltipContent>下一首</TooltipContent>
+              <TooltipContent>{t('nextTrack')}</TooltipContent>
             </Tooltip>
           </div>
 
@@ -266,7 +273,7 @@ export const PlayerControls = memo(function PlayerControls({
                     size="icon"
                     className="relative h-9 w-9 text-white/70 hover:bg-white/10"
                     onClick={onOpenQueue}
-                    aria-label="播放列表"
+                    aria-label={t('playlist')}
                   >
                     <ListMusic className="size-5" />
                     {queueLength > 0 && (
@@ -277,7 +284,7 @@ export const PlayerControls = memo(function PlayerControls({
                   </Button>
                 </motion.div>
               </TooltipTrigger>
-              <TooltipContent>播放列表</TooltipContent>
+              <TooltipContent>{t('playlist')}</TooltipContent>
             </Tooltip>
           </div>
         </div>

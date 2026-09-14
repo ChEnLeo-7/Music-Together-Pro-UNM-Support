@@ -9,6 +9,7 @@ import { EVENTS } from '@music-together/shared'
 import '@applemusic-like-lyrics/core/style.css'
 import { LyricPlayer, type LyricPlayerRef } from '@applemusic-like-lyrics/react'
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useI18n } from '@/lib/i18n'
 import {
   getActiveLineIndices,
   mergeLrcTextByTime,
@@ -148,6 +149,7 @@ export function LyricDisplay({ active = true }: LyricDisplayProps) {
   const tlyric = usePlayerStore((s) => s.tlyric)
   const lyricLoading = usePlayerStore((s) => s.lyricLoading)
   const ttmlLines = usePlayerStore((s) => s.ttmlLines)
+  const t = useI18n((s) => s.t)
 
   const alignAnchor = useSettingsStore((s) => s.lyricAlignAnchor)
   const alignPosition = useSettingsStore((s) => s.lyricAlignPosition)
@@ -259,7 +261,7 @@ export function LyricDisplay({ active = true }: LyricDisplayProps) {
   if (!hasLyrics) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-xl text-white/50">{lyricLoading ? '歌词加载中...' : '暂无歌词'}</p>
+        <p className="text-xl text-white/50">{lyricLoading ? t('lyricsLoading') : t('noLyrics')}</p>
       </div>
     )
   }
@@ -269,7 +271,7 @@ export function LyricDisplay({ active = true }: LyricDisplayProps) {
       onKeyDown={handleKeyDown}
       tabIndex={active && clickSeekActive ? 0 : undefined}
       role={active && clickSeekActive ? 'application' : undefined}
-      aria-label={active && clickSeekActive ? '歌词，使用上下方向键选择，回车跳转' : undefined}
+      aria-label={active && clickSeekActive ? t('lyricsKeyboardHint') : undefined}
       className={cn(
         'amll-container h-full w-full',
         clickSeekActive && 'cursor-pointer',

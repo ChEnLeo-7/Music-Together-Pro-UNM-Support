@@ -8,7 +8,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/components/ui/responsive-dialog'
-import { useI18n } from '@/lib/i18n'
+import { getLocalizedError, useI18n } from '@/lib/i18n'
 import type { MusicSource } from '@music-together/shared'
 import { QR_STATUS, QR_TIMING } from '@music-together/shared'
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Smartphone, X } from 'lucide-react'
@@ -19,7 +19,7 @@ interface QrLoginDialogProps {
   onOpenChange: (open: boolean) => void
   platform: MusicSource
   qrData: { key: string; qrimg: string } | null
-  qrStatus: { status: number; message: string } | null
+  qrStatus: { status: number; message: string; code?: string } | null
   isLoading: boolean
   onRefresh: () => void
   onCheckStatus: (key: string) => void
@@ -78,6 +78,17 @@ export function QrLoginDialog({
   }, [qrStatus?.status, onOpenChange])
 
   const statusCode = qrStatus?.status ?? 0
+  const statusText = qrStatus?.code
+    ? getLocalizedError({ code: qrStatus.code }, t)
+    : statusCode === QR_STATUS.WAITING_SCAN
+      ? t('qrStatusWaiting')
+      : statusCode === QR_STATUS.SCANNED
+        ? t('qrStatusScanned')
+        : statusCode === QR_STATUS.SUCCESS
+          ? t('qrStatusSuccess')
+          : statusCode === QR_STATUS.EXPIRED
+            ? t('qrExpired')
+            : null
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -107,7 +118,7 @@ export function QrLoginDialog({
                 {statusCode === QR_STATUS.EXPIRED && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/60">
                     <AlertCircle className="mb-2 h-8 w-8 text-white" />
-                    <p className="text-sm text-white">{t('qrExpired')}</p>
+                    <p className="text-sm text-white">{statusText}</p>
                   </div>
                 )}
                 {statusCode === QR_STATUS.SUCCESS && (
@@ -118,7 +129,9 @@ export function QrLoginDialog({
                 )}
               </>
             )}
-            {!isLoading && !qrData && <p className="text-muted-foreground text-sm">{t('qrGenerateFailed')}</p>}
+            {!isLoading && !qrData && (
+              <p className="text-muted-foreground text-sm">{statusText ?? t('qrGenerateFailed')}</p>
+            )}
           </div>
 
           {/* Status message */}
@@ -132,19 +145,19 @@ export function QrLoginDialog({
             {statusCode === QR_STATUS.SCANNED && (
               <>
                 <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                <span className="text-blue-600">{t('qrScannedConfirm')}</span>
+                <span className="text-blue-600">{statusText}</span>
               </>
             )}
             {statusCode === QR_STATUS.SUCCESS && (
               <>
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
-                <span className="text-green-600">{t('loginSuccessExclamation')}</span>
+                <span className="text-green-600">{statusText}</span>
               </>
             )}
             {statusCode === QR_STATUS.EXPIRED && (
               <>
                 <AlertCircle className="text-destructive h-4 w-4" />
-                <span className="text-destructive">{t('qrExpired')}</span>
+                <span className="text-destructive">{statusText}</span>
               </>
             )}
           </div>

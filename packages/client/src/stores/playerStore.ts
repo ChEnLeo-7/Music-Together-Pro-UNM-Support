@@ -74,15 +74,17 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
     publishLyricTime(timeMs, isSeek)
     set({ currentTime: time, lyricDisplayTimeMs: timeMs })
   },
-  setConfirmedCurrentTime: (time) => set((state) => ({
-    confirmedCurrentTime: time,
-    currentTime: displayTimeForSnapshot(time, state.pendingSeekTarget),
-  })),
-  setPendingSeekTarget: (time) => set((state) => ({
-    pendingSeekTarget: time,
-    pendingSeekRevision: null,
-    currentTime: time ?? state.confirmedCurrentTime,
-  })),
+  setConfirmedCurrentTime: (time) =>
+    set((state) => ({
+      confirmedCurrentTime: time,
+      currentTime: displayTimeForSnapshot(time, state.pendingSeekTarget),
+    })),
+  setPendingSeekTarget: (time) =>
+    set((state) => ({
+      pendingSeekTarget: time,
+      pendingSeekRevision: null,
+      currentTime: time ?? state.confirmedCurrentTime,
+    })),
   setPendingSeekRevision: (revision) => set({ pendingSeekRevision: revision }),
   setLyricDisplayTimeMs: (timeMs) => set({ lyricDisplayTimeMs: Math.max(0, Math.round(timeMs)) }),
   setLyricMotionSuspended: (suspended) => set({ lyricMotionSuspended: suspended }),

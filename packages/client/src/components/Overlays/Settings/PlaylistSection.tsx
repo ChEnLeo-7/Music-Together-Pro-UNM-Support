@@ -3,6 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { MusicSource, MyPlatformAuth, Playlist } from '@music-together/shared'
 import { ListMusic, RefreshCw } from 'lucide-react'
 import { useEffect } from 'react'
+import { useI18n } from '@/lib/i18n'
 
 interface PlaylistSectionProps {
   platform: MusicSource
@@ -33,6 +34,7 @@ export function PlaylistSection({
   onSelectPlaylist,
 }: PlaylistSectionProps) {
   const isLoggedIn = myStatus?.loggedIn ?? false
+  const t = useI18n((s) => s.t)
 
   // Auto-fetch playlists when logged in and no playlists loaded
   useEffect(() => {
@@ -47,7 +49,7 @@ export function PlaylistSection({
       {isLoggedIn && (
         <div className="w-full min-w-0 max-w-full space-y-2 overflow-hidden">
           <div className="flex min-w-0 max-w-full items-center justify-between gap-2">
-            <h4 className="min-w-0 truncate text-sm font-medium">我的歌单</h4>
+            <h4 className="min-w-0 truncate text-sm font-medium">{t('myPlaylists')}</h4>
             <Button
               variant="ghost"
               size="sm"
@@ -56,7 +58,7 @@ export function PlaylistSection({
               className="text-muted-foreground h-7 gap-1 px-2 text-xs"
             >
               <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
-              刷新
+              {t('refresh')}
             </Button>
           </div>
 
@@ -89,14 +91,15 @@ export function PlaylistSection({
                   <div className="min-w-0 flex-1 overflow-hidden">
                     <p className="truncate text-sm font-medium">{pl.name}</p>
                     <p className="text-muted-foreground truncate text-xs">
-                      {pl.trackCount} 首{pl.creator ? ` · ${pl.creator}` : ''}
+                      {t('tracksCount', { count: pl.trackCount })}
+                      {pl.creator ? ` · ${pl.creator}` : ''}
                     </p>
                   </div>
                 </button>
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground py-4 text-center text-xs">暂无歌单</p>
+            <p className="text-muted-foreground py-4 text-center text-xs">{t('noPlaylists')}</p>
           )}
         </div>
       )}

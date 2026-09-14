@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
-import { PLATFORM_LABELS, VIP_LABELS, getPlatformStatus, getMyPlatformStatus } from '@/lib/platform'
+import { PLATFORM_LABEL_KEYS, getPlatformStatus, getMyPlatformStatus } from '@/lib/platform'
 import { storage } from '@/lib/storage'
 import type { MusicSource, MyPlatformAuth, PlatformAuthStatus } from '@music-together/shared'
 import { Crown, KeyRound, LogOut, ScanLine } from 'lucide-react'
@@ -40,18 +40,26 @@ function PlatformRow({
     <div className="flex items-center justify-between gap-3 py-3">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{PLATFORM_LABELS[platform]}</span>
+          <span className="text-sm font-medium">{t(PLATFORM_LABEL_KEYS[platform])}</span>
           {hasVip && (
             <Badge className="gap-1 border-yellow-400/40 bg-yellow-400/15 text-xs text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.12)] hover:bg-yellow-400/20">
               <Crown className="h-3 w-3" />
-              {maxVipType === 10 || maxVipType === 11 ? t('vipVinyl') : maxVipType === 2 ? t('vipDeluxe') : maxVipType === 3 ? t('vipSuper') : VIP_LABELS[maxVipType] || 'VIP'}
+              {maxVipType === 10 || maxVipType === 11
+                ? t('vipVinyl')
+                : maxVipType === 2
+                  ? t('vipDeluxe')
+                  : maxVipType === 3
+                    ? t('vipSuper')
+                    : t('vip')}
             </Badge>
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-           {loggedInCount > 0 ? t('loggedInCountStatus', { count: loggedInCount, vip: hasVip ? '，VIP 可用' : '' }) : t('noLoggedIn')}
+          {loggedInCount > 0
+            ? t('loggedInCountStatus', { count: loggedInCount, vip: hasVip ? t('vipAvailable') : '' })
+            : t('noLoggedIn')}
           {isMyLoggedIn && myStatus?.nickname && (
-             <span className="text-foreground ml-1">({t('currentUser', { nickname: myStatus.nickname })})</span>
+            <span className="text-foreground ml-1">({t('currentUser', { nickname: myStatus.nickname })})</span>
           )}
         </p>
       </div>
@@ -62,10 +70,10 @@ function PlatformRow({
             {(platform === 'netease' || platform === 'kugou' || platform === 'tencent') && (
               <Button variant="outline" size="sm" onClick={() => onQrLogin(platform)} className="gap-1">
                 <ScanLine className="h-3.5 w-3.5" />
-                 {t('scanLogin')}
+                {t('scanLogin')}
               </Button>
             )}
-             <Button variant="outline" size="sm" onClick={onCookieLogin} className="gap-1" aria-label={t('cookieLogin')}>
+            <Button variant="outline" size="sm" onClick={onCookieLogin} className="gap-1" aria-label={t('cookieLogin')}>
               <KeyRound className="h-3.5 w-3.5" />
               Cookie
             </Button>
@@ -73,7 +81,7 @@ function PlatformRow({
         ) : (
           <Button variant="ghost" size="sm" onClick={onLogout} className="text-destructive gap-1">
             <LogOut className="h-3.5 w-3.5" />
-             {t('logout')}
+            {t('logout')}
           </Button>
         )}
       </div>
@@ -112,9 +120,9 @@ export function PlatformAuthSection() {
 
   return (
     <div className="space-y-1">
-       <h3 className="text-base font-semibold">{t('platformAccountsTitle')}</h3>
+      <h3 className="text-base font-semibold">{t('platformAccountsTitle')}</h3>
       <Separator className="mt-2 mb-4" />
-       <p className="text-muted-foreground mb-4 text-xs">{t('platformAccountsVipDesc')}</p>
+      <p className="text-muted-foreground mb-4 text-xs">{t('platformAccountsVipDesc')}</p>
 
       {platforms.map((platform, i) => (
         <div key={platform}>

@@ -4,6 +4,7 @@ import type { Track } from '@music-together/shared'
 import type { TypedServer, TypedSocket } from '../middleware/types.js'
 import { roomRepo } from '../repositories/roomRepository.js'
 import { userRepo } from '../repositories/userRepository.js'
+import { persistentRoomRepo } from '../repositories/persistentRoomRepository.js'
 import * as playerService from './playerService.js'
 import * as roomService from './roomService.js'
 
@@ -256,4 +257,204 @@ test('authoritative watchdog deadline advances despite a stale conductor anchor'
 test('watchdog delay safely chunks durations beyond the Node timeout limit', () => {
   assert.equal(playerService.getTrackEndWatchdogDelay(Number.MAX_SAFE_INTEGER), 2_147_000_000)
   assert.equal(playerService.getTrackEndWatchdogDelay(5_000), 7_000)
+})
+
+test('automatic removal keeps the next track in loop-all order', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const firstTrack = createTrack(`remove-first-${sequence}`)
+  const currentTrack = createTrack(`remove-current-${sequence}`)
+  const nextTrack = createTrack(`remove-next-${sequence}`)
+  room.queue = [firstTrack, currentTrack, nextTrack]
+  room.currentTrack = currentTrack
+  room.playMode = 'loop-all'
+  room.removePlayedTracks = true
+  room.playState = {
+    isPlaying: true,
+    currentTime: currentTrack.duration,
+    serverTimestamp: Date.now(),
+    playbackRevision: 3,
+  }
+
+  try {
+    await playerService.playNextTrackInRoom(fakeIo(), room.id, room.playMode, {
+      skipDebounce: true,
+      removePlayedTrack: true,
+    })
+
+    assert.deepEqual(
+      room.queue.map((track) => track.id),
+      [firstTrack.id, nextTrack.id],
+    )
+    assert.equal(room.currentTrack?.id, nextTrack.id)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('track-end watchdog removes the completed track when the room setting is enabled', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const completedTrack = createTrack(`watchdog-remove-completed-${sequence}`)
+  const nextTrack = createTrack(`watchdog-remove-next-${sequence}`)
+  room.queue = [completedTrack, nextTrack]
+  room.currentTrack = completedTrack
+  room.playMode = 'sequential'
+  room.removePlayedTracks = true
+  room.playState = {
+    isPlaying: true,
+    currentTime: completedTrack.duration,
+    serverTimestamp: Date.now(),
+    playbackRevision: 14,
+  }
+
+  try {
+    const transition = playerService.reconcileTrackEnd(fakeIo(), room.id, completedTrack.id, 14)
+    setTimeout(() => playerService.markPlaybackReady(room.id, webSocketId, nextTrack.id, 15), 10)
+    await transition
+
+    assert.deepEqual(
+      room.queue.map((track) => track.id),
+      [nextTrack.id],
+    )
+    assert.equal(room.currentTrack?.id, nextTrack.id)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('automatic removal stops playback after the only track finishes', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const track = createTrack(`remove-only-${sequence}`)
+  room.queue = [track]
+  room.currentTrack = track
+  room.playMode = 'sequential'
+  room.removePlayedTracks = true
+  room.playState = { isPlaying: true, currentTime: track.duration, serverTimestamp: Date.now(), playbackRevision: 3 }
+
+  try {
+    await playerService.playNextTrackInRoom(fakeIo(), room.id, room.playMode, {
+      skipDebounce: true,
+      removePlayedTrack: true,
+    })
+
+    assert.deepEqual(room.queue, [])
+    assert.equal(room.currentTrack, null)
+    assert.equal(room.playState.isPlaying, false)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('automatic removal ignores a stale natural-end transition', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const currentTrack = createTrack(`remove-stale-current-${sequence}`)
+  const nextTrack = createTrack(`remove-stale-next-${sequence}`)
+  room.queue = [currentTrack, nextTrack]
+  room.currentTrack = currentTrack
+  room.playMode = 'sequential'
+  room.removePlayedTracks = true
+  room.playState = {
+    isPlaying: true,
+    currentTime: currentTrack.duration,
+    serverTimestamp: Date.now(),
+    playbackRevision: 4,
+  }
+
+  try {
+    await playerService.playNextTrackInRoom(fakeIo(), room.id, room.playMode, {
+      skipDebounce: true,
+      removePlayedTrack: true,
+      expectedCurrentTrackId: 'a-different-track',
+      expectedPlaybackRevision: 4,
+    })
+
+    assert.deepEqual(
+      room.queue.map((track) => track.id),
+      [currentTrack.id, nextTrack.id],
+    )
+    assert.equal(room.currentTrack?.id, currentTrack.id)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('automatic removal stops when the replacement track cannot be prepared', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const currentTrack = createTrack(`remove-failed-current-${sequence}`)
+  const invalidTrack = { ...createTrack(`remove-failed-next-${sequence}`), source: 'custom' as const }
+  room.queue = [currentTrack, invalidTrack]
+  room.currentTrack = currentTrack
+  room.playMode = 'sequential'
+  room.removePlayedTracks = true
+  room.playState = {
+    isPlaying: true,
+    currentTime: currentTrack.duration,
+    serverTimestamp: Date.now(),
+    playbackRevision: 4,
+  }
+
+  try {
+    await playerService.playNextTrackInRoom(fakeIo(), room.id, room.playMode, {
+      skipDebounce: true,
+      removePlayedTrack: true,
+    })
+
+    assert.deepEqual(room.queue, [])
+    assert.equal(room.currentTrack, null)
+    assert.equal(room.playState.isPlaying, false)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('automatic removal is not applied to a non-ended next transition', async () => {
+  const { room, webSocketId } = createTestRoom()
+  const currentTrack = createTrack(`remove-disabled-current-${sequence}`)
+  const nextTrack = createTrack(`remove-disabled-next-${sequence}`)
+  room.queue = [currentTrack, nextTrack]
+  room.currentTrack = currentTrack
+  room.playMode = 'sequential'
+  room.removePlayedTracks = true
+  room.playState = { isPlaying: true, currentTime: 20, serverTimestamp: Date.now(), playbackRevision: 4 }
+
+  try {
+    await playerService.playNextTrackInRoom(fakeIo(), room.id, room.playMode, {
+      skipDebounce: true,
+      removePlayedTrack: false,
+    })
+
+    assert.deepEqual(
+      room.queue.map((track) => track.id),
+      [currentTrack.id, nextTrack.id],
+    )
+    assert.equal(room.currentTrack?.id, nextTrack.id)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
+})
+
+test('automatic removal setting is restored for permanent rooms', () => {
+  const { room, webSocketId } = createTestRoom()
+
+  try {
+    roomService.updateSettings(room.id, { permanent: true, removePlayedTracks: true })
+
+    const restored = persistentRoomRepo.loadPermanentRooms().find((candidate) => candidate.id === room.id)
+    assert.equal(restored?.removePlayedTracks, true)
+  } finally {
+    roomRepo.deleteSocketMapping(webSocketId)
+    roomRepo.delete(room.id)
+    playerService.cleanupRoom(room.id)
+  }
 })

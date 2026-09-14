@@ -2,6 +2,7 @@ import { Router, type Router as RouterType } from 'express'
 import { roomRepo } from '../repositories/roomRepository.js'
 import { revealRoomPassword } from '../services/roomCredentialService.js'
 import { listRooms } from '../services/roomService.js'
+import { ERROR_CODE } from '@music-together/shared'
 
 const router: RouterType = Router()
 
@@ -26,13 +27,13 @@ function isValidRoomId(roomId: string): boolean {
 router.get('/:roomId/check', (req, res) => {
   const { roomId } = req.params
   if (!isValidRoomId(roomId)) {
-    res.status(400).json({ error: 'Invalid room ID' })
+    res.status(400).json({ code: ERROR_CODE.INVALID_INPUT, error: '' })
     return
   }
   const room = roomRepo.get(roomId)
 
   if (!room) {
-    res.status(404).json({ exists: false })
+    res.status(404).json({ exists: false, code: ERROR_CODE.ROOM_NOT_FOUND, error: '' })
     return
   }
 
@@ -51,24 +52,24 @@ router.get('/:roomId/password', (req, res) => {
   const { roomId } = req.params
   res.setHeader('Cache-Control', 'no-store')
   if (!isValidRoomId(roomId)) {
-    res.status(400).json({ error: 'INVALID_INPUT' })
+    res.status(400).json({ code: ERROR_CODE.INVALID_INPUT, error: '' })
     return
   }
 
   const room = roomRepo.get(roomId)
   if (!room) {
-    res.status(404).json({ error: 'ROOM_NOT_FOUND' })
+    res.status(404).json({ code: ERROR_CODE.ROOM_NOT_FOUND, error: '' })
     return
   }
   if (!req.identityUserId || req.identityUserId !== room.creatorId) {
-    res.status(403).json({ error: 'NO_PERMISSION' })
+    res.status(403).json({ code: ERROR_CODE.NO_PERMISSION, error: '' })
     return
   }
 
   try {
     res.json({ password: room.credential ? revealRoomPassword(room.credential) : null })
   } catch {
-    res.status(500).json({ error: 'INTERNAL' })
+    res.status(500).json({ code: ERROR_CODE.INTERNAL, error: '' })
   }
 })
 

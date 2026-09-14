@@ -43,17 +43,28 @@ export default function HomePage() {
   const [identityDialogOpen, setIdentityDialogOpen] = useState(false)
 
   // Stores the pending join action while waiting for nickname input
-  const pendingJoinRef = useRef<{ type: 'room'; room: RoomListItem } | { type: 'direct'; roomId: string } | { type: 'create' } | null>(null)
+  const pendingJoinRef = useRef<
+    { type: 'room'; room: RoomListItem } | { type: 'direct'; roomId: string } | { type: 'create' } | null
+  >(null)
 
   // Refs for onError closure to always read the latest values
   const passwordDialogRef = useRef(passwordDialog)
-  passwordDialogRef.current = passwordDialog
   const directRoomIdRef = useRef(directRoomId)
-  directRoomIdRef.current = directRoomId
   const lastJoinedRoomIdRef = useRef('')
   const pendingNavigationRoomIdRef = useRef<string | null>(null)
   const actionLoadingRef = useRef(actionLoading)
-  actionLoadingRef.current = actionLoading
+
+  useEffect(() => {
+    passwordDialogRef.current = passwordDialog
+  }, [passwordDialog])
+
+  useEffect(() => {
+    directRoomIdRef.current = directRoomId
+  }, [directRoomId])
+
+  useEffect(() => {
+    actionLoadingRef.current = actionLoading
+  }, [actionLoading, t])
 
   const setRoom = useRoomStore((s) => s.setRoom)
   const accountMe = useAccountStore((s) => s.me)
@@ -64,7 +75,7 @@ export default function HomePage() {
     if (actionLoading) {
       actionTimeoutRef.current = setTimeout(() => {
         setActionLoading(false)
-         toast.error(t('actionTimeout'))
+        toast.error(t('actionTimeout'))
       }, ACTION_LOADING_TIMEOUT_MS)
     } else {
       if (actionTimeoutRef.current) {
@@ -78,7 +89,7 @@ export default function HomePage() {
         actionTimeoutRef.current = null
       }
     }
-  }, [actionLoading])
+  }, [actionLoading, t])
 
   // Listen for room created / room state / chat history events for navigation
   useEffect(() => {
@@ -132,7 +143,7 @@ export default function HomePage() {
         if (targetRoomId) storage.clearRejoinToken(targetRoomId)
         // If password dialog is already open, show error
         if (passwordDialogRef.current.open) {
-           setPasswordError(error.code === ERROR_CODE.WRONG_PASSWORD ? t('wrongPassword') : t('roomPasswordRequired'))
+          setPasswordError(error.code === ERROR_CODE.WRONG_PASSWORD ? t('wrongPassword') : t('roomPasswordRequired'))
         } else {
           // Direct join hit a password-protected room — open password dialog
           if (targetRoomId) {
@@ -151,11 +162,11 @@ export default function HomePage() {
             })
             setPasswordError(null)
           } else {
-             toast.error(getLocalizedError(error, t))
+            toast.error(getLocalizedError(error, t))
           }
         }
       } else {
-         toast.error(getLocalizedError(error, t))
+        toast.error(getLocalizedError(error, t))
       }
     }
 
@@ -172,7 +183,7 @@ export default function HomePage() {
       socket.off(EVENTS.CHAT_HISTORY, onChatHistory)
       socket.off(EVENTS.ROOM_ERROR, onError)
     }
-   }, [socket, navigate, setRoom, t])
+  }, [socket, navigate, setRoom, t])
 
   const handleCreateRoom = async (nickname: string, roomName?: string, password?: string) => {
     await unlockAudio()
@@ -197,7 +208,7 @@ export default function HomePage() {
         const response = await fetch(`${SERVER_URL}/api/rooms/${encodeURIComponent(room.id)}/check`, {
           credentials: 'include',
         })
-        const check = response.ok ? await response.json() as { mayJoinWithoutPassword?: boolean } : null
+        const check = response.ok ? ((await response.json()) as { mayJoinWithoutPassword?: boolean }) : null
         if (!check?.mayJoinWithoutPassword) {
           setPasswordDialog({ open: true, room })
           setPasswordError(null)
@@ -228,7 +239,7 @@ export default function HomePage() {
   const handleDirectJoin = async () => {
     if (actionLoading) return
     if (!directRoomId.trim()) {
-       toast.error(t('roomIdRequired'))
+      toast.error(t('roomIdRequired'))
       return
     }
     if (!accountMe) {
@@ -333,7 +344,7 @@ export default function HomePage() {
               {hasUpdate && (
                 <span
                   className="absolute -right-2 -top-1 h-2 w-2 rounded-full bg-red-500"
-                  title="有新版本可用，刷新页面以更新"
+                  title={t('updateAvailable')}
                 />
               )}
             </a>

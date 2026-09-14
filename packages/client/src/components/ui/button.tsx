@@ -57,4 +57,6 @@ function Button({
   )
 }
 
+// buttonVariants is intentionally colocated for shadcn-style variant composition.
+// eslint-disable-next-line react-refresh/only-export-components
 export { Button, buttonVariants }

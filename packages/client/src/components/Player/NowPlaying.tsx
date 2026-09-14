@@ -25,21 +25,17 @@ export function NowPlaying({
 }: NowPlayingProps) {
   const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   const t = useI18n((s) => s.t)
-  const [coverError, setCoverError] = useState(false)
+  const [coverErrorTrackId, setCoverErrorTrackId] = useState<string | null>(null)
 
   // Skip layoutId on first frame to prevent unwanted entry animation
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    setReady(true)
+    const frame = requestAnimationFrame(() => setReady(true))
+    return () => cancelAnimationFrame(frame)
   }, [])
   const layoutId = ready && !disableLayoutAnimation ? 'cover-art' : undefined
 
-  // Reset error state when track changes
-  useEffect(() => {
-    setCoverError(false)
-  }, [currentTrack?.id])
-
-  const showCover = currentTrack?.cover && !coverError
+  const showCover = currentTrack?.cover && coverErrorTrackId !== currentTrack.id
 
   const coverContent = showCover ? (
     <img
@@ -47,7 +43,7 @@ export function NowPlaying({
       crossOrigin={isServerAssetUrl(currentTrack.cover) ? 'use-credentials' : undefined}
       alt={currentTrack.title}
       className="h-full w-full object-cover"
-      onError={() => setCoverError(true)}
+      onError={() => setCoverErrorTrackId(currentTrack.id)}
     />
   ) : (
     <div className="flex h-full w-full items-center justify-center bg-secondary">
@@ -79,7 +75,7 @@ export function NowPlaying({
             transition={TITLE_LAYOUT_TRANSITION}
             className="text-[22px] font-semibold leading-tight text-white/90"
           >
-            <MarqueeText>{currentTrack?.title ?? '暂无歌曲'}</MarqueeText>
+            <MarqueeText>{currentTrack?.title ?? t('noCurrentSong')}</MarqueeText>
           </motion.div>
           <motion.div
             layout={sharedIdentity ? 'position' : false}
@@ -87,7 +83,7 @@ export function NowPlaying({
             transition={ARTIST_LAYOUT_TRANSITION}
             className="text-base text-white/50"
           >
-            <MarqueeText>{currentTrack ? currentTrack.artist.join(' / ') : '...'}</MarqueeText>
+            <MarqueeText>{currentTrack ? currentTrack.artist.join(' / ') : t('noCurrentSong')}</MarqueeText>
           </motion.div>
         </div>
       </div>

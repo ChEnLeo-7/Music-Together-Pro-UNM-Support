@@ -4,7 +4,8 @@ import { Separator } from '@/components/ui/separator'
 import { SERVER_URL } from '@/lib/config'
 import { useI18n } from '@/lib/i18n'
 import { getLocalizedError } from '@/lib/i18n'
-import { useEffect, useState } from 'react'
+import { requestError } from '@/lib/request'
+import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 interface AdminUser {
@@ -41,8 +42,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `Request failed: ${res.status}`)
+    throw await requestError(res)
   }
 
   if (res.status === 204) return undefined as T
@@ -62,7 +62,7 @@ export function AdminSection() {
   const [forbidden, setForbidden] = useState(false)
   const [passwords, setPasswords] = useState<Record<string, string>>({})
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setForbidden(false)
     try {
@@ -73,19 +73,19 @@ export function AdminSection() {
       setUsers(userData.users)
       setRooms(roomData.rooms)
     } catch (err) {
-      if (err instanceof Error && err.message.includes('Forbidden')) {
+      if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'NO_PERMISSION') {
         setForbidden(true)
       } else {
-         toast.error(getLocalizedError(err, t))
+        toast.error(getLocalizedError(err, t))
       }
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [load])
 
   const deleteUser = async (user: AdminUser) => {
     if (!window.confirm(`${t('deleteAccountConfirm')} ${user.id}?`)) return
@@ -141,27 +141,30 @@ export function AdminSection() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{user.nickname || user.username || user.id}</p>
-                  <p className="truncate text-xs text-muted-foreground">{user.kind === 'account' ? `@${user.username}` : t('guestAccount')}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {user.kind === 'account' ? `@${user.username}` : t('guestAccount')}
+                  </p>
                   <p className="text-xs text-muted-foreground">
-                    {user.role} / {t('lastSeen')}{' '}
-                    {formatTime(user.lastSeenAt)}
+                    {user.role} / {t('lastSeen')} {formatTime(user.lastSeenAt)}
                   </p>
                 </div>
                 <Button variant="ghost" size="sm" className="text-destructive" onClick={() => deleteUser(user)}>
                   {t('delete')}
                 </Button>
               </div>
-              {user.kind === 'account' && <div className="mt-3 flex gap-2">
-                <Input
-                  type="password"
-                  placeholder={t('newPassword')}
-                  value={passwords[user.id] ?? ''}
-                  onChange={(e) => setPasswords((current) => ({ ...current, [user.id]: e.target.value }))}
-                />
-                <Button variant="outline" onClick={() => resetPassword(user)}>
-                  {t('reset')}
-                </Button>
-              </div>}
+              {user.kind === 'account' && (
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    type="password"
+                    placeholder={t('newPassword')}
+                    value={passwords[user.id] ?? ''}
+                    onChange={(e) => setPasswords((current) => ({ ...current, [user.id]: e.target.value }))}
+                  />
+                  <Button variant="outline" onClick={() => resetPassword(user)}>
+                    {t('reset')}
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
           {!loading && users.length === 0 && <p className="text-sm text-muted-foreground">{t('noUsers')}</p>}

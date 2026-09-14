@@ -200,6 +200,7 @@ export function createRoom(
     },
     playMode: 'loop-all',
     pauseAtQueueEnd: false,
+    removePlayedTracks: false,
     unmServerUrl: '',
   }
 
@@ -362,6 +363,7 @@ export function updateSettings(
     permanent?: boolean
     chatHistoryForNewUsers?: boolean
     pauseAtQueueEnd?: boolean
+    removePlayedTracks?: boolean
     unmServerUrl?: string
   },
 ): void {
@@ -402,6 +404,10 @@ export function updateSettings(
 
   if (settings.pauseAtQueueEnd !== undefined) {
     room.pauseAtQueueEnd = settings.pauseAtQueueEnd
+  }
+
+  if (settings.removePlayedTracks !== undefined) {
+    room.removePlayedTracks = settings.removePlayedTracks
   }
 
   if (settings.unmServerUrl !== undefined) {
@@ -475,7 +481,6 @@ export function getRoomBySocket(socketId: string): { roomId: string; room: RoomD
 export interface JoinValidationResult {
   valid: boolean
   errorCode?: string
-  errorMessage?: string
   /** Whether this is a rejoin (user already in room or same socket mapping) — skip join notification */
   isRejoin: boolean
   grant?: IssuedRoomGrant
@@ -499,7 +504,6 @@ export function validateJoinRequest(
     return {
       valid: false,
       errorCode: 'ROOM_NOT_FOUND',
-      errorMessage: '房间不存在',
       isRejoin: false,
     }
   }
@@ -521,15 +525,9 @@ export function validateJoinRequest(
     socketId,
   })
   if (!admission.authorized) {
-    const messages = {
-      ROOM_PASSWORD_REQUIRED: '请输入房间密码',
-      WRONG_PASSWORD: '密码错误',
-      RATE_LIMITED: '尝试过于频繁，请稍后再试',
-    }
     return {
       valid: false,
       errorCode: admission.errorCode,
-      errorMessage: messages[admission.errorCode],
       isRejoin,
     }
   }

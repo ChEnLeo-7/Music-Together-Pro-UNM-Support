@@ -25,7 +25,9 @@ function ErrorFallback({ error, resetErrorBoundary }: { error: unknown; resetErr
         <AlertTriangle className="h-12 w-12 text-destructive" />
         <h2 className="text-xl font-semibold">{t('unexpectedErrorTitle')}</h2>
         <p className="text-sm text-muted-foreground">{t('unexpectedError')}</p>
-        {showDiagnostics && <pre className="max-w-full overflow-auto text-left text-xs text-muted-foreground">{diagnostic}</pre>}
+        {showDiagnostics && (
+          <pre className="max-w-full overflow-auto text-left text-xs text-muted-foreground">{diagnostic}</pre>
+        )}
         <Button onClick={resetErrorBoundary} variant="default">
           {t('retry')}
         </Button>

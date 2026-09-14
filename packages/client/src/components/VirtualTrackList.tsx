@@ -4,6 +4,7 @@ import type { Track } from '@music-together/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Loader2, Music2 } from 'lucide-react'
 import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import { useI18n } from '@/lib/i18n'
 import { TrackListItem } from './TrackListItem'
 
 /** Start loading more items when the last visible row is within this many rows of the end */
@@ -56,13 +57,15 @@ export const VirtualTrackList = forwardRef<VirtualTrackListRef, VirtualTrackList
     onInsertAfterCurrent,
     onArtistClick,
     emptyIcon,
-    emptyMessage = '暂无内容',
+    emptyMessage,
     rowHeight = 52,
     overscan = 5,
     className,
   },
   ref,
 ) {
+  const t = useI18n((s) => s.t)
+  const resolvedEmptyMessage = emptyMessage ?? t('noContent')
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
 
   useImperativeHandle(ref, () => ({
@@ -87,12 +90,17 @@ export const VirtualTrackList = forwardRef<VirtualTrackListRef, VirtualTrackList
     if (lastItem.index >= tracks.length - LOAD_MORE_THRESHOLD && hasMore && !loadingMore) {
       onLoadMore()
     }
-  }, [lastItem?.index, tracks.length, hasMore, loadingMore, onLoadMore])
+  }, [lastItem, tracks.length, hasMore, loadingMore, onLoadMore])
 
   // Loading skeleton
   if (loading) {
     return (
-      <div className={cn('min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto rounded-md border', className)}>
+      <div
+        className={cn(
+          'min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto rounded-md border',
+          className,
+        )}
+      >
         <div className="min-w-0 max-w-full divide-y overflow-hidden">
           {Array.from({ length: 5 }).map((_, i) => (
             <TrackSkeleton key={i} />
@@ -105,10 +113,15 @@ export const VirtualTrackList = forwardRef<VirtualTrackListRef, VirtualTrackList
   // Empty state
   if (tracks.length === 0) {
     return (
-      <div className={cn('min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto rounded-md border', className)}>
+      <div
+        className={cn(
+          'min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto rounded-md border',
+          className,
+        )}
+      >
         <div className="flex h-48 flex-col items-center justify-center gap-2 text-muted-foreground">
           {emptyIcon ?? <Music2 className="h-8 w-8" />}
-          <span className="text-sm">{emptyMessage}</span>
+          <span className="text-sm">{resolvedEmptyMessage}</span>
         </div>
       </div>
     )

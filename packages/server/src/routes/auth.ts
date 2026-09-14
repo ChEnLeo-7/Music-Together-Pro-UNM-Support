@@ -70,7 +70,7 @@ function accountDto(user: PersistedUser) {
 function sendAuthError(res: Response, error: unknown): void {
   if (!(error instanceof AccountAuthError)) {
     logger.error('Account operation failed', error)
-    res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Account operation failed' })
+    res.status(500).json({ code: 'INTERNAL_ERROR', error: '' })
     return
   }
   const status =
@@ -87,9 +87,9 @@ function sendAuthError(res: Response, error: unknown): void {
 }
 
 router.post('/guest', (req, res) => {
-  if (!allowAuthAttempt(req)) return void res.status(429).json({ code: 'RATE_LIMITED', error: 'Too many attempts' })
+  if (!allowAuthAttempt(req)) return void res.status(429).json({ code: 'RATE_LIMITED', error: '' })
   const parsed = guestSchema.safeParse(req.body)
-  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_PROFILE', error: 'Invalid nickname' })
+  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_PROFILE', error: '' })
   try {
     const result = accountAuth.createGuest(parsed.data.nickname, req.authPrincipal)
     setSessionCookie(req, res, result.session.token)
@@ -101,11 +101,11 @@ router.post('/guest', (req, res) => {
 
 router.post('/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body)
-  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_INPUT', error: 'Invalid registration' })
+  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_INPUT', error: '' })
   if (!allowAuthAttempt(req, parsed.data.username))
-    return void res.status(429).json({ code: 'RATE_LIMITED', error: 'Too many attempts' })
+    return void res.status(429).json({ code: 'RATE_LIMITED', error: '' })
   if (req.authPrincipal?.user.kind === 'account')
-    return void res.status(409).json({ code: 'ALREADY_REGISTERED', error: 'Already registered' })
+    return void res.status(409).json({ code: 'ALREADY_REGISTERED', error: '' })
   try {
     const result = await accountAuth.register(parsed.data, req.authPrincipal?.session)
     setSessionCookie(req, res, result.session.token)
@@ -117,10 +117,9 @@ router.post('/register', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body)
-  if (!parsed.success)
-    return void res.status(401).json({ code: 'INVALID_CREDENTIALS', error: 'Invalid username or password' })
+  if (!parsed.success) return void res.status(401).json({ code: 'INVALID_CREDENTIALS', error: '' })
   if (!allowAuthAttempt(req, parsed.data.username))
-    return void res.status(429).json({ code: 'RATE_LIMITED', error: 'Too many attempts' })
+    return void res.status(429).json({ code: 'RATE_LIMITED', error: '' })
   try {
     const result = await accountAuth.login(parsed.data.username, parsed.data.password, req.authPrincipal?.session.id)
     setSessionCookie(req, res, result.session.token)
@@ -139,21 +138,21 @@ router.post('/logout', (req, res) => {
 })
 
 router.get('/me', (req, res) => {
-  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: 'Authentication required' })
+  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: '' })
   res.json(accountDto(req.authPrincipal.user))
 })
 
 router.patch('/me', (req, res) => {
-  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: 'Authentication required' })
+  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: '' })
   const parsed = profileSchema.safeParse(req.body)
-  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_PROFILE', error: 'Invalid profile' })
+  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_PROFILE', error: '' })
   res.json(accountDto(userRepo.updateProfile(req.authPrincipal.userId, parsed.data)!))
 })
 
 router.post('/password/change', async (req, res) => {
-  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: 'Authentication required' })
+  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: '' })
   const parsed = passwordSchema.safeParse(req.body)
-  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_PASSWORD', error: 'Invalid password' })
+  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_PASSWORD', error: '' })
   try {
     const result = await accountAuth.changePassword(
       req.authPrincipal.userId,
@@ -168,9 +167,9 @@ router.post('/password/change', async (req, res) => {
 })
 
 router.post('/credentials/bootstrap-change', async (req, res) => {
-  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: 'Authentication required' })
+  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: '' })
   const parsed = bootstrapCredentialsSchema.safeParse(req.body)
-  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_CREDENTIALS', error: 'Invalid credentials' })
+  if (!parsed.success) return void res.status(400).json({ code: 'INVALID_CREDENTIALS', error: '' })
   try {
     const result = await accountAuth.changeBootstrapCredentials(
       req.authPrincipal.userId,
@@ -185,13 +184,12 @@ router.post('/credentials/bootstrap-change', async (req, res) => {
 })
 
 router.post('/me/avatar', async (req, res) => {
-  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: 'Authentication required' })
+  if (!req.authPrincipal) return void res.status(401).json({ code: 'AUTH_REQUIRED', error: '' })
   const parsed = avatarSchema.safeParse(req.body)
   const match = parsed.success ? /^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i.exec(parsed.data.image) : null
-  if (!match) return void res.status(400).json({ code: 'INVALID_IMAGE', error: 'Invalid image' })
+  if (!match) return void res.status(400).json({ code: 'INVALID_IMAGE', error: '' })
   const input = Buffer.from(match[2]!, 'base64')
-  if (input.length > 5 * 1024 * 1024)
-    return void res.status(413).json({ code: 'IMAGE_TOO_LARGE', error: 'Avatar must be 5MB or smaller' })
+  if (input.length > 5 * 1024 * 1024) return void res.status(413).json({ code: 'IMAGE_TOO_LARGE', error: '' })
   try {
     const output = await sharp(input, { failOn: 'error' })
       .rotate()
@@ -207,7 +205,7 @@ router.post('/me/avatar', async (req, res) => {
     res.json({ avatarUrl })
   } catch {
     logger.warn('Avatar processing failed', { userId: req.authPrincipal.userId })
-    res.status(400).json({ code: 'INVALID_IMAGE', error: 'Invalid image data' })
+    res.status(400).json({ code: 'INVALID_IMAGE', error: '' })
   }
 })
 

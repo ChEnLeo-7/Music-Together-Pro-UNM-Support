@@ -126,10 +126,10 @@ const markFailed = db.prepare(`
   WHERE id = @id
 `)
 const touchReference = db.prepare(
-  'UPDATE room_media SET last_referenced_at = ?, updated_at = ? WHERE id = ? AND status = \'ready\'',
+  "UPDATE room_media SET last_referenced_at = ?, updated_at = ? WHERE id = ? AND status = 'ready'",
 )
 const touchAccess = db.prepare(
-  'UPDATE room_media SET last_accessed_at = ?, updated_at = ? WHERE id = ? AND status = \'ready\'',
+  "UPDATE room_media SET last_accessed_at = ?, updated_at = ? WHERE id = ? AND status = 'ready'",
 )
 const selectCleanupCandidates = db.prepare<[number, number], MediaRow>(`
   SELECT * FROM room_media
@@ -290,9 +290,7 @@ export const mediaRepo = {
 
 export function customTrackFromMedia(record: MediaRecord, roomId?: string, streamUrl?: string): Track {
   const token = roomId ? createRoomMediaToken(record.id, roomId) : null
-  const tokenQuery = token
-    ? `?roomId=${encodeURIComponent(roomId!)}&token=${encodeURIComponent(token)}`
-    : ''
+  const tokenQuery = token ? `?roomId=${encodeURIComponent(roomId!)}&token=${encodeURIComponent(token)}` : ''
   return {
     id: `custom:${record.id}`,
     kind: 'custom',

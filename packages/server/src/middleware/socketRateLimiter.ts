@@ -30,7 +30,7 @@ export async function checkSocketRateLimit(socket: TypedSocket): Promise<boolean
   } catch {
     socket.emit(EVENTS.ROOM_ERROR, {
       code: ERROR_CODE.RATE_LIMITED,
-      message: '操作过于频繁，请稍后再试',
+      message: '',
     })
     return false
   }

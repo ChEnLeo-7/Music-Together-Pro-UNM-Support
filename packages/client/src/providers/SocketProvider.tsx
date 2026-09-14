@@ -35,7 +35,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     const onDisconnect = () => {
       setIsConnected(false)
       if (authenticatedRef.current && hadConnectionRef.current) {
-         toast.warning(t('connectionReconnecting'), { id: DISCONNECT_TOAST_ID, duration: Infinity })
+        toast.warning(t('connectionReconnecting'), { id: DISCONNECT_TOAST_ID, duration: Infinity })
       } else {
         toast.dismiss(DISCONNECT_TOAST_ID)
       }
@@ -70,7 +70,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       } catch {
         if (!cancelled && generation === getAuthGeneration()) {
           becomeUnauthenticated()
-           toast.error(t('requestFailed'))
+          toast.error(t('requestFailed'))
         }
       } finally {
         if (!cancelled && generation === getAuthGeneration()) useAccountStore.getState().setLoading(false)

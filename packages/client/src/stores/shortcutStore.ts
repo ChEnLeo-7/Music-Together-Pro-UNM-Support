@@ -16,17 +16,6 @@ export const DEFAULT_SHORTCUTS: ShortcutMap = {
   escape: 'Escape',
 }
 
-export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
-  playPause: '播放 / 暂停',
-  chat: '打开 / 关闭聊天',
-  next: '下一首',
-  prev: '上一首',
-  search: '打开搜索',
-  fullscreen: '播放界面全屏',
-  queue: '打开 / 关闭播放列表',
-  escape: '返回 / 打开设置',
-}
-
 function normalizeKey(key: string): string {
   if (key === 'Spacebar') return ' '
   if (key.length === 1) return key.toLowerCase()
@@ -67,7 +56,9 @@ export const useShortcutStore = create<ShortcutStore>((set, get) => ({
   },
   findAction: (key) => {
     const normalized = normalizeKey(key)
-    const entry = (Object.entries(get().shortcuts) as [ShortcutAction, string][]).find(([, shortcut]) => shortcut && normalizeKey(shortcut) === normalized)
+    const entry = (Object.entries(get().shortcuts) as [ShortcutAction, string][]).find(
+      ([, shortcut]) => shortcut && normalizeKey(shortcut) === normalized,
+    )
     return entry?.[0] ?? null
   },
 }))

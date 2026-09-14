@@ -9,7 +9,9 @@ function resolveDatabasePath(databaseUrl: string): string {
 
 const confirmation = '--confirm=RESET-ALL-APPLICATION-DATA'
 if (!process.argv.includes(confirmation)) {
-  process.stderr.write(`Refusing to reset. Re-run with ${confirmation} after stopping the server and taking a backup.\n`)
+  process.stderr.write(
+    `Refusing to reset. Re-run with ${confirmation} after stopping the server and taking a backup.\n`,
+  )
   process.exitCode = 1
 } else {
   const databasePath = resolveDatabasePath(config.database.url)
@@ -17,5 +19,7 @@ if (!process.argv.includes(confirmation)) {
   rmSync(`${databasePath}-wal`, { force: true })
   rmSync(`${databasePath}-shm`, { force: true })
   rmSync(path.join(path.dirname(databasePath), 'avatars'), { recursive: true, force: true })
-  process.stdout.write('Application database and avatars reset. Start the server to migrate, then run account:init-admin.\n')
+  process.stdout.write(
+    'Application database and avatars reset. Start the server to migrate, then run account:init-admin.\n',
+  )
 }

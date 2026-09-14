@@ -39,10 +39,7 @@ export function ManualCookieDialog({ open, onOpenChange, platform, onSubmit }: M
   }
 
   return (
-    <ResponsiveDialog
-      open={open}
-      onOpenChange={handleOpenChange}
-    >
+    <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
       <ResponsiveDialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-md" showCloseButton={false}>
         <ResponsiveDialogHeader className="relative pr-10">
           <ResponsiveDialogTitle>{t('manualCookieTitle', { platform: label })}</ResponsiveDialogTitle>
@@ -66,15 +63,9 @@ export function ManualCookieDialog({ open, onOpenChange, platform, onSubmit }: M
             <p className="font-medium">{t('howToGetCookie')}</p>
             <ol className="list-inside list-decimal space-y-0.5">
               <li>{t('openPlatformWeb', { platform: label })}</li>
-              <li>
-                {t('openDevTools', { key: 'F12' })}
-              </li>
-              <li>
-                {t('openApplicationTab')}
-              </li>
-              <li>
-                {t('copyCookies')}
-              </li>
+              <li>{t('openDevTools', { key: 'F12' })}</li>
+              <li>{t('openApplicationTab')}</li>
+              <li>{t('copyCookies')}</li>
             </ol>
             <p className="mt-2 text-yellow-500">{t('cookieMemoryNotice')}</p>
           </div>

@@ -462,6 +462,7 @@ interface PlayTrackOptions {
   audioQuality?: AudioQuality
   sourcePriority?: SourcePriority
   forceRefreshStream?: boolean
+  requireQueueMembership?: boolean
 }
 
 export function playTrackInRoom(
@@ -494,6 +495,7 @@ async function _playTrackInRoom(
 ): Promise<boolean> {
   const room = roomRepo.get(roomId)
   if (!room) return false
+  if (options.requireQueueMembership && !room.queue.some((queued) => queued.id === track.id)) return false
 
   let resolved: Track = { ...track }
   if (options.forceRefreshStream && isPlatformSource(resolved.source)) {
@@ -508,8 +510,9 @@ async function _playTrackInRoom(
       queueService.removeTrack(roomId, resolved.id)
       io.to(roomId).emit(EVENTS.QUEUE_UPDATED, { queue: room.queue })
       io.to(roomId).emit(EVENTS.ROOM_ERROR, {
-        code: ERROR_CODE.STREAM_FAILED,
-        message: `无法读取「${resolved.title}」的媒体文件，已从列表移除`,
+        code: ERROR_CODE.CUSTOM_MEDIA_MISSING,
+        message: '',
+        params: { track: resolved.title },
       })
       return false
     }
@@ -563,8 +566,9 @@ async function _playTrackInRoom(
             hasVipCookie,
           })
           io.to(roomId).emit(EVENTS.ROOM_ERROR, {
-            code: ERROR_CODE.STREAM_FAILED,
-            message: `无法切换到请求的音质，已保留当前播放：${resolved.title}`,
+            code: ERROR_CODE.STREAM_QUALITY_SWITCH_FAILED,
+            message: '',
+            params: { track: resolved.title },
           })
           return false
         }
@@ -684,8 +688,9 @@ async function _playTrackInRoom(
           const room2 = roomRepo.get(roomId)
           if (room2) io.to(roomId).emit(EVENTS.QUEUE_UPDATED, { queue: room2.queue })
           io.to(roomId).emit(EVENTS.ROOM_ERROR, {
-            code: ERROR_CODE.STREAM_FAILED,
-            message: `无法获取「${resolved.title}」的播放链接${hint}，已从列表移除`,
+            code: ERROR_CODE.STREAM_URL_FAILED,
+            message: '',
+            params: { track: resolved.title },
           })
           return false
         }
@@ -732,7 +737,13 @@ async function _playTrackInRoom(
   // replaced while the provider was running, so never write stale playback
   // state back into a detached room object.
   const currentRoom = roomRepo.get(roomId)
-  if (!currentRoom || currentRoom !== room) return false
+  if (
+    !currentRoom ||
+    currentRoom !== room ||
+    (options.requireQueueMembership && !currentRoom.queue.some((queued) => queued.id === track.id))
+  ) {
+    return false
+  }
 
   // Update room state — align serverTimestamp with the scheduled execution time
   // so that estimateCurrentTime() is accurate before the first conductor report.
@@ -744,7 +755,14 @@ async function _playTrackInRoom(
       : 0
   const revision = nextPlaybackRevision(room)
   await waitForPlaybackReady(io, room, resolved, revision)
-  if (roomRepo.get(roomId) !== room) return false
+  const preparedRoom = roomRepo.get(roomId)
+  if (
+    !preparedRoom ||
+    preparedRoom !== room ||
+    (options.requireQueueMembership && !preparedRoom.queue.some((queued) => queued.id === track.id))
+  ) {
+    return false
+  }
 
   room.currentTrack = resolved
   if (resolved.source === 'custom') {
@@ -908,6 +926,43 @@ export function stopPlaybackSafe(io: TypedServer, roomId: string): Promise<void>
   })
 }
 
+/** Remove a queue item and, when it is playing, advance under the same mutex. */
+export function removeTrackInRoom(io: TypedServer, roomId: string, trackId: string): Promise<void> {
+  return withPlayMutex(roomId, async () => {
+    const room = roomRepo.get(roomId)
+    if (!room) return
+
+    const isCurrentTrack = room.currentTrack?.id === trackId
+    const currentIndex = isCurrentTrack ? room.queue.findIndex((track) => track.id === trackId) : -1
+    const nextTrack = isCurrentTrack ? getNextTrackAfterRemoval(room, room.playMode, currentIndex) : null
+    queueService.removeTrack(roomId, trackId)
+    const updatedRoom = roomRepo.get(roomId)
+    if (!updatedRoom) return
+    io.to(roomId).emit(EVENTS.QUEUE_UPDATED, { queue: updatedRoom.queue })
+
+    if (isCurrentTrack) {
+      if (!nextTrack) {
+        stopPlayback(io, roomId)
+        return
+      }
+
+      const success = await _playTrackInRoom(io, roomId, nextTrack, { requireQueueMembership: true })
+      if (!success) {
+        const skipTrack = getNextTrackAfterRemovedCurrent(updatedRoom, updatedRoom.playMode, currentIndex)
+        if (skipTrack) {
+          const skipSuccess = await _playTrackInRoom(io, roomId, skipTrack, { requireQueueMembership: true })
+          if (!skipSuccess) stopPlayback(io, roomId)
+        } else {
+          stopPlayback(io, roomId)
+        }
+      }
+      lastNextTimestamp.set(roomId, Date.now())
+    } else if (updatedRoom.queue.length === 0 && !updatedRoom.currentTrack) {
+      stopPlayback(io, roomId)
+    }
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Next / Previous track (debounce + queue navigation inside mutex)
 // ---------------------------------------------------------------------------
@@ -921,7 +976,13 @@ export function playNextTrackInRoom(
   io: TypedServer,
   roomId: string,
   playMode: PlayMode,
-  options?: { skipDebounce?: boolean; pauseAtQueueEnd?: boolean },
+  options?: {
+    skipDebounce?: boolean
+    pauseAtQueueEnd?: boolean
+    removePlayedTrack?: boolean
+    expectedCurrentTrackId?: string
+    expectedPlaybackRevision?: number
+  },
 ): Promise<void> {
   return withPlayMutex(roomId, () => playNextTrackLocked(io, roomId, playMode, options))
 }
@@ -930,8 +991,25 @@ async function playNextTrackLocked(
   io: TypedServer,
   roomId: string,
   playMode: PlayMode,
-  options?: { skipDebounce?: boolean; pauseAtQueueEnd?: boolean },
+  options?: {
+    skipDebounce?: boolean
+    pauseAtQueueEnd?: boolean
+    removePlayedTrack?: boolean
+    expectedCurrentTrackId?: string
+    expectedPlaybackRevision?: number
+  },
 ): Promise<void> {
+  const room = roomRepo.get(roomId)
+  if (!room) return
+
+  if (
+    (options?.expectedCurrentTrackId !== undefined && room.currentTrack?.id !== options.expectedCurrentTrackId) ||
+    (options?.expectedPlaybackRevision !== undefined &&
+      room.playState.playbackRevision !== options.expectedPlaybackRevision)
+  ) {
+    return
+  }
+
   if (options?.skipDebounce) {
     // Still update the timestamp so a normal NEXT right after is debounced
     lastNextTimestamp.set(roomId, Date.now())
@@ -939,22 +1017,38 @@ async function playNextTrackLocked(
     return
   }
 
-  const room = roomRepo.get(roomId)
-  if (room && options?.pauseAtQueueEnd && isAtQueueEnd(room, playMode)) {
+  const currentIndex = room.currentTrack ? room.queue.findIndex((track) => track.id === room.currentTrack?.id) : -1
+  const shouldRemovePlayedTrack = Boolean(options?.removePlayedTrack && room.currentTrack && currentIndex >= 0)
+  const nextTrackBeforeRemoval = shouldRemovePlayedTrack ? getNextTrackAfterRemoval(room, playMode, currentIndex) : null
+  if (shouldRemovePlayedTrack && room.currentTrack) {
+    queueService.removeTrack(roomId, room.currentTrack.id)
+    io.to(roomId).emit(EVENTS.QUEUE_UPDATED, { queue: room.queue })
+  } else if (options?.pauseAtQueueEnd && isAtQueueEnd(room, playMode)) {
     pauseTrackLocked(io, roomId, true)
     return
   }
 
-  const nextTrack = queueService.getNextTrack(roomId, playMode)
+  const nextTrack = shouldRemovePlayedTrack ? nextTrackBeforeRemoval : queueService.getNextTrack(roomId, playMode)
   if (!nextTrack) {
     stopPlayback(io, roomId)
     return
   }
 
-  const success = await _playTrackInRoom(io, roomId, nextTrack)
+  const success = await _playTrackInRoom(io, roomId, nextTrack, {
+    requireQueueMembership: shouldRemovePlayedTrack,
+  })
   if (!success) {
-    const skipTrack = queueService.getNextTrack(roomId, playMode)
-    if (skipTrack) await _playTrackInRoom(io, roomId, skipTrack)
+    const skipTrack = shouldRemovePlayedTrack
+      ? getNextTrackAfterRemovedCurrent(room, playMode, currentIndex)
+      : queueService.getNextTrack(roomId, playMode)
+    if (skipTrack) {
+      const skipSuccess = await _playTrackInRoom(io, roomId, skipTrack, {
+        requireQueueMembership: shouldRemovePlayedTrack,
+      })
+      if (!skipSuccess) stopPlayback(io, roomId)
+    } else {
+      stopPlayback(io, roomId)
+    }
   }
 
   // Refresh debounce timestamp after async work completes.
@@ -962,6 +1056,37 @@ async function playNextTrackLocked(
   // the debounce check if _playTrackInRoom took longer than 500ms (e.g.
   // stream URL resolution), causing a double-skip.
   lastNextTimestamp.set(roomId, Date.now())
+}
+
+function getNextTrackAfterRemoval(room: RoomData, playMode: PlayMode, currentIndex: number): Track | null {
+  const remaining = room.queue.filter((_, index) => index !== currentIndex)
+  if (remaining.length === 0) return null
+
+  if (playMode === 'shuffle') {
+    return remaining[Math.floor(Math.random() * remaining.length)] ?? null
+  }
+
+  const nextIndex = currentIndex + 1
+  if (nextIndex < room.queue.length) return room.queue[nextIndex] ?? null
+  if (playMode === 'loop-all' || playMode === 'loop-one') return remaining[0] ?? null
+  return null
+}
+
+function getNextTrackAfterRemovedCurrent(
+  room: RoomData,
+  playMode: PlayMode,
+  originalCurrentIndex: number,
+): Track | null {
+  if (room.queue.length === 0) return null
+
+  if (playMode === 'shuffle') {
+    return room.queue[Math.floor(Math.random() * room.queue.length)] ?? null
+  }
+
+  const nextTrack = room.queue[originalCurrentIndex] ?? null
+  if (nextTrack) return nextTrack
+  if (playMode === 'loop-all' || playMode === 'loop-one') return room.queue[0] ?? null
+  return null
 }
 
 export function reconcileTrackEnd(
@@ -992,6 +1117,9 @@ export function reconcileTrackEnd(
     await playNextTrackLocked(io, roomId, room.playMode, {
       skipDebounce: true,
       pauseAtQueueEnd: room.pauseAtQueueEnd,
+      removePlayedTrack: room.removePlayedTracks,
+      expectedCurrentTrackId: trackId,
+      expectedPlaybackRevision: playbackRevision,
     })
   })
 }

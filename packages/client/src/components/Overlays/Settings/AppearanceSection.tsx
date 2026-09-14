@@ -4,23 +4,25 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { SettingRow } from './SettingRow'
+import { useI18n } from '@/lib/i18n'
 
 export function AppearanceSection() {
   const s = useSettingsStore()
+  const t = useI18n((state) => state.t)
 
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-base font-semibold">背景渲染</h3>
+        <h3 className="text-base font-semibold">{t('backgroundRendering')}</h3>
         <Separator className="mt-2 mb-4" />
 
-        <SettingRow label="隐藏顶部音源来源" description="关闭左上角延迟旁边的音源/音质切换入口">
+        <SettingRow label={t('hideSourceButton')} description={t('hideSourceButtonDescription')}>
           <Switch checked={s.hidePlayerQualityButton} onCheckedChange={s.setHidePlayerQualityButton} />
         </SettingRow>
 
         <SettingRow
-          label="帧率"
-          description="更高帧率更流畅，但消耗更多性能"
+          label={t('frameRate')}
+          description={t('frameRateDescription')}
           onReset={s.bgFps !== s.bgFpsDefault ? s.resetBgFps : undefined}
         >
           <Select value={String(s.bgFps)} onValueChange={(v) => s.setBgFps(parseInt(v, 10))}>
@@ -36,8 +38,8 @@ export function AppearanceSection() {
         </SettingRow>
 
         <SettingRow
-          label="流动速度"
-          description={`当前: ${s.bgFlowSpeed.toFixed(1)}`}
+          label={t('flowSpeed')}
+          description={t('currentValue', { value: s.bgFlowSpeed.toFixed(1) })}
           onReset={s.bgFlowSpeed !== s.bgFlowSpeedDefault ? s.resetBgFlowSpeed : undefined}
         >
           <Slider
@@ -51,8 +53,8 @@ export function AppearanceSection() {
         </SettingRow>
 
         <SettingRow
-          label="渲染精度"
-          description="更低精度更省性能"
+          label={t('renderScale')}
+          description={t('renderScaleDescription')}
           onReset={s.bgRenderScale !== s.bgRenderScaleDefault ? s.resetBgRenderScale : undefined}
         >
           <Select value={String(s.bgRenderScale)} onValueChange={(v) => s.setBgRenderScale(parseFloat(v))}>

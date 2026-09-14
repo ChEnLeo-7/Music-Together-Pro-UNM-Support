@@ -35,6 +35,7 @@ export interface AuthProvider {
   checkQrStatus(key: string): Promise<{
     status: number
     message: string
+    code?: string
     cookie?: string
   }>
 

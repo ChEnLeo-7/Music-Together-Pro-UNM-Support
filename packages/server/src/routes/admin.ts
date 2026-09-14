@@ -8,10 +8,11 @@ import { destroyRoom } from '../services/roomLifecycleService.js'
 import { AccountAuthError, accountAuth } from '../services/accountAuth.js'
 import { sessionManager } from '../services/sessionManager.js'
 import { cleanupUser as cleanupPlatformAuthUser } from '../services/authService.js'
+import { ERROR_CODE } from '@music-together/shared'
 
 function requireServerAdmin(req: Request, res: Response, next: NextFunction): void {
   if (!req.authPrincipal || !userRepo.isServerAdmin(req.authPrincipal.userId)) {
-    res.status(403).json({ code: 'NO_PERMISSION', error: 'Forbidden' })
+    res.status(403).json({ code: ERROR_CODE.NO_PERMISSION, error: '' })
     return
   }
   next()
@@ -35,12 +36,12 @@ export function createAdminRoutes(io: TypedServer): Router {
     try {
       const targetUserId = req.params.userId
       if (!userRepo.get(targetUserId)) {
-        res.status(404).json({ code: 'USER_NOT_FOUND', error: 'User not found' })
+        res.status(404).json({ code: ERROR_CODE.USER_NOT_FOUND, error: '' })
         return
       }
       const target = userRepo.get(targetUserId)!
       if (target.role === 'admin' && userRepo.countAdmins() <= 1) {
-        res.status(409).json({ code: 'LAST_ADMIN', error: 'Cannot delete the last administrator' })
+        res.status(409).json({ code: ERROR_CODE.LAST_ADMIN, error: '' })
         return
       }
       sessionManager.revokeAllForUser(targetUserId)
@@ -57,13 +58,13 @@ export function createAdminRoutes(io: TypedServer): Router {
         if (room.permanent) persistentRoomRepo.saveRoom(room)
       }
       if (!userRepo.delete(targetUserId)) {
-        res.status(404).json({ code: 'USER_NOT_FOUND', error: 'User not found' })
+        res.status(404).json({ code: ERROR_CODE.USER_NOT_FOUND, error: '' })
         return
       }
       res.status(204).send()
     } catch (error) {
       if (error instanceof Error && error.message === 'LAST_ADMIN') {
-        res.status(409).json({ code: 'LAST_ADMIN', error: 'Cannot delete the last administrator' })
+        res.status(409).json({ code: ERROR_CODE.LAST_ADMIN, error: '' })
         return
       }
       throw error
@@ -73,7 +74,7 @@ export function createAdminRoutes(io: TypedServer): Router {
   router.post('/users/:userId/reset-password', async (req, res) => {
     const parsed = resetPasswordSchema.safeParse(req.body)
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid password' })
+      res.status(400).json({ code: ERROR_CODE.INVALID_PASSWORD, error: '' })
       return
     }
     try {
@@ -106,7 +107,7 @@ export function createAdminRoutes(io: TypedServer): Router {
   router.post('/rooms/:roomId/dissolve', (req, res) => {
     const destroyed = destroyRoom(req.params.roomId, io)
     if (!destroyed) {
-      res.status(404).json({ error: 'Room not found' })
+      res.status(404).json({ code: ERROR_CODE.ROOM_NOT_FOUND, error: '' })
       return
     }
     res.status(204).send()

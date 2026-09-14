@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { useI18n } from '@/lib/i18n'
 
 interface CreateRoomDialogProps {
   open: boolean
@@ -28,6 +29,7 @@ export function CreateRoomDialog({
   defaultNickname,
   isLoading,
 }: CreateRoomDialogProps) {
+  const t = useI18n((s) => s.t)
   const [nickname, setNickname] = useState(defaultNickname)
   const [roomName, setRoomName] = useState('')
   const [passwordEnabled, setPasswordEnabled] = useState(false)
@@ -35,7 +37,8 @@ export function CreateRoomDialog({
 
   useEffect(() => {
     if (open) {
-      setNickname(defaultNickname)
+      const frame = requestAnimationFrame(() => setNickname(defaultNickname))
+      return () => cancelAnimationFrame(frame)
     }
   }, [open, defaultNickname])
 
@@ -58,7 +61,7 @@ export function CreateRoomDialog({
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle className="flex items-center gap-2 text-lg">
             <Music className="h-5 w-5 text-primary" />
-            创建房间
+            {t('createRoom')}
           </ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
@@ -67,22 +70,22 @@ export function CreateRoomDialog({
             <div className="space-y-2">
               <Label className="flex items-center gap-1.5 text-sm font-medium text-foreground/80">
                 <UserRound className="h-3.5 w-3.5" />
-                进入身份
+                {t('enterIdentity')}
               </Label>
               <Input
-                placeholder="你的昵称..."
+                placeholder={t('nicknamePlaceholder')}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 maxLength={LIMITS.NICKNAME_MAX_LENGTH}
                 autoFocus={!defaultNickname}
               />
-              <p className="text-xs text-muted-foreground">已登录账号时会默认使用账号昵称；游客可在此填写临时昵称。</p>
+              <p className="text-xs text-muted-foreground">{t('loggedInNicknameHint')}</p>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-foreground/80">房间名（可选）</Label>
+              <Label className="text-sm font-medium text-foreground/80">{t('roomNameOptional')}</Label>
               <Input
-                placeholder="给房间起个名字..."
+                placeholder={t('roomNamePlaceholder')}
                 value={roomName}
                 onChange={(e) => setRoomName(e.target.value)}
                 maxLength={LIMITS.ROOM_NAME_MAX_LENGTH}
@@ -97,14 +100,14 @@ export function CreateRoomDialog({
                   className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground"
                 >
                   <Lock className="h-3.5 w-3.5" />
-                  设置房间密码
+                  {t('setRoomPassword')}
                 </Label>
               </div>
 
               {passwordEnabled && (
                 <Input
                   type="password"
-                  placeholder="设置房间密码..."
+                  placeholder={t('setRoomPasswordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   maxLength={LIMITS.ROOM_PASSWORD_MAX_LENGTH}
@@ -115,7 +118,7 @@ export function CreateRoomDialog({
 
             <Button type="submit" className="w-full" size="lg" disabled={isLoading || !canSubmit}>
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              创建房间
+              {t('createRoom')}
             </Button>
           </form>
         </ResponsiveDialogBody>

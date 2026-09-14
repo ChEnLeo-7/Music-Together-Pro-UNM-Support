@@ -86,7 +86,13 @@ export function MembersSection({ onSetUserRole }: MembersSectionProps) {
                   </AvatarFallback>
                 </Avatar>
                 <span className="shrink-0">{getRoleIcon(user.role)}</span>
-                <span className={user.online === false ? 'min-w-0 truncate text-sm text-muted-foreground' : 'min-w-0 truncate text-sm'}>
+                <span
+                  className={
+                    user.online === false
+                      ? 'min-w-0 truncate text-sm text-muted-foreground'
+                      : 'min-w-0 truncate text-sm'
+                  }
+                >
                   {user.nickname}
                 </span>
                 {user.id === currentUser?.id && (
@@ -105,7 +111,7 @@ export function MembersSection({ onSetUserRole }: MembersSectionProps) {
                     </Badge>
                   ) : (
                     <Badge className="border-emerald-500/30 bg-emerald-500/15 text-xs text-emerald-400 hover:bg-emerald-500/20">
-                      在线
+                      {t('online')}
                     </Badge>
                   )}
 

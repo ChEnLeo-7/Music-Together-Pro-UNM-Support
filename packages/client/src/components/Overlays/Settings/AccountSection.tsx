@@ -2,8 +2,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { SERVER_URL } from '@/lib/config'
-import { changePassword, createGuestIdentity, loginIdentity, logoutIdentity, registerIdentity, requestJson, updateProfile } from '@/lib/identityAuth'
-import { useI18n } from '@/lib/i18n'
+import {
+  changePassword,
+  createGuestIdentity,
+  loginIdentity,
+  logoutIdentity,
+  registerIdentity,
+  requestJson,
+  updateProfile,
+} from '@/lib/identityAuth'
+import { LocalizedError, useI18n } from '@/lib/i18n'
 import { getLocalizedError } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { useSocketContext } from '@/providers/SocketProvider'
@@ -55,9 +63,9 @@ export function AccountSection({
     try {
       apply(await action())
       setPassword('')
-       toast.success(message)
+      toast.success(message)
     } catch (error) {
-       toast.error(getLocalizedError(error, t))
+      toast.error(getLocalizedError(error, t))
     } finally {
       setLoading(false)
     }
@@ -69,7 +77,8 @@ export function AccountSection({
   }
 
   const submitRegistration = () => {
-    if (!username.trim() || password.length < 10 || !nickname.trim()) return void toast.error(t('registrationRequirements'))
+    if (!username.trim() || password.length < 10 || !nickname.trim())
+      return void toast.error(t('registrationRequirements'))
     void run(() => registerIdentity(socket, { username, password, nickname }), t('accountRegistered'))
   }
 
@@ -97,16 +106,19 @@ export function AccountSection({
       const image = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(String(reader.result))
-        reader.onerror = () => reject(new Error(t('imageReadFailed')))
+        reader.onerror = () => reject(new LocalizedError('imageReadFailed'))
         reader.readAsDataURL(file)
       })
-      const result = await requestJson<{ avatarUrl: string }>('/api/auth/me/avatar', { method: 'POST', body: JSON.stringify({ image }) })
+      const result = await requestJson<{ avatarUrl: string }>('/api/auth/me/avatar', {
+        method: 'POST',
+        body: JSON.stringify({ image }),
+      })
       const updated = { ...me, avatarUrl: result.avatarUrl }
       apply(updated)
       setAvatarVersion(Date.now())
       toast.success(t('avatarUpdated'))
     } catch (error) {
-       toast.error(getLocalizedError(error, t))
+      toast.error(getLocalizedError(error, t))
     } finally {
       setUploadingAvatar(false)
     }
@@ -119,14 +131,17 @@ export function AccountSection({
       setMe(null)
       toast.success(t('accountLoggedOut'))
     } catch (error) {
-       toast.error(getLocalizedError(error, t))
+      toast.error(getLocalizedError(error, t))
     } finally {
       setLoading(false)
     }
   }
 
   const rawAvatarUrl = me?.avatarUrl?.startsWith('/uploads/') ? `${SERVER_URL}${me.avatarUrl}` : me?.avatarUrl
-  const avatarUrl = rawAvatarUrl && avatarVersion ? `${rawAvatarUrl}${rawAvatarUrl.includes('?') ? '&' : '?'}v=${avatarVersion}` : rawAvatarUrl
+  const avatarUrl =
+    rawAvatarUrl && avatarVersion
+      ? `${rawAvatarUrl}${rawAvatarUrl.includes('?') ? '&' : '?'}v=${avatarVersion}`
+      : rawAvatarUrl
 
   return (
     <div className="space-y-8">
@@ -137,19 +152,50 @@ export function AccountSection({
           <div className="space-y-5">
             <div className="flex flex-col items-center gap-3 text-center">
               <label className="group cursor-pointer">
-                <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => void uploadAvatar(event.currentTarget.files?.[0])} />
-                <span className={cn('flex h-28 w-28 items-center justify-center overflow-hidden rounded-full text-3xl font-semibold text-white ring-1 ring-border group-hover:opacity-85', !avatarUrl && 'bg-gradient-to-br from-emerald-500 via-sky-500 to-fuchsia-500')}>
-                  {uploadingAvatar ? t('uploading') : avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : (me.nickname || me.username || '?').slice(0, 1).toUpperCase()}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  onChange={(event) => void uploadAvatar(event.currentTarget.files?.[0])}
+                />
+                <span
+                  className={cn(
+                    'flex h-28 w-28 items-center justify-center overflow-hidden rounded-full text-3xl font-semibold text-white ring-1 ring-border group-hover:opacity-85',
+                    !avatarUrl && 'bg-gradient-to-br from-emerald-500 via-sky-500 to-fuchsia-500',
+                  )}
+                >
+                  {uploadingAvatar ? (
+                    t('uploading')
+                  ) : avatarUrl ? (
+                    <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    (me.nickname || me.username || '?').slice(0, 1).toUpperCase()
+                  )}
                 </span>
               </label>
               <div>
                 <p className="font-semibold">{me.nickname}</p>
-                <p className="text-sm text-muted-foreground">{me.kind === 'account' ? `@${me.username}` : t('guestAccount')}</p>
-                <p className="text-xs text-muted-foreground">{me.role === 'admin' ? t('serverAdmin') : t('standardUser')}</p>
+                <p className="text-sm text-muted-foreground">
+                  {me.kind === 'account' ? `@${me.username}` : t('guestAccount')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {me.role === 'admin' ? t('serverAdmin') : t('standardUser')}
+                </p>
               </div>
             </div>
-            <div className="flex gap-2"><Input value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder={t('nickname')} /><Button variant="outline" onClick={saveNickname} disabled={loading}>{t('save')}</Button></div>
-            <Button variant="destructive" onClick={() => void signOut()} disabled={loading}>{t('logoutAccount')}</Button>
+            <div className="flex gap-2">
+              <Input
+                value={nickname}
+                onChange={(event) => setNickname(event.target.value)}
+                placeholder={t('nickname')}
+              />
+              <Button variant="outline" onClick={saveNickname} disabled={loading}>
+                {t('save')}
+              </Button>
+            </div>
+            <Button variant="destructive" onClick={() => void signOut()} disabled={loading}>
+              {t('logoutAccount')}
+            </Button>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">{t('unauthenticatedDescription')}</p>
@@ -160,24 +206,73 @@ export function AccountSection({
         <div className="space-y-3">
           <h3 className="text-base font-semibold">{me ? t('upgradeGuest') : t('loginOrRegister')}</h3>
           <Separator />
-          <Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder={t('username')} autoComplete="username" />
-          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t('password')} minLength={10} maxLength={128} />
-          {!me && <Input value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder={t('nickname')} />}
+          <Input
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder={t('username')}
+            autoComplete="username"
+          />
+          <Input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder={t('password')}
+            minLength={10}
+            maxLength={128}
+          />
+          {!me && (
+            <Input value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder={t('nickname')} />
+          )}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={submitLogin} disabled={loading}>{t('login')}</Button>
-            <Button variant="outline" onClick={submitRegistration} disabled={loading}>{me ? t('upgradeGuest') : t('register')}</Button>
-            {!me && <Button variant="ghost" onClick={() => void run(() => createGuestIdentity(socket, nickname), t('guestCreated'))} disabled={loading || !nickname.trim()}>{t('continueAsGuest')}</Button>}
+            <Button onClick={submitLogin} disabled={loading}>
+              {t('login')}
+            </Button>
+            <Button variant="outline" onClick={submitRegistration} disabled={loading}>
+              {me ? t('upgradeGuest') : t('register')}
+            </Button>
+            {!me && (
+              <Button
+                variant="ghost"
+                onClick={() => void run(() => createGuestIdentity(socket, nickname), t('guestCreated'))}
+                disabled={loading || !nickname.trim()}
+              >
+                {t('continueAsGuest')}
+              </Button>
+            )}
           </div>
         </div>
       )}
 
       {me?.kind === 'account' && (
         <div className="space-y-3">
-          <div><h3 className="text-base font-semibold">{me.mustChangePassword ? t('passwordChangeRequired') : t('changePassword')}</h3>{me.mustChangePassword && <p className="mt-1 text-sm text-destructive">{t('passwordChangeRequiredDesc')}</p>}</div>
+          <div>
+            <h3 className="text-base font-semibold">
+              {me.mustChangePassword ? t('passwordChangeRequired') : t('changePassword')}
+            </h3>
+            {me.mustChangePassword && (
+              <p className="mt-1 text-sm text-destructive">{t('passwordChangeRequiredDesc')}</p>
+            )}
+          </div>
           <Separator />
-          <Input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder={t('currentPassword')} autoComplete="current-password" />
-          <Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder={t('newAccountPassword')} minLength={10} maxLength={128} autoComplete="new-password" />
-          <Button onClick={submitPasswordChange} disabled={loading}>{t('changePassword')}</Button>
+          <Input
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            placeholder={t('currentPassword')}
+            autoComplete="current-password"
+          />
+          <Input
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            placeholder={t('newAccountPassword')}
+            minLength={10}
+            maxLength={128}
+            autoComplete="new-password"
+          />
+          <Button onClick={submitPasswordChange} disabled={loading}>
+            {t('changePassword')}
+          </Button>
         </div>
       )}
     </div>

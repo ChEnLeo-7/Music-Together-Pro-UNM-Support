@@ -123,9 +123,8 @@ function validateGrant(token: string, input: AuthorizeRoomJoinInput): IssuedRoom
 function consumeBucket(map: Map<string, RateBucket>, key: string, limit: number, windowMs: number): boolean {
   const now = Date.now()
   const current = map.get(key)
-  const bucket = !current || now - current.windowStartedAt >= windowMs
-    ? { count: 0, windowStartedAt: now, lockedUntil: 0 }
-    : current
+  const bucket =
+    !current || now - current.windowStartedAt >= windowMs ? { count: 0, windowStartedAt: now, lockedUntil: 0 } : current
   if (bucket.lockedUntil > now) return false
   bucket.count += 1
   if (bucket.count > limit) bucket.lockedUntil = now + LOCK_MS

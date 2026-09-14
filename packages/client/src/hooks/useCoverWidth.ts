@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * Measures the minimum dimension (min of width/height) of a container element.
@@ -10,8 +10,11 @@ import { useCallback, useRef, useState } from 'react'
 export function useCoverWidth(paused: boolean) {
   const [width, setWidth] = useState(0)
   const pausedRef = useRef(paused)
-  pausedRef.current = paused
   const observerRef = useRef<ResizeObserver | null>(null)
+
+  useEffect(() => {
+    pausedRef.current = paused
+  }, [paused])
 
   const ref = useCallback((node: HTMLDivElement | null) => {
     observerRef.current?.disconnect()

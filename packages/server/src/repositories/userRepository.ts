@@ -63,7 +63,9 @@ export function createUserRepository(database: Database) {
     VALUES (@id, @kind, @username, @nickname, NULL, @passwordHash, @role, 'active', @mustChangePassword, @mustChangeUsername, @now, @now, @now)
   `)
   const touch = database.prepare('UPDATE users SET last_seen_at = ?, updated_at = ? WHERE id = ?')
-  const updateProfile = database.prepare('UPDATE users SET nickname = COALESCE(?, nickname), avatar_url = COALESCE(?, avatar_url), updated_at = ? WHERE id = ?')
+  const updateProfile = database.prepare(
+    'UPDATE users SET nickname = COALESCE(?, nickname), avatar_url = COALESCE(?, avatar_url), updated_at = ? WHERE id = ?',
+  )
   const upgradeGuest = database.prepare(`
     UPDATE users SET kind = 'account', username = ?, password_hash = ?, nickname = ?, updated_at = ?
     WHERE id = ? AND kind = 'guest'
@@ -82,7 +84,9 @@ export function createUserRepository(database: Database) {
   `)
   const deleteUser = database.prepare('DELETE FROM users WHERE id = ?')
   const listUsers = database.prepare<[], UserRow>('SELECT * FROM users ORDER BY created_at DESC')
-  const countAdmins = database.prepare<[], { count: number }>("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'")
+  const countAdmins = database.prepare<[], { count: number }>(
+    "SELECT COUNT(*) AS count FROM users WHERE role = 'admin'",
+  )
 
   return {
     get(userId: string): PersistedUser | null {
@@ -93,8 +97,23 @@ export function createUserRepository(database: Database) {
       const row = selectByUsername.get(username)
       return row ? toUser(row) : null
     },
-    create(input: { id: string; kind: UserKind; username: string | null; nickname: string; passwordHash: string | null; role?: ServerUserRole; mustChangePassword?: boolean; mustChangeUsername?: boolean }): PersistedUser {
-      insert.run({ ...input, role: input.role ?? 'user', mustChangePassword: input.mustChangePassword ? 1 : 0, mustChangeUsername: input.mustChangeUsername ? 1 : 0, now: Date.now() })
+    create(input: {
+      id: string
+      kind: UserKind
+      username: string | null
+      nickname: string
+      passwordHash: string | null
+      role?: ServerUserRole
+      mustChangePassword?: boolean
+      mustChangeUsername?: boolean
+    }): PersistedUser {
+      insert.run({
+        ...input,
+        role: input.role ?? 'user',
+        mustChangePassword: input.mustChangePassword ? 1 : 0,
+        mustChangeUsername: input.mustChangeUsername ? 1 : 0,
+        now: Date.now(),
+      })
       return this.get(input.id)!
     },
     ensure(userId: string, defaults?: { nickname?: string }): PersistedUser {
@@ -110,7 +129,10 @@ export function createUserRepository(database: Database) {
     touch(userId: string, now = Date.now()): void {
       touch.run(now, now, userId)
     },
-    upgradeGuest(userId: string, input: { username: string; passwordHash: string; nickname: string }): PersistedUser | null {
+    upgradeGuest(
+      userId: string,
+      input: { username: string; passwordHash: string; nickname: string },
+    ): PersistedUser | null {
       const result = upgradeGuest.run(input.username, input.passwordHash, input.nickname, Date.now(), userId)
       return result.changes === 1 ? this.get(userId) : null
     },
@@ -121,8 +143,16 @@ export function createUserRepository(database: Database) {
     setPasswordHash(userId: string, passwordHash: string, mustChangePassword = false): boolean {
       return updatePassword.run(passwordHash, mustChangePassword ? 1 : 0, Date.now(), userId).changes === 1
     },
-    compareAndSetPasswordHash(userId: string, expectedHash: string, passwordHash: string, mustChangePassword = false): boolean {
-      return compareAndUpdatePassword.run(passwordHash, mustChangePassword ? 1 : 0, Date.now(), userId, expectedHash).changes === 1
+    compareAndSetPasswordHash(
+      userId: string,
+      expectedHash: string,
+      passwordHash: string,
+      mustChangePassword = false,
+    ): boolean {
+      return (
+        compareAndUpdatePassword.run(passwordHash, mustChangePassword ? 1 : 0, Date.now(), userId, expectedHash)
+          .changes === 1
+      )
     },
     compareAndSetCredentials(userId: string, expectedHash: string, username: string, passwordHash: string): boolean {
       return compareAndUpdateCredentials.run(username, passwordHash, Date.now(), userId, expectedHash).changes === 1

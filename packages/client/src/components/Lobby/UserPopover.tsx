@@ -25,7 +25,7 @@ export function UserPopover() {
 
   useEffect(() => {
     setNickname(me?.nickname ?? '')
-  }, [me?.userId])
+  }, [me?.nickname, me?.userId])
 
   const run = async (action: () => Promise<unknown>, message: string) => {
     setLoading(true)
@@ -35,7 +35,7 @@ export function UserPopover() {
       setPassword('')
       toast.success(message)
     } catch (error) {
-       toast.error(getLocalizedError(error, t))
+      toast.error(getLocalizedError(error, t))
     } finally {
       setLoading(false)
     }
@@ -43,9 +43,10 @@ export function UserPopover() {
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
-     if (mode === 'login') void run(() => loginIdentity(socket, username, password), t('loginSuccess'))
-     if (mode === 'register') void run(() => registerIdentity(socket, { username, password, nickname }), t('registrationSuccess'))
-     if (mode === 'guest') void run(() => createGuestIdentity(socket, nickname), t('guestSessionCreated'))
+    if (mode === 'login') void run(() => loginIdentity(socket, username, password), t('loginSuccess'))
+    if (mode === 'register')
+      void run(() => registerIdentity(socket, { username, password, nickname }), t('registrationSuccess'))
+    if (mode === 'guest') void run(() => createGuestIdentity(socket, nickname), t('guestSessionCreated'))
   }
 
   const displayName = me?.nickname || me?.username || ''
@@ -53,34 +54,125 @@ export function UserPopover() {
     <Popover>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full border border-border/60">
-          {displayName ? <span className="text-sm font-semibold">{displayName.charAt(0).toUpperCase()}</span> : <CircleUser className="h-5 w-5" />}
+          {displayName ? (
+            <span className="text-sm font-semibold">{displayName.charAt(0).toUpperCase()}</span>
+          ) : (
+            <CircleUser className="h-5 w-5" />
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80">
         <div className="space-y-3">
           <div>
-             <p className="text-sm font-medium">{accountLoading ? t('checkingSession') : me?.kind === 'account' ? me.username : me ? me.nickname : t('unauthenticated')}</p>
-             <p className="text-xs text-muted-foreground">{me?.kind === 'account' ? t('accountIdentity', { nickname: me.nickname }) : me ? t('guestIdentity') : t('chooseIdentity')}</p>
+            <p className="text-sm font-medium">
+              {accountLoading
+                ? t('checkingSession')
+                : me?.kind === 'account'
+                  ? me.username
+                  : me
+                    ? me.nickname
+                    : t('unauthenticated')}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {me?.kind === 'account'
+                ? t('accountIdentity', { nickname: me.nickname })
+                : me
+                  ? t('guestIdentity')
+                  : t('chooseIdentity')}
+            </p>
           </div>
           <Separator />
           {mode ? (
             <form onSubmit={submit} className="space-y-2">
-               {mode !== 'guest' && <Input placeholder={t('username')} value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoFocus />}
-               {mode !== 'guest' && <Input type="password" placeholder={t('password')} value={password} onChange={(event) => setPassword(event.target.value)} minLength={mode === 'register' ? 10 : undefined} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />}
-               {mode !== 'login' && <Input placeholder={t('nickname')} value={nickname} onChange={(event) => setNickname(event.target.value)} autoFocus={mode === 'guest'} />}
+              {mode !== 'guest' && (
+                <Input
+                  placeholder={t('username')}
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="username"
+                  autoFocus
+                />
+              )}
+              {mode !== 'guest' && (
+                <Input
+                  type="password"
+                  placeholder={t('password')}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={mode === 'register' ? 10 : undefined}
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                />
+              )}
+              {mode !== 'login' && (
+                <Input
+                  placeholder={t('nickname')}
+                  value={nickname}
+                  onChange={(event) => setNickname(event.target.value)}
+                  autoFocus={mode === 'guest'}
+                />
+              )}
               <div className="flex gap-2">
-                 <Button className="flex-1" disabled={loading}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t('confirmAction')}</Button>
-                 <Button type="button" variant="outline" onClick={() => setMode(null)} disabled={loading}>{t('cancelAction')}</Button>
+                <Button className="flex-1" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('confirmAction')}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setMode(null)} disabled={loading}>
+                  {t('cancelAction')}
+                </Button>
               </div>
             </form>
           ) : (
             <div className="space-y-2">
-               {me && <div className="flex gap-2"><Input value={nickname} onChange={(event) => setNickname(event.target.value)} aria-label={t('nickname')} /><Button variant="outline" onClick={() => void run(() => updateProfile(nickname || me.nickname), t('nicknameSaved'))}>{t('save')}</Button></div>}
+              {me && (
+                <div className="flex gap-2">
+                  <Input
+                    value={nickname}
+                    onChange={(event) => setNickname(event.target.value)}
+                    aria-label={t('nickname')}
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => void run(() => updateProfile(nickname || me.nickname), t('nicknameSaved'))}
+                  >
+                    {t('save')}
+                  </Button>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
-                 {me?.kind !== 'account' && <Button size="sm" variant="outline" onClick={() => { setNickname(me?.nickname ?? ''); setMode('register') }}>{me ? t('upgradeAccount') : t('register')}</Button>}
-                 {me?.kind !== 'account' && <Button size="sm" onClick={() => setMode('login')}>{t('login')}</Button>}
-                 {!me && <Button size="sm" variant="ghost" onClick={() => setMode('guest')}>{t('continueAsGuest')}</Button>}
-                 {me && <Button size="sm" variant="ghost" className="text-destructive" disabled={loading} onClick={() => void run(() => logoutIdentity(socket), t('logout'))}><LogOut className="mr-2 h-4 w-4" />{t('logout')}</Button>}
+                {me?.kind !== 'account' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setNickname(me?.nickname ?? '')
+                      setMode('register')
+                    }}
+                  >
+                    {me ? t('upgradeAccount') : t('register')}
+                  </Button>
+                )}
+                {me?.kind !== 'account' && (
+                  <Button size="sm" onClick={() => setMode('login')}>
+                    {t('login')}
+                  </Button>
+                )}
+                {!me && (
+                  <Button size="sm" variant="ghost" onClick={() => setMode('guest')}>
+                    {t('continueAsGuest')}
+                  </Button>
+                )}
+                {me && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    disabled={loading}
+                    onClick={() => void run(() => logoutIdentity(socket), t('logout'))}
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    {t('logout')}
+                  </Button>
+                )}
               </div>
             </div>
           )}

@@ -38,6 +38,7 @@ export interface RoomData {
   playState: PlayState
   playMode: PlayMode
   pauseAtQueueEnd: boolean
+  removePlayedTracks: boolean
   unmServerUrl: string
 }
 

@@ -93,15 +93,17 @@ export const platformAuthRepo = {
   loadRoom(roomId: string): PersistedPlatformAuth[] {
     return loadRoomStmt.all(roomId).flatMap((row) => {
       try {
-        return [{
-          roomId: row.room_id ?? roomId,
-          userId: row.user_id,
-          platform: row.platform,
-          cookie: decryptPlatformCredential(row.cookie_encrypted),
-          nickname: row.nickname_snapshot ?? row.user_id,
-          vipType: row.vip_type ?? 0,
-          persistPolicy: row.persist_policy,
-        }]
+        return [
+          {
+            roomId: row.room_id ?? roomId,
+            userId: row.user_id,
+            platform: row.platform,
+            cookie: decryptPlatformCredential(row.cookie_encrypted),
+            nickname: row.nickname_snapshot ?? row.user_id,
+            vipType: row.vip_type ?? 0,
+            persistPolicy: row.persist_policy,
+          },
+        ]
       } catch {
         logger.warn('Discarding corrupted persisted platform credential', {
           roomId,

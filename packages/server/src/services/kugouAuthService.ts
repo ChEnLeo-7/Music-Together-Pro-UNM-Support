@@ -245,6 +245,7 @@ const STATUS_MESSAGES: Record<number, string> = {
 export async function checkQrStatus(key: string): Promise<{
   status: number
   message: string
+  code?: string
   cookie?: string
 }> {
   try {
@@ -264,18 +265,19 @@ export async function checkQrStatus(key: string): Promise<{
     const rawStatus = Number(d?.status ?? 0)
     const status = STATUS_MAP[rawStatus] ?? 800
     const message = STATUS_MESSAGES[status] ?? `未知状态 (${rawStatus})`
+    const code = STATUS_MAP[rawStatus] === undefined ? 'QR_CHECK_FAILED' : undefined
 
     if (status === 803 && d?.token && d?.userid) {
       const token = String(d.token)
       const userid = String(d.userid)
       const cookie = `token=${token};userid=${userid}`
-      return { status, message, cookie }
+      return { status, message, code, cookie }
     }
 
-    return { status, message }
+    return { status, message, code }
   } catch (err) {
     logger.error('Kugou QR check failed', err)
-    return { status: 800, message: '检查状态失败' }
+    return { status: 800, code: 'QR_CHECK_FAILED', message: '' }
   }
 }
 

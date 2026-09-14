@@ -14,7 +14,10 @@ export function useSocketEvent<E extends keyof ServerToClientEvents>(event: E, h
 
   // Keep a stable ref so the effect doesn't re-subscribe on every render
   const handlerRef = useRef(handler)
-  handlerRef.current = handler
+
+  useEffect(() => {
+    handlerRef.current = handler
+  }, [handler])
 
   useEffect(() => {
     // Wrapper delegates to the latest handler via ref.

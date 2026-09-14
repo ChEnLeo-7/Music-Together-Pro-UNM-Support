@@ -29,15 +29,6 @@ interface RoomHeaderProps {
   onLeaveRoom: () => void
 }
 
-function getSourceLabel(source?: StreamSource): string {
-  if (source === 'unm') return 'UNM'
-  if (source === 'netease') return '网易云'
-  if (source === 'tencent') return 'QQ'
-  if (source === 'kugou') return '酷狗'
-  if (source === 'custom') return '自定义'
-  return ''
-}
-
 export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeaveRoom }: RoomHeaderProps) {
   const t = useI18n((s) => s.t)
   const roomName = useRoomStore((s) => s.room?.name)
@@ -60,12 +51,15 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
 
   useEffect(() => {
     if (!isConnected) {
-      setRtt(0)
-      return
+      const frame = requestAnimationFrame(() => setRtt(0))
+      return () => cancelAnimationFrame(frame)
     }
-    setRtt(getMedianRTT())
+    const frame = requestAnimationFrame(() => setRtt(getMedianRTT()))
     const timer = setInterval(() => setRtt(getMedianRTT()), 3000)
-    return () => clearInterval(timer)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearInterval(timer)
+    }
   }, [isConnected])
 
   useEffect(() => {
@@ -87,7 +81,7 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
     toast.success(t('roomLinkCopied'))
   }
 
-  const sourceLabel = getSourceLabel(streamSource)
+  const sourceLabel = streamSource ? platformLabel(streamSource, t) : ''
   const sourceClass =
     streamSource === 'unm'
       ? 'bg-muted/70 text-muted-foreground'
@@ -129,13 +123,13 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
                   size="sm"
                   className="hidden h-7 gap-1 rounded-md border-border/50 px-2 font-mono text-xs sm:flex"
                   onClick={copyRoomLink}
-                  aria-label="复制房间链接"
+                  aria-label={t('copyRoomLinkAria')}
                 >
                   {roomId}
                   <Copy className="h-3 w-3" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>复制房间链接</TooltipContent>
+              <TooltipContent>{t('copyRoomLink')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -144,13 +138,13 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
                   size="sm"
                   className="h-7 gap-1 px-1.5 text-sm text-muted-foreground"
                   onClick={onOpenMembers}
-                  aria-label="查看成员"
+                  aria-label={t('viewMembers')}
                 >
                   <Users className="h-3.5 w-3.5" />
                   {userCount}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>查看成员</TooltipContent>
+              <TooltipContent>{t('viewMembers')}</TooltipContent>
             </Tooltip>
           </>
         )}
@@ -161,7 +155,9 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
               className="flex items-center gap-1"
               role="status"
               aria-live="polite"
-              aria-label={isConnected ? `已连接，延迟 ${Math.round(rtt)}ms` : '连接断开，正在重连'}
+              aria-label={
+                isConnected ? t('connectedLatency', { latency: Math.round(rtt) }) : t('disconnectedReconnecting')
+              }
             >
               {isConnected ? (
                 <Wifi className={`h-4 w-4 ${rttColor}`} />
@@ -171,7 +167,9 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
               {isConnected && <span className={`font-mono text-xs tabular-nums ${rttColor}`}>{Math.round(rtt)}ms</span>}
             </span>
           </TooltipTrigger>
-          <TooltipContent>{isConnected ? `已连接，延迟 ${Math.round(rtt)}ms` : '连接断开，正在重连...'}</TooltipContent>
+          <TooltipContent>
+            {isConnected ? t('connectedLatency', { latency: Math.round(rtt) }) : t('disconnectedReconnectingEllipsis')}
+          </TooltipContent>
         </Tooltip>
 
         {sourceLabel &&
@@ -184,7 +182,7 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
                 type="button"
                 className="cursor-pointer transition-opacity hover:opacity-80 active:opacity-60"
                 onClick={() => onOpenSearch('custom')}
-                aria-label="打开自定义媒体"
+                aria-label={t('openCustomMedia')}
               >
                 {sourceLabel}
               </button>
@@ -213,7 +211,7 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
                       onClick={() => selectQuality(option.value)}
                     >
                       <span className="inline-flex min-w-0 items-center gap-2">
-                        <span className="min-w-0 truncate">{option.label}</span>
+                        <span className="min-w-0 truncate">{t(option.labelKey)}</span>
                         {isSelectedQuality(option) && <Check className="h-3.5 w-3.5 shrink-0" />}
                       </span>
                       {option.platform && (
@@ -226,7 +224,7 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
                                 : `shrink-0 text-[10px] ${TRACK_SOURCE_TEXT[option.platform]}`
                           }
                         >
-                          {platformLabel(option.platform)}
+                          {platformLabel(option.platform, t)}
                         </span>
                       )}
                     </button>
@@ -245,12 +243,12 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
               size="icon"
               className="h-8 w-8 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
               onClick={() => onOpenSearch()}
-              aria-label="搜索点歌"
+              aria-label={t('searchMusicAria')}
             >
               <Search className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>搜索点歌</TooltipContent>
+          <TooltipContent>{t('searchMusic')}</TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -260,12 +258,12 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
               size="icon"
               className="hidden h-8 w-8 min-h-11 min-w-11 sm:flex sm:min-h-0 sm:min-w-0"
               onClick={onOpenSettings}
-              aria-label="设置"
+              aria-label={t('settingsAction')}
             >
               <Settings className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>设置</TooltipContent>
+          <TooltipContent>{t('settingsAction')}</TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -275,12 +273,12 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
               size="icon"
               className="hidden h-8 w-8 min-h-11 min-w-11 sm:flex sm:min-h-0 sm:min-w-0"
               onClick={onLeaveRoom}
-              aria-label="离开房间"
+              aria-label={t('leaveRoom')}
             >
               <LogOut className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>离开房间</TooltipContent>
+          <TooltipContent>{t('leaveRoom')}</TooltipContent>
         </Tooltip>
 
         <DropdownMenu>
@@ -289,7 +287,7 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
               variant="ghost"
               size="icon"
               className="h-8 w-8 min-h-11 min-w-11 sm:hidden sm:min-h-0 sm:min-w-0"
-              aria-label="更多操作"
+              aria-label={t('moreActions')}
             >
               <Ellipsis className="h-4 w-4" />
             </Button>
@@ -297,16 +295,16 @@ export function RoomHeader({ onOpenSearch, onOpenSettings, onOpenMembers, onLeav
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={onOpenSettings}>
               <Settings className="mr-2 h-4 w-4" />
-              设置
+              {t('settingsAction')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={copyRoomLink}>
               <Copy className="mr-2 h-4 w-4" />
-              复制房间链接
+              {t('copyRoomLink')}
             </DropdownMenuItem>
             <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onLeaveRoom}>
               <LogOut className="mr-2 h-4 w-4" />
-              离开房间
+              {t('leaveRoom')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

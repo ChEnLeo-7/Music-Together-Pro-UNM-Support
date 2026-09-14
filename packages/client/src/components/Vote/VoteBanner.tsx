@@ -6,6 +6,7 @@ import type { VoteState } from '@music-together/shared'
 import { Check, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { useI18n } from '@/lib/i18n'
 
 interface VoteBannerProps {
   vote: VoteState
@@ -14,6 +15,7 @@ interface VoteBannerProps {
 
 export function VoteBanner({ vote, onCastVote }: VoteBannerProps) {
   const [remainingMs, setRemainingMs] = useState(() => Math.max(0, vote.expiresAt - Date.now()))
+  const t = useI18n((s) => s.t)
 
   const myUserId = storage.getUserId()
   const hasVoted = myUserId in vote.votes
@@ -40,8 +42,10 @@ export function VoteBanner({ vote, onCastVote }: VoteBannerProps) {
       >
         {/* Title */}
         <div className="mb-2 text-center text-sm font-medium text-white/90">
-          <span className="text-white/60">{vote.initiatorNickname}</span> 发起投票：
-          {getVoteActionLabel(vote.action, vote.payload)}
+          {t('voteInitiated', {
+            nickname: vote.initiatorNickname,
+            action: getVoteActionLabel(vote.action, vote.payload),
+          })}
         </div>
 
         {/* Progress bar (time remaining) */}
@@ -55,8 +59,12 @@ export function VoteBanner({ vote, onCastVote }: VoteBannerProps) {
         {/* Votes count + buttons */}
         <div className="flex items-center justify-between">
           <div className="text-xs text-white/60">
-            {approveCount}/{vote.requiredVotes} 赞成
-            {rejectCount > 0 && <span className="ml-2">{rejectCount} 反对</span>}
+            {approveCount}/{vote.requiredVotes} {t('approved')}
+            {rejectCount > 0 && (
+              <span className="ml-2">
+                {rejectCount} {t('rejected')}
+              </span>
+            )}
           </div>
 
           {!hasVoted ? (
@@ -68,7 +76,7 @@ export function VoteBanner({ vote, onCastVote }: VoteBannerProps) {
                 onClick={() => onCastVote(true)}
               >
                 <Check className="h-3.5 w-3.5" />
-                赞成
+                {t('agree')}
               </Button>
               <Button
                 size="sm"
@@ -77,11 +85,11 @@ export function VoteBanner({ vote, onCastVote }: VoteBannerProps) {
                 onClick={() => onCastVote(false)}
               >
                 <X className="h-3.5 w-3.5" />
-                反对
+                {t('disagree')}
               </Button>
             </div>
           ) : (
-            <span className="text-xs text-white/40">已投票</span>
+            <span className="text-xs text-white/40">{t('voted')}</span>
           )}
         </div>
       </motion.div>

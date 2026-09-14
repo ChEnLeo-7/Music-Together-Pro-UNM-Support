@@ -237,11 +237,21 @@ export const storage = {
   // Platform credentials are encrypted and restored by the server. These
   // compatibility methods intentionally never read or write browser storage.
   getAuthCookies: (): StoredCookie[] => [],
-  setAuthCookies: (_cookies: StoredCookie[]) => undefined,
+  setAuthCookies: (cookies: StoredCookie[]) => {
+    void cookies
+  },
   clearAuthCookies: () => safeRemove('auth-cookies'),
-  upsertAuthCookie: (_platform: MusicSource, _cookie: string) => undefined,
-  removeAuthCookie: (_platform: MusicSource) => undefined,
-  hasAuthCookie: (_platform: MusicSource): boolean => false,
+  upsertAuthCookie: (platform: MusicSource, cookie: string) => {
+    void platform
+    void cookie
+  },
+  removeAuthCookie: (platform: MusicSource) => {
+    void platform
+  },
+  hasAuthCookie: (platform: MusicSource): boolean => {
+    void platform
+    return false
+  },
 
   getServerAuthPersistence: () => safeGet('server-auth-persistence') !== 'false',
   setServerAuthPersistence: (v: boolean) => safeSet('server-auth-persistence', String(v)),

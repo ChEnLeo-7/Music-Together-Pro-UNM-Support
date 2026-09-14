@@ -19,13 +19,13 @@ export function registerChatController(io: TypedServer, socket: TypedSocket) {
       try {
         await chatLimiter.consume(ctx.socket.id)
       } catch {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.RATE_LIMITED, message: '发送过于频繁，请稍后再试' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.RATE_LIMITED, message: '' })
         return
       }
 
       const parsed = chatMessageSchema.safeParse(raw)
       if (!parsed.success) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '消息格式无效' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
         return
       }
 

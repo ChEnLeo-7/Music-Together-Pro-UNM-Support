@@ -42,7 +42,9 @@ export function NumericInput({
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') commit() }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+      }}
       className="w-20 text-center"
     />
   )

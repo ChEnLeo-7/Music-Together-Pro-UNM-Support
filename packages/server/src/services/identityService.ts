@@ -19,7 +19,9 @@ export function getSessionTokenFromCookieHeader(cookieHeader?: string): string |
 
 function requestUsesHttps(req: Request): boolean {
   if (req.secure) return true
-  const forwarded = Array.isArray(req.headers['x-forwarded-proto']) ? req.headers['x-forwarded-proto'][0] : req.headers['x-forwarded-proto']
+  const forwarded = Array.isArray(req.headers['x-forwarded-proto'])
+    ? req.headers['x-forwarded-proto'][0]
+    : req.headers['x-forwarded-proto']
   return typeof forwarded === 'string' && forwarded.split(',')[0]?.trim().toLowerCase() === 'https'
 }
 

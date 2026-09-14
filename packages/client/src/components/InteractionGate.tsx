@@ -47,7 +47,7 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
         if (mode === 'account') {
           const me = await loginIdentity(socket, username, accountPassword)
           joinNickname = me.nickname
-           toast.success(t('loginSuccess'))
+          toast.success(t('loginSuccess'))
         } else {
           const me = await createGuestIdentity(socket, nickname)
           joinNickname = me?.nickname || nickname.trim()
@@ -55,7 +55,7 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
       }
       onStart(hasPassword ? password : undefined, joinNickname)
     } catch (err) {
-       toast.error(getLocalizedError(err, t))
+      toast.error(getLocalizedError(err, t))
     } finally {
       setLoading(false)
     }
@@ -77,11 +77,11 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
         </motion.div>
 
         <div className="flex flex-col items-center gap-1.5 text-center">
-          <h2 className="text-xl font-semibold">准备就绪</h2>
+          <h2 className="text-xl font-semibold">{t('readyToListen')}</h2>
           {roomName ? (
-            <p className="text-sm text-muted-foreground">即将加入「{roomName}」</p>
+            <p className="text-sm text-muted-foreground">{t('joiningRoom', { room: roomName })}</p>
           ) : (
-            <p className="text-sm text-muted-foreground">点击开始，和房间好友一起听歌</p>
+            <p className="text-sm text-muted-foreground">{t('listenWithFriends')}</p>
           )}
         </div>
 
@@ -90,10 +90,20 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <KeyRound className="h-3.5 w-3.5" />
-                <span>账号登录</span>
+                <span>{t('accountLogin')}</span>
               </div>
-              <Input placeholder="用户名" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
-              <Input type="password" placeholder="密码" value={accountPassword} onChange={(e) => setAccountPassword(e.target.value)} />
+              <Input
+                placeholder={t('username')}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoFocus
+              />
+              <Input
+                type="password"
+                placeholder={t('password')}
+                value={accountPassword}
+                onChange={(e) => setAccountPassword(e.target.value)}
+              />
             </div>
           )}
 
@@ -101,11 +111,11 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
             <div className="flex flex-col gap-2">
               <Label htmlFor="gate-nickname" className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <UserRound className="h-3.5 w-3.5" />
-                <span>游客昵称</span>
+                <span>{t('guestNickname')}</span>
               </Label>
               <Input
                 id="gate-nickname"
-                placeholder="你的昵称..."
+                placeholder={t('nicknamePlaceholder')}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 maxLength={LIMITS.NICKNAME_MAX_LENGTH}
@@ -118,12 +128,12 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Lock className="h-3.5 w-3.5" />
-                <span>该房间需要密码</span>
+                <span>{t('roomPasswordRequired')}</span>
               </div>
               <motion.div animate={passwordError ? { x: [-8, 8, -6, 6, -3, 3, 0] } : {}} transition={{ duration: 0.5 }}>
                 <Input
                   type="password"
-                  placeholder="输入房间密码..."
+                  placeholder={t('roomPasswordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoFocus={!needsIdentity}
@@ -142,13 +152,25 @@ export function InteractionGate({ onStart, roomName, hasPassword, passwordError 
             </div>
           )}
 
-          <Button type="submit" size="lg" className="w-full" disabled={loading || !canStart} aria-label="开始收听">
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full"
+            disabled={loading || !canStart}
+            aria-label={t('startListening')}
+          >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {needsIdentity && mode === 'account' ? '登录并进入房间' : '开始收听'}
+            {needsIdentity && mode === 'account' ? t('loginAndEnterRoom') : t('startListening')}
           </Button>
           {needsIdentity && (
-            <Button type="button" variant="ghost" className="w-full" disabled={loading} onClick={() => setMode(mode === 'account' ? 'guest' : 'account')}>
-              {mode === 'account' ? '游客访问' : '返回账号登录'}
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              disabled={loading}
+              onClick={() => setMode(mode === 'account' ? 'guest' : 'account')}
+            >
+              {mode === 'account' ? t('guestAccess') : t('backToAccountLogin')}
             </Button>
           )}
         </form>

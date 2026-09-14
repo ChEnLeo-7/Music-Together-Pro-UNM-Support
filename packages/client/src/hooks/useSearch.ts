@@ -12,10 +12,7 @@ type SearchResult = Track | Playlist
  * 搜索逻辑 hook — 管理搜索/翻页/abort/竞态保护。
  * 从 SearchDialog 中提取，使 UI 组件只关注渲染。
  */
-export function useSearch(
-  source: MusicSource,
-  type: 'song' | 'album' | 'playlist' = 'song',
-) {
+export function useSearch(source: MusicSource, type: 'song' | 'album' | 'playlist' = 'song') {
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -42,7 +39,7 @@ export function useSearch(
       searchKeyword: string,
       searchPage: number,
       signal: AbortSignal,
-      searchType: 'song' | 'album' | 'playlist'
+      searchType: 'song' | 'album' | 'playlist',
     ): Promise<{ tracks: SearchResult[]; hasMore: boolean }> => {
       const res = await fetch(
         `${SERVER_URL}/api/music/search?source=${searchSource}&keyword=${encodeURIComponent(searchKeyword)}&limit=${PAGE_SIZE}&page=${searchPage}&type=${searchType}`,
@@ -80,7 +77,7 @@ export function useSearch(
         .catch((err) => {
           if (err instanceof DOMException && err.name === 'AbortError') return
           if (searchIdRef.current !== currentSearchId) return
-           toast.error(t('searchFailed'))
+          toast.error(t('searchFailed'))
           setResults([])
           setHasMore(false)
         })
@@ -90,7 +87,7 @@ export function useSearch(
           }
         })
     },
-     [source, type, fetchPage, t],
+    [source, type, fetchPage, t],
   )
 
   const loadMore = useCallback(() => {
@@ -112,7 +109,7 @@ export function useSearch(
       .catch((err) => {
         if (err instanceof DOMException && err.name === 'AbortError') return
         if (searchIdRef.current !== currentSearchId) return
-         toast.error(t('loadFailed'))
+        toast.error(t('loadFailed'))
       })
       .finally(() => {
         if (searchIdRef.current === currentSearchId) {

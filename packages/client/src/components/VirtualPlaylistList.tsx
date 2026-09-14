@@ -4,6 +4,7 @@ import type { Playlist } from '@music-together/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ListMusic, Loader2, Music2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useI18n } from '@/lib/i18n'
 
 const LOAD_MORE_THRESHOLD = 5
 
@@ -25,9 +26,11 @@ export function VirtualPlaylistList({
   loadingMore,
   onLoadMore,
   onSelect,
-  emptyMessage = '暂无结果，换个关键词试试',
+  emptyMessage,
   className,
 }: VirtualPlaylistListProps) {
+  const t = useI18n((s) => s.t)
+  const resolvedEmptyMessage = emptyMessage ?? t('noSearchResults')
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
   const rowCount = playlists.length + (hasMore ? 1 : 0)
   const virtualizer = useVirtualizer({
@@ -44,7 +47,7 @@ export function VirtualPlaylistList({
     if (lastItem.index >= playlists.length - LOAD_MORE_THRESHOLD && hasMore && !loadingMore) {
       onLoadMore()
     }
-  }, [lastItem?.index, playlists.length, hasMore, loadingMore, onLoadMore])
+  }, [lastItem, playlists.length, hasMore, loadingMore, onLoadMore])
 
   if (loading && playlists.length === 0) {
     return (
@@ -61,7 +64,7 @@ export function VirtualPlaylistList({
       <div className={cn('min-h-0 flex-1 overflow-y-auto rounded-md border', className)}>
         <div className="flex h-48 flex-col items-center justify-center gap-2 text-muted-foreground">
           <Music2 className="h-8 w-8" />
-          <span className="text-sm">{emptyMessage}</span>
+          <span className="text-sm">{resolvedEmptyMessage}</span>
         </div>
       </div>
     )
@@ -86,7 +89,7 @@ export function VirtualPlaylistList({
               <div key="loader" style={rowStyle} className="flex items-center justify-center">
                 <Button variant="ghost" size="sm" className="w-full" onClick={onLoadMore} disabled={loadingMore}>
                   {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {loadingMore ? '加载中...' : '加载更多'}
+                  {loadingMore ? t('loading') : t('loadMore')}
                 </Button>
               </div>
             )
@@ -103,7 +106,12 @@ export function VirtualPlaylistList({
               onClick={() => onSelect(playlist)}
             >
               {playlist.cover ? (
-                <img src={playlist.cover} alt={playlist.name} className="h-12 w-12 shrink-0 rounded-md object-cover" loading="lazy" />
+                <img
+                  src={playlist.cover}
+                  alt={playlist.name}
+                  className="h-12 w-12 shrink-0 rounded-md object-cover"
+                  loading="lazy"
+                />
               ) : (
                 <div className="bg-muted flex h-12 w-12 shrink-0 items-center justify-center rounded-md">
                   <ListMusic className="text-muted-foreground h-5 w-5" />
@@ -112,7 +120,8 @@ export function VirtualPlaylistList({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{playlist.name}</p>
                 <p className="text-muted-foreground truncate text-xs">
-                  {playlist.trackCount} 首{playlist.creator ? ` · ${playlist.creator}` : ''}
+                  {t('tracksCount', { count: playlist.trackCount })}
+                  {playlist.creator ? ` · ${playlist.creator}` : ''}
                 </p>
               </div>
             </button>

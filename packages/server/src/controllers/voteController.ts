@@ -47,7 +47,7 @@ async function executeAction(
     case 'set-mode': {
       const parsed = playerSetModeSchema.safeParse(payload)
       if (!parsed.success) {
-        io.to(roomId).emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '无效的播放模式' })
+        io.to(roomId).emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
         break
       }
       const room = roomRepo.get(roomId)
@@ -60,7 +60,7 @@ async function executeAction(
     case 'play-track': {
       const trackId = payload?.trackId
       if (typeof trackId !== 'string') {
-        io.to(roomId).emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '无效的歌曲 ID' })
+        io.to(roomId).emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
         break
       }
       const room = roomRepo.get(roomId)
@@ -70,14 +70,14 @@ async function executeAction(
         await playerService.playTrackInRoom(io, roomId, track)
         logger.info(`Play-track executed for track ${trackId}`, { roomId })
       } else {
-        io.to(roomId).emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '歌曲不在播放列表中' })
+        io.to(roomId).emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
       }
       break
     }
     case 'remove-track': {
       const trackId = payload?.trackId
       if (typeof trackId !== 'string') {
-        io.to(roomId).emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '无效的歌曲 ID' })
+        io.to(roomId).emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
         break
       }
       const room = roomRepo.get(roomId)
@@ -103,7 +103,7 @@ export function registerVoteController(io: TypedServer, socket: TypedSocket) {
       if (!(await checkSocketRateLimit(ctx.socket))) return
       const parsed = voteStartSchema.safeParse(raw)
       if (!parsed.success) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '无效的投票请求' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
         return
       }
 
@@ -133,7 +133,7 @@ export function registerVoteController(io: TypedServer, socket: TypedSocket) {
 
       // Check if user can vote
       if (!ability.can('vote', 'Player')) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.NO_PERMISSION, message: '你没有投票权限' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.NO_PERMISSION, message: '' })
         return
       }
 
@@ -141,7 +141,7 @@ export function registerVoteController(io: TypedServer, socket: TypedSocket) {
       const vote = voteService.createVote(ctx.roomId, ctx.room.hostId, ctx.user, action, onlineUserCount, payload)
 
       if (!vote) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.VOTE_IN_PROGRESS, message: '已有投票正在进行中' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.VOTE_IN_PROGRESS, message: '' })
         return
       }
 
@@ -173,13 +173,13 @@ export function registerVoteController(io: TypedServer, socket: TypedSocket) {
     withRoom(async (ctx, raw) => {
       const parsed = voteCastSchema.safeParse(raw)
       if (!parsed.success) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '无效的投票数据' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
         return
       }
 
       const result = voteService.castVote(ctx.roomId, ctx.user.id, parsed.data.approve)
       if (!result) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.ALREADY_VOTED, message: '你已经投过票了' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.ALREADY_VOTED, message: '' })
         return
       }
 

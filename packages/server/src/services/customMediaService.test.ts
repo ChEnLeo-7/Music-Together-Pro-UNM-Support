@@ -4,6 +4,7 @@ import {
   getYtDlpRuntimeArgs,
   MediaProcessingError,
   normalizeMediaCookie,
+  parseYtDlpMetadata,
   resolveMediaCookie,
 } from './customMediaService.js'
 
@@ -48,4 +49,18 @@ test('YouTube imports use the JavaScript challenge solver runtime', () => {
     'ejs:github',
   ])
   assert.deepEqual(getYtDlpRuntimeArgs('www.bilibili.com'), [])
+})
+
+test('parses concise yt-dlp metadata without requiring the full JSON payload', () => {
+  const metadata = parseYtDlpMetadata(
+    '__MUSIC_TOGETHER_METADATA__"A \\"quoted\\" title"\tNA\t"Uploader"\tNA\t"https://i.ytimg.com/vi/test/maxresdefault.jpg"',
+  )
+
+  assert.deepEqual(metadata, {
+    title: 'A "quoted" title',
+    artist: undefined,
+    uploader: 'Uploader',
+    album: undefined,
+    thumbnail: 'https://i.ytimg.com/vi/test/maxresdefault.jpg',
+  })
 })

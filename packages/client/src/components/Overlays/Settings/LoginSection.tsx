@@ -4,17 +4,6 @@ import type { MusicSource, MyPlatformAuth, PlatformAuthStatus } from '@music-tog
 import { Crown, KeyRound, Loader2, LogOut, ScanLine } from 'lucide-react'
 import { useI18n } from '@/lib/i18n'
 
-const VIP_LABELS: Record<number, string> = {
-  0: '',
-  // Netease: 1=VIP, 10/11=黑胶VIP
-  1: 'VIP',
-  10: '黑胶VIP',
-  11: '黑胶VIP',
-  // Kugou: vip_type values
-  2: '豪华VIP',
-  3: '超级VIP',
-}
-
 interface LoginSectionProps {
   platform: MusicSource
   status?: PlatformAuthStatus
@@ -58,12 +47,20 @@ export function LoginSection({
           {hasVip && (
             <Badge className="shrink-0 gap-1 border-yellow-400/40 bg-yellow-400/15 text-xs text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.12)] hover:bg-yellow-400/20">
               <Crown className="h-3 w-3" />
-              {maxVipType === 10 || maxVipType === 11 ? t('vipVinyl') : maxVipType === 2 ? t('vipDeluxe') : maxVipType === 3 ? t('vipSuper') : VIP_LABELS[maxVipType] || 'VIP'}
+              {maxVipType === 10 || maxVipType === 11
+                ? t('vipVinyl')
+                : maxVipType === 2
+                  ? t('vipDeluxe')
+                  : maxVipType === 3
+                    ? t('vipSuper')
+                    : t('vip')}
             </Badge>
           )}
         </div>
         <p className="text-muted-foreground truncate text-xs">
-          {loggedInCount > 0 ? t('roomLoggedInStatus', { count: loggedInCount, vip: hasVip ? '，VIP 可用' : '' }) : t('noRoomLoggedIn')}
+          {loggedInCount > 0
+            ? t('roomLoggedInStatus', { count: loggedInCount, vip: hasVip ? t('vipAvailable') : '' })
+            : t('noRoomLoggedIn')}
         </p>
       </div>
 
@@ -71,16 +68,37 @@ export function LoginSection({
         {!isMyLoggedIn && !isVerifying ? (
           <>
             {(platform === 'netease' || platform === 'kugou' || platform === 'tencent') && (
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={onQrLogin} title={t('scanLogin')} aria-label={t('scanLogin')}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={onQrLogin}
+                title={t('scanLogin')}
+                aria-label={t('scanLogin')}
+              >
                 <ScanLine className="h-3.5 w-3.5" />
               </Button>
             )}
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={onCookieLogin} title={t('cookieLogin')} aria-label={t('cookieLogin')}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={onCookieLogin}
+              title={t('cookieLogin')}
+              aria-label={t('cookieLogin')}
+            >
               <KeyRound className="h-3.5 w-3.5" />
             </Button>
           </>
         ) : isMyLoggedIn ? (
-          <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={onLogout} title={t('logout')} aria-label={t('logout')}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-destructive h-8 w-8"
+            onClick={onLogout}
+            title={t('logout')}
+            aria-label={t('logout')}
+          >
             <LogOut className="h-3.5 w-3.5" />
           </Button>
         ) : null}

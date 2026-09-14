@@ -58,8 +58,7 @@ export function SearchDialog({
 }: SearchDialogProps) {
   const t = useI18n((s) => s.t)
   const isMobile = useIsMobile()
-  const [mobileViewport, setMobileViewport] = useState({ height: 0, bottom: 0 })
-  const mobileViewportMaxHeightRef = useRef(0)
+  const [mobileViewport, setMobileViewport] = useState({ height: 0, bottom: 0, maxHeight: 0 })
   const [source, setSource] = useState<SearchSource>('netease')
   const [searchType, setSearchType] = useState<'song' | 'album' | 'playlist'>('song')
   const [keyword, setKeyword] = useState('')
@@ -77,8 +76,11 @@ export function SearchDialog({
     const updateDrawerHeight = () => {
       const height = viewport?.height ?? window.innerHeight
       const offsetTop = viewport?.offsetTop ?? 0
-      mobileViewportMaxHeightRef.current = Math.max(mobileViewportMaxHeightRef.current, height)
-      setMobileViewport({ height, bottom: Math.max(0, window.innerHeight - offsetTop - height) })
+      setMobileViewport((current) => ({
+        height,
+        bottom: Math.max(0, window.innerHeight - offsetTop - height),
+        maxHeight: Math.max(current.maxHeight, height),
+      }))
     }
 
     updateDrawerHeight()
@@ -92,7 +94,7 @@ export function SearchDialog({
     }
   }, [])
 
-  const keyboardOpen = mobileViewport.height < mobileViewportMaxHeightRef.current - 80
+  const keyboardOpen = mobileViewport.height < mobileViewport.maxHeight - 80
   const mobileDrawerHeight =
     mobileViewport.height > 0 ? Math.round(mobileViewport.height * (keyboardOpen ? 0.5 : 2 / 3)) : undefined
   const mobileDrawerBottom = mobileViewport.height > 0 ? mobileViewport.bottom : undefined
@@ -124,9 +126,12 @@ export function SearchDialog({
     prevSourceRef.current = source
     prevTypeRef.current = searchType
     if (source !== 'custom' && (sourceChanged || typeChanged) && keyword.trim()) {
-      setAddedIds(new Set())
-      search(keyword.trim())
-      if (searchType === 'song') listRef.current?.scrollToTop()
+      const frame = requestAnimationFrame(() => {
+        setAddedIds(new Set())
+        search(keyword.trim())
+        if (searchType === 'song') listRef.current?.scrollToTop()
+      })
+      return () => cancelAnimationFrame(frame)
     }
   }, [source, searchType, keyword, search])
 
@@ -156,16 +161,22 @@ export function SearchDialog({
 
   // Reset album detail when dialog closes
   useEffect(() => {
-    if (!open) setSelectedAlbum(null)
+    if (!open) {
+      const frame = requestAnimationFrame(() => setSelectedAlbum(null))
+      return () => cancelAnimationFrame(frame)
+    }
   }, [open])
 
   useEffect(() => {
     if (!open) return
     const nextSource = initialSource ?? 'netease'
-    setSource((current) => (current === nextSource ? current : nextSource))
-    resetState()
-    setAddedIds(new Set())
-    setSelectedAlbum(null)
+    const frame = requestAnimationFrame(() => {
+      setSource((current) => (current === nextSource ? current : nextSource))
+      resetState()
+      setAddedIds(new Set())
+      setSelectedAlbum(null)
+    })
+    return () => cancelAnimationFrame(frame)
   }, [initialSource, open, resetState])
 
   const handleSearch = (overrideKeyword?: string) => {
@@ -192,7 +203,7 @@ export function SearchDialog({
       // Removed duplicate toast.success since onAddToQueue (from useQueue) usually already handles it
       // or the UI handles feedback.
     },
-    [onAddToQueue, queueKeys, addedIds],
+    [onAddToQueue, queueKeys, addedIds, t],
   )
 
   const handleInsertAfterCurrent = useCallback(
@@ -206,7 +217,7 @@ export function SearchDialog({
       setAddedIds((prev) => new Set(prev).add(key))
       // Removed duplicate toast.success
     },
-    [onInsertAfterCurrent, queueKeys, addedIds],
+    [onInsertAfterCurrent, queueKeys, addedIds, t],
   )
 
   const handleAddBatch = useCallback(
@@ -220,7 +231,7 @@ export function SearchDialog({
       })
       toast.success(t('songsAdded', { count: tracks.length }))
     },
-    [socket],
+    [socket, t],
   )
 
   const isTrackAdded = useCallback(

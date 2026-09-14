@@ -27,7 +27,9 @@ import { useSocketContext } from '@/providers/SocketProvider'
 import { AbilityProvider } from '@/providers/AbilityProvider'
 import { useClockSync } from '@/hooks/useClockSync'
 import { storage } from '@/lib/storage'
+import { resetAllRoomState } from '@/lib/resetStores'
 import { getLocalizedError, useI18n } from '@/lib/i18n'
+import { requestError } from '@/lib/request'
 import { getNativePlaybackBridge } from '@/lib/nativePlayback'
 import { AUDIO_UNLOCKED_EVENT, AUDIO_UNLOCK_REQUIRED_EVENT } from '@/hooks/useHowl'
 
@@ -68,7 +70,7 @@ export default function RoomPage() {
 
   // Gate: audio must be unlocked before joining the room.
   // From lobby: isAudioUnlocked() is already true → gate skipped, auto-join runs immediately.
-  // Direct URL / page refresh: gate blocks until user clicks "开始收听".
+  // Direct URL / page refresh: gate blocks until user clicks start.
   const [gateOpen, setGateOpen] = useState(
     () => isAudioUnlocked() || Boolean(getNativePlaybackBridge()) || Boolean(roomId && storage.getRejoinToken(roomId)),
   )
@@ -100,6 +102,7 @@ export default function RoomPage() {
   const [passwordLoading, setPasswordLoading] = useState(false)
 
   const joiningRef = useRef(false)
+  const checkingRoomIdRef = useRef<string | null>(null)
   const isLeavingRef = useRef(false)
   const passwordRef = useRef<string | undefined>(undefined)
   const gateNicknameRef = useRef<string | undefined>(undefined)
@@ -113,10 +116,22 @@ export default function RoomPage() {
     }
 
     // If already in this room (e.g. navigated from lobby), skip pre-check
-    if (room && room.id === roomId) {
+    if (room?.id === roomId) {
+      checkingRoomIdRef.current = null
       setChecking(false)
       return
     }
+
+    if (room) {
+      resetAllRoomState()
+      joiningRef.current = false
+      passwordRef.current = undefined
+      setPasswordNeeded(false)
+      setPasswordError(null)
+    }
+    setChecking(true)
+    setRoomInfo(null)
+    checkingRoomIdRef.current = roomId
 
     let cancelled = false
     const controller = new AbortController()
@@ -130,8 +145,7 @@ export default function RoomPage() {
         if (cancelled) return
 
         if (!res.ok) {
-          // Room not found
-          toast.error(t('roomNotFound'))
+          toast.error(getLocalizedError(await requestError(res), t))
           navigate('/', { replace: true })
           return
         }
@@ -152,7 +166,10 @@ export default function RoomPage() {
         console.warn('Room pre-check failed:', err)
         setRoomInfo(null)
       } finally {
-        if (!cancelled) setChecking(false)
+        if (!cancelled) {
+          checkingRoomIdRef.current = null
+          setChecking(false)
+        }
       }
     }
 
@@ -195,9 +212,10 @@ export default function RoomPage() {
 
   useEffect(() => {
     if (checking) return
+    if (checkingRoomIdRef.current === roomId) return
     if (!gateOpen) return
     if (isLeavingRef.current) return
-    if (!room && isConnected && !joiningRef.current && roomId) {
+    if (room?.id !== roomId && isConnected && !joiningRef.current && roomId) {
       joiningRef.current = true
       const nickname = gateNicknameRef.current || storage.getNickname()
       if (!nickname) {
@@ -213,7 +231,7 @@ export default function RoomPage() {
         playbackCapable: !getNativePlaybackBridge(),
       })
     }
-    if (room) {
+    if (room?.id === roomId) {
       joiningRef.current = false
     }
   }, [checking, gateOpen, room, isConnected, socket, roomId])
@@ -351,7 +369,9 @@ export default function RoomPage() {
 
     const dialog = mobileChatDialogRef.current
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    let focusFrame: number | undefined
+    const focusFrame = requestAnimationFrame(() => {
+      dialog?.focus()
+    })
     const getFocusableElements = () =>
       Array.from(
         dialog?.querySelectorAll<HTMLElement>(
@@ -360,10 +380,6 @@ export default function RoomPage() {
       ).filter((element) => element.offsetParent !== null)
 
     // Focus the sheet itself so opening it does not unexpectedly summon the keyboard.
-    focusFrame = requestAnimationFrame(() => {
-      dialog?.focus()
-    })
-
     const handleDialogKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -418,7 +434,8 @@ export default function RoomPage() {
       event.preventDefault()
       switch (action) {
         case 'playPause':
-          usePlayerStore.getState().isPlaying ? pause() : play()
+          if (usePlayerStore.getState().isPlaying) pause()
+          else play()
           break
         case 'chat':
           toggleChat()
@@ -459,12 +476,14 @@ export default function RoomPage() {
   }, [chatOpen, next, pause, play, prev, queueOpen, searchOpen, setChatOpen, settingsOpen, toggleChat])
 
   // --- Loading state during pre-check ---
-  if (checking) {
+  const activeRoom = room?.id === roomId ? room : null
+
+  if (checking || (room !== null && activeRoom === null)) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">正在检查房间...</p>
+          <p className="text-sm text-muted-foreground">{t('checkingRoom')}</p>
         </motion.div>
       </div>
     )
@@ -560,7 +579,7 @@ export default function RoomPage() {
                 className="fixed inset-0 z-50 md:hidden"
                 role="dialog"
                 aria-modal="true"
-                aria-label="聊天"
+                aria-label={t('chat')}
                 tabIndex={-1}
                 ref={mobileChatDialogRef}
                 initial={{ opacity: 1 }}
@@ -571,7 +590,7 @@ export default function RoomPage() {
                   type="button"
                   tabIndex={-1}
                   className="absolute inset-0 bg-black/50"
-                  aria-label="关闭聊天"
+                  aria-label={t('closeChat')}
                   onClick={() => setChatOpen(false)}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -634,7 +653,7 @@ export default function RoomPage() {
           key={`${roomId ?? 'room'}:${passwordNeeded ? 'open' : 'closed'}`}
           open={passwordNeeded}
           onOpenChange={handlePasswordOpenChange}
-          roomName={room?.name ?? roomId ?? ''}
+          roomName={activeRoom?.name ?? roomId ?? ''}
           onSubmit={handlePasswordSubmit}
           error={passwordError}
           isLoading={passwordLoading}

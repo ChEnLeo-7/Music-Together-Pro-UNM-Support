@@ -37,6 +37,7 @@ const room: RoomState = {
   },
   playMode: 'sequential',
   pauseAtQueueEnd: false,
+  removePlayedTracks: false,
 }
 
 test('room track remains authoritative while the audio engine is unloaded or reset', () => {

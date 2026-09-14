@@ -56,26 +56,26 @@ export function PlaylistDetail({
     (track: Track) => {
       const key = trackKey(track)
       if (queueKeys.has(key) || addedIds.has(key)) {
-         toast.info(t('queueDuplicate', { track: track.title }))
+        toast.info(t('queueDuplicate', { track: track.title }))
         return
       }
       onAddTrack(track)
       setAddedIds((prev) => new Set(prev).add(key))
     },
-    [onAddTrack, queueKeys, addedIds],
+    [onAddTrack, queueKeys, addedIds, t],
   )
 
   const handleInsertAfterCurrent = useCallback(
     (track: Track) => {
       const key = trackKey(track)
       if (queueKeys.has(key) || addedIds.has(key)) {
-         toast.info(t('queueDuplicate', { track: track.title }))
+        toast.info(t('queueDuplicate', { track: track.title }))
         return
       }
       onInsertAfterCurrent?.(track)
       setAddedIds((prev) => new Set(prev).add(key))
     },
-    [onInsertAfterCurrent, queueKeys, addedIds],
+    [onInsertAfterCurrent, queueKeys, addedIds, t],
   )
 
   // Dynamic "add all" logic — filter duplicates
@@ -94,11 +94,11 @@ export function PlaylistDetail({
       return next
     })
     if (addCount < uniqueTracks.length) {
-       toast.success(t('queueAddedPartial', { added: addCount, remaining: uniqueTracks.length - addCount }))
+      toast.success(t('queueAddedPartial', { added: addCount, remaining: uniqueTracks.length - addCount }))
     } else {
-       toast.success(t('queueAddedAll', { count: addCount }))
+      toast.success(t('queueAddedAll', { count: addCount }))
     }
-  }, [addCount, uniqueTracks, onAddAll, playlist?.name])
+  }, [addCount, uniqueTracks, onAddAll, playlist?.name, t])
 
   // Button label
   let addAllLabel: string

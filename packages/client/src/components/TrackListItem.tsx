@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import type { Track } from '@music-together/shared'
 import { ArrowUpToLine, Check, Music2, Plus } from 'lucide-react'
 import { memo } from 'react'
+import { useI18n } from '@/lib/i18n'
 
 export interface TrackListItemProps {
   track: Track
@@ -28,10 +29,14 @@ export const TrackListItem = memo(function TrackListItem({
   style,
   className,
 }: TrackListItemProps) {
+  const t = useI18n((s) => s.t)
   return (
     <div
       style={style}
-      className={cn('group flex min-w-0 max-w-full items-center gap-2 overflow-hidden px-2 py-2.5 transition-colors hover:bg-muted/50 sm:gap-3 sm:px-3', className)}
+      className={cn(
+        'group flex min-w-0 max-w-full items-center gap-2 overflow-hidden px-2 py-2.5 transition-colors hover:bg-muted/50 sm:gap-3 sm:px-3',
+        className,
+      )}
     >
       {/* Index */}
       <span className="w-5 shrink-0 text-center text-xs tabular-nums text-muted-foreground sm:w-6">{index + 1}</span>
@@ -57,7 +62,7 @@ export const TrackListItem = memo(function TrackListItem({
           <span className="min-w-0 truncate">{track.title}</span>
           {track.vip && (
             <span className="inline-flex shrink-0 items-center rounded px-1 py-0.5 text-[10px] font-bold leading-none text-amber-500 ring-1 ring-amber-500/30 bg-amber-500/10">
-              VIP
+              {t('vip')}
             </span>
           )}
         </p>
@@ -84,7 +89,9 @@ export const TrackListItem = memo(function TrackListItem({
       </div>
 
       {/* Duration */}
-      <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground min-[380px]:inline">{formatDuration(track.duration)}</span>
+      <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground min-[380px]:inline">
+        {formatDuration(track.duration)}
+      </span>
 
       {/* Add / Top buttons */}
       <div className="flex min-w-0 shrink-0 items-center gap-1">
@@ -96,12 +103,12 @@ export const TrackListItem = memo(function TrackListItem({
               className={cn('h-8 w-8 shrink-0', isAdded && 'text-emerald-500 hover:text-emerald-500')}
               disabled={isAdded}
               onClick={() => onAdd(track)}
-              aria-label={isAdded ? '已添加' : `添加 ${track.title} 到播放列表`}
+              aria-label={isAdded ? t('added') : t('addTrackToQueue', { track: track.title })}
             >
               {isAdded ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{isAdded ? '已添加' : '添加到播放列表'}</TooltipContent>
+          <TooltipContent>{isAdded ? t('added') : t('addToQueue')}</TooltipContent>
         </Tooltip>
 
         {onInsertAfterCurrent && !isAdded && (
@@ -112,12 +119,12 @@ export const TrackListItem = memo(function TrackListItem({
                 size="icon"
                 className="hidden h-8 w-8 shrink-0 min-[380px]:inline-flex"
                 onClick={() => onInsertAfterCurrent(track)}
-                aria-label={`置顶 ${track.title}`}
+                aria-label={t('pinTrack', { track: track.title })}
               >
                 <ArrowUpToLine className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>置顶到当前播放下方</TooltipContent>
+            <TooltipContent>{t('pinBelowCurrent')}</TooltipContent>
           </Tooltip>
         )}
       </div>

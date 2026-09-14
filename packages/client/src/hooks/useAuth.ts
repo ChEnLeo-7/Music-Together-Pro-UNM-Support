@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/authStore'
 import type { MusicSource, MyPlatformAuth, PlatformAuthStatus } from '@music-together/shared'
 import { EVENTS } from '@music-together/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useI18n } from '@/lib/i18n'
 
 /**
  * Hook：管理平台认证 UI 状态
@@ -25,9 +26,10 @@ export function useAuth() {
   const setPlatformStatus = useAuthStore((s) => s.setPlatformStatus)
   const setMyStatus = useAuthStore((s) => s.setMyStatus)
   const [qrData, setQrData] = useState<{ key: string; qrimg: string } | null>(null)
-  const [qrStatus, setQrStatus] = useState<{ status: number; message: string } | null>(null)
+  const [qrStatus, setQrStatus] = useState<{ status: number; message: string; code?: string } | null>(null)
   const [isQrLoading, setIsQrLoading] = useState(false)
   const [qrPlatform, setQrPlatform] = useState<MusicSource>('netease')
+  const t = useI18n((s) => s.t)
 
   // Ref 跟踪最新的 qrPlatform，避免重建回调导致重启轮询
   const qrPlatformRef = useRef<MusicSource>(qrPlatform)
@@ -43,11 +45,11 @@ export function useAuth() {
 
     const onQrGenerated = (data: { key: string; qrimg: string }) => {
       setQrData(data)
-      setQrStatus({ status: 801, message: '等待扫码' })
+      setQrStatus({ status: 801, message: t('qrWaitingScan') })
       setIsQrLoading(false)
     }
 
-    const onQrStatus = (data: { status: number; message: string }) => {
+    const onQrStatus = (data: { status: number; message: string; code?: string }) => {
       setQrStatus(data)
       if (data.status === 803 || data.status === 800) {
         setIsQrLoading(false)
@@ -68,7 +70,7 @@ export function useAuth() {
       socket.off(EVENTS.AUTH_QR_GENERATED, onQrGenerated)
       socket.off(EVENTS.AUTH_QR_STATUS, onQrStatus)
     }
-  }, [socket])
+  }, [setMyStatus, setPlatformStatus, socket, t])
 
   const requestQrCode = useCallback(
     (platform: MusicSource) => {

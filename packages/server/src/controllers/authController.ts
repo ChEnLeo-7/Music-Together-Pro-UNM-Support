@@ -1,4 +1,4 @@
-import { EVENTS, QR_STATUS } from '@music-together/shared'
+import { EVENTS, ERROR_CODE, QR_STATUS } from '@music-together/shared'
 import type { MusicSource } from '@music-together/shared'
 import * as authService from '../services/authService.js'
 import * as roomService from '../services/roomService.js'
@@ -21,39 +21,51 @@ const VALID_PLATFORMS = new Set<MusicSource>(['netease', 'tencent', 'kugou'])
 export function registerAuthController(io: TypedServer, socket: TypedSocket) {
   // 防止同一 QR 会话重复处理 803 成功状态
   let qrSuccessHandled = false
+  let qrRequestId = 0
+  let qrSession: { key: string; platform: MusicSource; requestId: number } | null = null
 
   // -------------------------------------------------------------------------
   // QR 扫码登录（所有平台统一处理）
   // -------------------------------------------------------------------------
 
   socket.on(EVENTS.AUTH_REQUEST_QR, async (data) => {
+    const requestId = ++qrRequestId
+    qrSession = null
     qrSuccessHandled = false
     try {
       const platform = data?.platform
       if (!platform || !QR_PLATFORMS.has(platform)) {
-        socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, message: '暂不支持该平台扫码登录' })
+        socket.emit(EVENTS.AUTH_QR_STATUS, {
+          status: QR_STATUS.EXPIRED,
+          code: 'QR_UNSUPPORTED_PLATFORM',
+          message: '',
+        })
         return
       }
 
       const provider = AUTH_PROVIDERS[platform]
       const result = await provider.generateQrCode()
 
+      if (requestId !== qrRequestId) return
+
       if (!result) {
-        socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, message: '生成二维码失败，请重试' })
+        socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, code: 'QR_GENERATE_FAILED', message: '' })
         return
       }
 
+      qrSession = { key: result.key, platform, requestId }
       socket.emit(EVENTS.AUTH_QR_GENERATED, { key: result.key, qrimg: result.qrimg })
     } catch (err) {
+      if (requestId !== qrRequestId) return
       logger.error('AUTH_REQUEST_QR error', err, { socketId: socket.id })
-      socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, message: '请求失败，请重试' })
+      socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, code: 'QR_REQUEST_FAILED', message: '' })
     }
   })
 
   socket.on(EVENTS.AUTH_CHECK_QR, async (data) => {
     try {
       if (!data?.key) {
-        socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, message: '缺少二维码 key' })
+        socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, code: 'QR_KEY_MISSING', message: '' })
         return
       }
 
@@ -63,50 +75,79 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
         return
       }
 
+      const session = qrSession
+      if (!session || session.requestId !== qrRequestId || session.key !== data.key || session.platform !== platform) return
+
       const provider = AUTH_PROVIDERS[platform]
       const result = await provider.checkQrStatus(data.key)
 
-      socket.emit(EVENTS.AUTH_QR_STATUS, { status: result.status, message: result.message })
+      if (qrSession !== session) return
+
+      if (result.status !== QR_STATUS.SUCCESS) {
+        socket.emit(EVENTS.AUTH_QR_STATUS, { status: result.status, code: result.code, message: '' })
+        return
+      }
 
       // 登录成功：验证 cookie 并加入池（防止重复 803）
-      if (result.status === QR_STATUS.SUCCESS && result.cookie && !qrSuccessHandled) {
-        qrSuccessHandled = true
+      if (qrSuccessHandled) return
+      qrSuccessHandled = true
 
-        const infoResult = await provider.getUserInfo(result.cookie)
+      if (!result.cookie) {
+        socket.emit(EVENTS.AUTH_QR_STATUS, {
+          status: QR_STATUS.EXPIRED,
+          code: 'COOKIE_OPERATION_FAILED',
+          message: '',
+        })
+        socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
+          success: false,
+          message: '',
+          platform,
+          reason: 'error',
+          code: 'COOKIE_OPERATION_FAILED',
+        })
+        return
+      }
 
-        if (infoResult.ok) {
-          const userInfo = infoResult.data
-          const mapping = getSocketMapping(socket.id)
-          if (mapping) {
-            authService.addCookie(
-              mapping.roomId,
-              platform,
-              mapping.userId,
-              result.cookie,
-              userInfo.nickname,
-              userInfo.vipType,
-              'server',
-            )
-            broadcastAuthStatus(io, socket, mapping)
-          }
-          socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
-            success: true,
-            message: `已登录为 ${userInfo.nickname}`,
+      const infoResult = await provider.getUserInfo(result.cookie)
+      if (qrSession !== session) return
+
+      if (infoResult.ok) {
+        const userInfo = infoResult.data
+        const mapping = getSocketMapping(socket.id)
+        if (mapping) {
+          authService.addCookie(
+            mapping.roomId,
             platform,
-          })
-          logger.info(`${platform} QR login success: ${userInfo.nickname} (vipType=${userInfo.vipType})`)
-        } else {
-          socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
-            success: false,
-            message: '登录成功但无法获取用户信息',
-            platform,
-            reason: infoResult.reason,
-          })
+            mapping.userId,
+            result.cookie,
+            userInfo.nickname,
+            userInfo.vipType,
+            'server',
+          )
+          broadcastAuthStatus(io, socket, mapping)
         }
+        socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
+          success: true,
+          message: '',
+          platform,
+        })
+        socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.SUCCESS, message: '' })
+        logger.info(`${platform} QR login success: ${userInfo.nickname} (vipType=${userInfo.vipType})`)
+      } else {
+        const code = infoResult.reason === 'expired' ? 'COOKIE_INVALID' : 'COOKIE_OPERATION_FAILED'
+        socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, message: '', code })
+        socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
+          success: false,
+          message: '',
+          platform,
+          reason: infoResult.reason,
+          code,
+        })
       }
     } catch (err) {
+      if (qrSession?.key !== data?.key || qrSession?.platform !== data?.platform) return
       logger.error('AUTH_CHECK_QR error', err, { socketId: socket.id })
-      socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, message: '检查登录状态失败，请重试' })
+      socket.emit(EVENTS.AUTH_QR_STATUS, { status: QR_STATUS.EXPIRED, code: 'QR_CHECK_FAILED', message: '' })
     }
   })
 
@@ -126,7 +167,8 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
       ) {
         socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
           success: false,
-          message: '参数不完整',
+          message: '',
+          code: 'INVALID_INPUT',
         })
         return
       }
@@ -140,7 +182,7 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
       if (mapping && roomId && authService.hasCookie(roomId, platform, cookie)) {
         socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
           success: true,
-          message: 'Cookie 已生效',
+          message: '',
           platform,
         })
         broadcastAuthStatus(io, socket, mapping)
@@ -159,20 +201,29 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
       if (infoResult.ok) {
         const userInfo = infoResult.data
         if (mapping && mapping.roomId) {
-          authService.addCookie(mapping.roomId, platform, mapping.userId, cookie, userInfo.nickname, userInfo.vipType, persistPolicy)
+          authService.addCookie(
+            mapping.roomId,
+            platform,
+            mapping.userId,
+            cookie,
+            userInfo.nickname,
+            userInfo.vipType,
+            persistPolicy,
+          )
         }
         socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
           success: true,
-          message: `已登录为 ${userInfo.nickname}`,
+          message: '',
           platform,
         })
       } else if (platform === 'netease' && infoResult.reason === 'expired') {
         // 仅网易云：明确过期时拒绝保存
         socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
           success: false,
-          message: 'Cookie 已过期，请重新登录',
+          message: '',
           platform,
           reason: infoResult.reason,
+          code: 'COOKIE_INVALID',
         })
         if (mapping) broadcastAuthStatus(io, socket, mapping)
         return
@@ -183,8 +234,9 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
         }
         socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
           success: true,
-          message: 'Cookie 已保存（验证失败，播放时生效）',
+          message: '',
           platform,
+          code: ERROR_CODE.COOKIE_SAVED_UNVERIFIED,
         })
       }
 
@@ -195,8 +247,9 @@ export function registerAuthController(io: TypedServer, socket: TypedSocket) {
       logger.error('AUTH_SET_COOKIE error', err, { socketId: socket.id })
       socket.emit(EVENTS.AUTH_SET_COOKIE_RESULT, {
         success: false,
-        message: '设置 Cookie 失败，请重试',
+        message: '',
         reason: 'error',
+        code: 'COOKIE_OPERATION_FAILED',
       })
     }
   })

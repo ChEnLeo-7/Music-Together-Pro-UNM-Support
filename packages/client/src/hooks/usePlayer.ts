@@ -45,17 +45,20 @@ export function usePlayer() {
   // Auto-next on song end: only the current conductor (hostId) emits PLAYER_NEXT.
   // The conductor is auto-elected by the server (owner > admin > member).
   // Other clients silently wait to prevent duplicate PLAYER_NEXT events.
-  const autoNext = useCallback(() => {
-    const { room } = useRoomStore.getState()
-    const myId = storage.getUserId()
-    if (room?.hostId === myId) {
-      socket.emit(EVENTS.PLAYER_NEXT, {
-        reason: 'ended',
-        trackId: room.currentTrack?.id,
-        playbackRevision: room.playState.playbackRevision,
-      })
-    }
-  }, [socket])
+  const autoNext = useCallback(
+    (reason: 'ended' | 'failed' = 'ended') => {
+      const { room } = useRoomStore.getState()
+      const myId = storage.getUserId()
+      if (room?.hostId === myId) {
+        socket.emit(EVENTS.PLAYER_NEXT, {
+          reason,
+          trackId: room.currentTrack?.id,
+          playbackRevision: room.playState.playbackRevision,
+        })
+      }
+    },
+    [socket],
+  )
 
   const recoverFromLoadFailure = useCallback(
     (track: Track) => {

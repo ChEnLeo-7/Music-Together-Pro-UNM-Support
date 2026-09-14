@@ -4,11 +4,12 @@ import type { MusicSource } from '@music-together/shared'
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { getLocalizedError, useI18n } from '@/lib/i18n'
+import type { I18nKey } from '@/lib/i18n'
 
-const PLATFORM_NAMES: Record<MusicSource, string> = {
-  netease: '网易云音乐',
-  tencent: 'QQ 音乐',
-  kugou: '酷狗音乐',
+const PLATFORM_NAME_KEYS: Record<MusicSource, I18nKey> = {
+  netease: 'netease',
+  tencent: 'tencent',
+  kugou: 'kugou',
 }
 
 /**
@@ -30,21 +31,25 @@ export function useAuthSync() {
       message: string
       platform?: MusicSource
       reason?: 'expired' | 'error'
+      code?: string
     }) => {
-       if (data.success) {
-         toast.success(t('authSuccess'))
-       } else if (data.platform) {
-        const name = PLATFORM_NAMES[data.platform] ?? data.platform
+      if (data.success && data.code === 'COOKIE_SAVED_UNVERIFIED') {
+        toast.info(t('cookieSavedUnverified'))
+      } else if (data.success) {
+        toast.success(t('authSuccess'))
+      } else if (data.platform) {
+        const name = t(PLATFORM_NAME_KEYS[data.platform])
 
         if (data.reason === 'expired') {
-           toast.warning(t('authRetry', { platform: name }), { id: `auth-expired-${data.platform}` })
+          toast.warning(t('authRetry', { platform: name }), { id: `auth-expired-${data.platform}` })
         } else if (data.reason === 'error') {
-           toast.info(t('authRetry', { platform: name }), { id: `auth-error-${data.platform}` })
+          toast.info(t('authRetry', { platform: name }), { id: `auth-error-${data.platform}` })
         } else {
-          // 手动操作失败
-           toast.error(getLocalizedError(data, t))
+          toast.error(getLocalizedError(data, t))
         }
         // Cookie 永不删除 — 只有 useAuth.logout() 有权删除
+      } else {
+        toast.error(getLocalizedError(data, t))
       }
     }
 

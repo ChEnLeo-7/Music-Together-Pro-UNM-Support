@@ -18,12 +18,24 @@ export function createRoomMediaToken(mediaId: string, roomId: string, now = Date
   return `${payload}.${signature(payload)}`
 }
 
-export function verifyMediaToken(token: string, mediaId: string, roomId: string, userId: string, now = Date.now()): boolean {
+export function verifyMediaToken(
+  token: string,
+  mediaId: string,
+  roomId: string,
+  userId: string,
+  now = Date.now(),
+): boolean {
   const parts = token.split('.')
   if (parts.length !== 5) return false
   const [tokenMediaId, tokenRoomId, tokenUserId, expiresRaw, provided] = parts
   const expiresAt = Number(expiresRaw)
-  if (tokenMediaId !== mediaId || tokenRoomId !== roomId || tokenUserId !== userId || !Number.isFinite(expiresAt) || expiresAt <= now) {
+  if (
+    tokenMediaId !== mediaId ||
+    tokenRoomId !== roomId ||
+    tokenUserId !== userId ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= now
+  ) {
     return false
   }
   const expected = signature(parts.slice(0, 4).join('.'))
@@ -37,7 +49,13 @@ export function verifyRoomMediaToken(token: string, mediaId: string, roomId: str
   if (parts.length !== 5) return false
   const [tokenMediaId, tokenRoomId, tokenUserId, expiresRaw, provided] = parts
   const expiresAt = Number(expiresRaw)
-  if (tokenMediaId !== mediaId || tokenRoomId !== roomId || tokenUserId !== '*' || !Number.isFinite(expiresAt) || expiresAt <= now) {
+  if (
+    tokenMediaId !== mediaId ||
+    tokenRoomId !== roomId ||
+    tokenUserId !== '*' ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= now
+  ) {
     return false
   }
   const expected = signature(parts.slice(0, 4).join('.'))

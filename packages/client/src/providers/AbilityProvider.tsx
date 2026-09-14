@@ -5,6 +5,8 @@ import { useRoomStore } from '@/stores/roomStore'
 
 const defaultAbility = defineAbilityFor('member')
 
+// Context and its provider are intentionally exported from the same module.
+// eslint-disable-next-line react-refresh/only-export-components
 export const AbilityContext = createContext<AppAbility>(defaultAbility)
 
 export const Can = createContextualCan(AbilityContext.Consumer)

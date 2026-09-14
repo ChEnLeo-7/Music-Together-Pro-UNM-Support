@@ -110,18 +110,25 @@ export function registerPlayerController(io: TypedServer, socket: TypedSocket) {
         if (!ability.can('next', 'Player')) {
           ctx.socket.emit(EVENTS.ROOM_ERROR, {
             code: ERROR_CODE.NO_PERMISSION,
-            message: '你没有权限执行此操作',
+            message: '',
           })
           return
         }
       }
-      if (parsed.data?.reason === 'ended') {
+      if (parsed.data?.reason === 'ended' || parsed.data?.reason === 'failed') {
         if (ctx.room.conductorSocketId && ctx.room.conductorSocketId !== ctx.socket.id) return
         if (parsed.data.trackId !== ctx.room.currentTrack?.id) return
         if (parsed.data.playbackRevision !== ctx.room.playState.playbackRevision) return
       }
       await playerService.playNextTrackInRoom(ctx.io, ctx.roomId, ctx.room.playMode, {
         pauseAtQueueEnd: parsed.data?.reason === 'ended' && ctx.room.pauseAtQueueEnd,
+        removePlayedTrack: parsed.data?.reason === 'ended' && ctx.room.removePlayedTracks,
+        expectedCurrentTrackId:
+          parsed.data?.reason === 'ended' || parsed.data?.reason === 'failed' ? parsed.data.trackId : undefined,
+        expectedPlaybackRevision:
+          parsed.data?.reason === 'ended' || parsed.data?.reason === 'failed'
+            ? parsed.data.playbackRevision
+            : undefined,
       })
     }),
   )

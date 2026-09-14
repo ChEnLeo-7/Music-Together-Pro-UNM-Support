@@ -25,7 +25,7 @@ export interface ServerToClientEvents {
   [EVENTS.ROOM_STATE]: (room: RoomState) => void
   [EVENTS.ROOM_DISSOLVED]: (data: { roomId: string }) => void
   [EVENTS.ROOM_REJOIN_TOKEN]: (data: { roomId: string; token: string; expiresAt: number }) => void
-  [EVENTS.ROOM_ERROR]: (error: { code: string; message: string }) => void
+  [EVENTS.ROOM_ERROR]: (error: { code: string; message: string; params?: Record<string, string | number> }) => void
   [EVENTS.ROOM_AUTO_FALLBACK]: (data: RoomAutoFallbackEvent) => void
   [EVENTS.ROOM_USER_JOINED]: (user: User) => void
   [EVENTS.ROOM_USER_LEFT]: (user: User) => void
@@ -38,6 +38,7 @@ export interface ServerToClientEvents {
     permanent: boolean
     chatHistoryForNewUsers: boolean
     pauseAtQueueEnd: boolean
+    removePlayedTracks: boolean
   }) => void
   [EVENTS.ROOM_LIST_UPDATE]: (rooms: RoomListItem[]) => void
   [EVENTS.ROOM_ROLE_CHANGED]: (data: { userId: string; role: UserRole }) => void
@@ -74,12 +75,13 @@ export interface ServerToClientEvents {
 
   // Auth
   [EVENTS.AUTH_QR_GENERATED]: (data: { key: string; qrimg: string }) => void
-  [EVENTS.AUTH_QR_STATUS]: (data: { status: number; message: string }) => void
+  [EVENTS.AUTH_QR_STATUS]: (data: { status: number; message: string; code?: string }) => void
   [EVENTS.AUTH_SET_COOKIE_RESULT]: (data: {
     success: boolean
     message: string
     platform?: MusicSource
     reason?: 'expired' | 'error'
+    code?: string
   }) => void
   [EVENTS.AUTH_STATUS_UPDATE]: (data: PlatformAuthStatus[]) => void
   [EVENTS.AUTH_MY_STATUS]: (data: MyPlatformAuth[]) => void
@@ -116,6 +118,7 @@ export interface ClientToServerEvents {
     permanent?: boolean
     chatHistoryForNewUsers?: boolean
     pauseAtQueueEnd?: boolean
+    removePlayedTracks?: boolean
   }) => void
   [EVENTS.ROOM_SET_ROLE]: (data: { userId: string; role: 'admin' | 'member' }) => void
   [EVENTS.ROOM_HIDE_MEMBER]: (data: { userId: string }) => void
@@ -129,7 +132,7 @@ export interface ClientToServerEvents {
   [EVENTS.PLAYER_READY]: (data: { trackId: string; playbackRevision: number }) => void
   [EVENTS.PLAYER_PAUSE]: () => void
   [EVENTS.PLAYER_SEEK]: (data: { currentTime: number }) => void
-  [EVENTS.PLAYER_NEXT]: (data?: { reason?: 'ended'; trackId?: string; playbackRevision?: number }) => void
+  [EVENTS.PLAYER_NEXT]: (data?: { reason?: 'ended' | 'failed'; trackId?: string; playbackRevision?: number }) => void
   [EVENTS.PLAYER_PREV]: () => void
   [EVENTS.PLAYER_SYNC]: (data: {
     currentTime: number

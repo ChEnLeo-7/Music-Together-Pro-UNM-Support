@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Home, LogIn } from 'lucide-react'
 import { motion } from 'motion/react'
+import { useI18n } from '@/lib/i18n'
 
 interface ActionCardsProps {
   directRoomId: string
@@ -18,6 +19,7 @@ export function ActionCards({
   onDirectJoin,
   actionLoading,
 }: ActionCardsProps) {
+  const t = useI18n((s) => s.t)
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -32,13 +34,13 @@ export function ActionCards({
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
               <Home className="h-4 w-4 text-primary" />
             </div>
-            <h2 className="text-base font-semibold text-foreground">创建房间</h2>
+            <h2 className="text-base font-semibold text-foreground">{t('createRoom')}</h2>
           </div>
-          <p className="text-xs text-muted-foreground">新建一个房间，分享房间号邀请朋友加入</p>
+          <p className="text-xs text-muted-foreground">{t('createRoomDescription')}</p>
         </div>
         <Button onClick={onCreateClick} className="w-full">
           <Home className="mr-2 h-4 w-4" />
-          创建房间
+          {t('createRoom')}
         </Button>
       </div>
 
@@ -49,20 +51,20 @@ export function ActionCards({
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
               <LogIn className="h-4 w-4 text-primary" />
             </div>
-            <h2 className="text-base font-semibold text-foreground">加入房间</h2>
+            <h2 className="text-base font-semibold text-foreground">{t('joinRoom')}</h2>
           </div>
-          <p className="text-xs text-muted-foreground">输入房间号直接加入已有房间</p>
+          <p className="text-xs text-muted-foreground">{t('joinRoomDescription')}</p>
         </div>
         <div className="flex gap-2">
           <Input
-            placeholder="输入房间号..."
+            placeholder={t('roomIdPlaceholder')}
             value={directRoomId}
             onChange={(e) => onDirectRoomIdChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onDirectJoin()}
             className="flex-1"
           />
           <Button variant="secondary" onClick={onDirectJoin} disabled={actionLoading}>
-            加入
+            {t('join')}
           </Button>
         </div>
       </div>

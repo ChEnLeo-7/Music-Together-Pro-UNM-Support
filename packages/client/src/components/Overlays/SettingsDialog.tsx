@@ -54,6 +54,7 @@ interface SettingsDialogProps {
     permanent?: boolean
     chatHistoryForNewUsers?: boolean
     pauseAtQueueEnd?: boolean
+    removePlayedTracks?: boolean
   }) => void
   onDissolveRoom?: () => void
   onSetUserRole?: (userId: string, role: 'admin' | 'member') => void
@@ -116,11 +117,15 @@ export function SettingsDialog({
   const tabs = TABS.filter((item) => item.id !== 'admin' || isServerAdmin)
 
   useEffect(() => {
-    if (open && initialTab && (initialTab !== 'admin' || isServerAdmin)) setTab(initialTab)
+    if (!open || !initialTab || (initialTab === 'admin' && !isServerAdmin)) return
+    const frame = requestAnimationFrame(() => setTab(initialTab))
+    return () => cancelAnimationFrame(frame)
   }, [open, initialTab, isServerAdmin])
 
   useEffect(() => {
-    if (tab === 'admin' && !isServerAdmin) setTab('room')
+    if (tab !== 'admin' || isServerAdmin) return
+    const frame = requestAnimationFrame(() => setTab('room'))
+    return () => cancelAnimationFrame(frame)
   }, [tab, isServerAdmin])
 
   return (
@@ -135,7 +140,7 @@ export function SettingsDialog({
             <nav
               className="scrollbar-hide flex max-w-full gap-1 overflow-x-auto px-4 pb-2"
               role="tablist"
-              aria-label="Settings sections"
+              aria-label={t('settingsSections')}
             >
               {tabs.map((item) => (
                 <button
@@ -161,7 +166,7 @@ export function SettingsDialog({
           <nav
             className="hidden w-48 shrink-0 flex-col border-r p-4 md:flex"
             role="tablist"
-            aria-label="Settings sections"
+            aria-label={t('settingsSections')}
           >
             <ResponsiveDialogTitle className="mb-4 px-3 text-lg font-semibold">{t('settings')}</ResponsiveDialogTitle>
             <div className="space-y-1">

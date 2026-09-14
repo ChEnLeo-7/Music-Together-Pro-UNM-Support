@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { storage } from '@/lib/storage'
+import { useI18n } from '@/lib/i18n'
 
 interface NicknameDialogProps {
   open: boolean
@@ -22,6 +23,7 @@ interface NicknameDialogProps {
 
 export function NicknameDialog({ open, onOpenChange, onConfirm }: NicknameDialogProps) {
   const [nickname, setNickname] = useState(storage.getNickname())
+  const t = useI18n((s) => s.t)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,18 +47,18 @@ export function NicknameDialog({ open, onOpenChange, onConfirm }: NicknameDialog
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle className="flex items-center gap-2 text-lg">
             <UserRound className="h-5 w-5 text-primary" />
-            设置昵称
+            {t('setNickname')}
           </ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>加入房间前，请先设置你的昵称</ResponsiveDialogDescription>
+          <ResponsiveDialogDescription>{t('setNicknameDescription')}</ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
         <ResponsiveDialogBody>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="nickname-input">昵称</Label>
+              <Label htmlFor="nickname-input">{t('nickname')}</Label>
               <Input
                 id="nickname-input"
-                placeholder="你的昵称..."
+                placeholder={t('nicknamePlaceholder')}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 maxLength={LIMITS.NICKNAME_MAX_LENGTH}
@@ -65,7 +67,7 @@ export function NicknameDialog({ open, onOpenChange, onConfirm }: NicknameDialog
             </div>
 
             <Button type="submit" className="w-full" disabled={!nickname.trim()}>
-              确认并加入
+              {t('confirmAndJoin')}
             </Button>
           </form>
         </ResponsiveDialogBody>

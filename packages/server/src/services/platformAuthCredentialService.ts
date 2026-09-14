@@ -39,10 +39,9 @@ export function decryptPlatformCredential(serialized: string): string {
   if (encrypted.version !== 1) throw new Error('Unsupported platform credential version')
   const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(encrypted.nonce, 'base64'))
   decipher.setAuthTag(Buffer.from(encrypted.tag, 'base64'))
-  return Buffer.concat([
-    decipher.update(Buffer.from(encrypted.ciphertext, 'base64')),
-    decipher.final(),
-  ]).toString('utf8')
+  return Buffer.concat([decipher.update(Buffer.from(encrypted.ciphertext, 'base64')), decipher.final()]).toString(
+    'utf8',
+  )
 }
 
 export const encryptMediaCredential = encryptPlatformCredential

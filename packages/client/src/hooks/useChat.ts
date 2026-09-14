@@ -13,12 +13,12 @@ export function useChat() {
       const trimmed = content.trim()
       if (!trimmed) return
       if (trimmed.length > LIMITS.CHAT_CONTENT_MAX_LENGTH) {
-         toast.error(t('chatTooLong', { limit: LIMITS.CHAT_CONTENT_MAX_LENGTH }))
+        toast.error(t('chatTooLong', { limit: LIMITS.CHAT_CONTENT_MAX_LENGTH }))
         return
       }
       socket.emit(EVENTS.CHAT_MESSAGE, { content: trimmed })
     },
-     [socket, t],
+    [socket, t],
   )
 
   return { sendMessage }

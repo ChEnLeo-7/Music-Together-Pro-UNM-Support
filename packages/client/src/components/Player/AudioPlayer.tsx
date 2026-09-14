@@ -15,7 +15,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { BackgroundRender } from '@applemusic-like-lyrics/react'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { VoteBanner } from '../Vote/VoteBanner'
 import { LyricDisplay } from './LyricDisplay'
 import { NowPlaying } from './NowPlaying'
@@ -99,10 +99,7 @@ export function AudioPlayer({
   const [mobileTransitioning, setMobileTransitioning] = useState(false)
 
   // 封面 URL 代理：解决 QQ 音乐 / 酷狗等 CDN 的 CORS 限制
-  const proxiedCover = useMemo(
-    () => (currentTrack?.cover ? getProxiedCoverUrl(currentTrack.cover) : DEFAULT_COVER_URL),
-    [currentTrack?.cover],
-  )
+  const proxiedCover = currentTrack?.cover ? getProxiedCoverUrl(currentTrack.cover) : DEFAULT_COVER_URL
 
   const revealFullscreenButton = useCallback(() => {
     if (!isMobile) return
@@ -128,12 +125,15 @@ export function AudioPlayer({
   }, [])
 
   useEffect(() => {
-    if (isMobile) {
-      revealFullscreenButton()
-      return
-    }
-    setShowMobileFullscreenButton(true)
-    if (fullscreenButtonTimerRef.current) clearTimeout(fullscreenButtonTimerRef.current)
+    const frame = requestAnimationFrame(() => {
+      if (isMobile) {
+        revealFullscreenButton()
+        return
+      }
+      setShowMobileFullscreenButton(true)
+      if (fullscreenButtonTimerRef.current) clearTimeout(fullscreenButtonTimerRef.current)
+    })
+    return () => cancelAnimationFrame(frame)
   }, [isMobile, revealFullscreenButton])
 
   useEffect(() => {
@@ -158,7 +158,8 @@ export function AudioPlayer({
 
   useEffect(() => {
     if (!fullscreenSignal) return
-    togglePlayerFullscreen()
+    const frame = requestAnimationFrame(togglePlayerFullscreen)
+    return () => cancelAnimationFrame(frame)
   }, [fullscreenSignal, togglePlayerFullscreen])
 
   // Mobile: toggle between cover view and lyric view

@@ -17,7 +17,7 @@ export function createWithPermission(io: TypedServer) {
       if (!ability.can(action, subject)) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.NO_PERMISSION,
-          message: '你没有权限执行此操作',
+          message: '',
         })
         return
       }
@@ -27,7 +27,9 @@ export function createWithPermission(io: TypedServer) {
 }
 
 export function isRoomManager(ctx: HandlerContext): boolean {
-  return ctx.user.role === 'owner' || ctx.user.role === 'admin' || userRepo.isServerAdmin(ctx.socket.data.identityUserId)
+  return (
+    ctx.user.role === 'owner' || ctx.user.role === 'admin' || userRepo.isServerAdmin(ctx.socket.data.identityUserId)
+  )
 }
 
 export function isRoomOwner(roomCreatorId: string, principalUserId: string): boolean {
@@ -42,7 +44,7 @@ export function createWithRoomManager(io: TypedServer) {
       if (!isRoomManager(ctx)) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.NO_PERMISSION,
-          message: '只有房主或服务器管理员可以操作',
+          message: '',
         })
         return
       }
@@ -60,7 +62,7 @@ export function createWithOwnerOnly(io: TypedServer) {
       if (!isRoomOwner(ctx.room.creatorId, principalId) || ctx.user.id !== ctx.room.creatorId) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.NO_PERMISSION,
-          message: '只有房主可以操作',
+          message: '',
         })
         return
       }

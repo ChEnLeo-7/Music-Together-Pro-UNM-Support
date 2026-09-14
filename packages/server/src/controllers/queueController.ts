@@ -26,25 +26,28 @@ export function registerQueueController(io: TypedServer, socket: TypedSocket) {
       if (!(await checkSocketRateLimit(ctx.socket))) return
       const parsed = queueAddSchema.safeParse(raw)
       if (!parsed.success) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '无效的歌曲数据' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '' })
         return
       }
-       const requestedTrack: Track = { ...parsed.data.track, requestedBy: ctx.user.nickname }
-       const track = await canonicalizeTrackForRoom(ctx.roomId, requestedTrack)
-       if (!track) {
-         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '自定义媒体不存在或已失效' })
-         return
-       }
+      const requestedTrack: Track = { ...parsed.data.track, requestedBy: ctx.user.nickname }
+      const track = await canonicalizeTrackForRoom(ctx.roomId, requestedTrack)
+      if (!track) {
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.CUSTOM_MEDIA_NOT_FOUND, message: '' })
+        return
+      }
 
       const added = queueService.addTrack(ctx.roomId, track)
       if (!added) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.QUEUE_FULL, message: '播放队列已满' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.QUEUE_FULL, message: '' })
         return
       }
       io.to(ctx.roomId).emit(EVENTS.QUEUE_UPDATED, { queue: ctx.room.queue })
 
       // System message
-      const msg = chatService.createSystemMessage(ctx.roomId, `${ctx.user.nickname} 点了一首「${track.title}」`)
+      const msg = chatService.createSystemMessage(ctx.roomId, 'trackAdded', {
+        nickname: ctx.user.nickname,
+        track: track.title,
+      })
       io.to(ctx.roomId).emit(EVENTS.CHAT_MESSAGE, msg)
 
       // If nothing was playing, auto-play this track.
@@ -63,25 +66,28 @@ export function registerQueueController(io: TypedServer, socket: TypedSocket) {
       if (!(await checkSocketRateLimit(ctx.socket))) return
       const parsed = queueInsertAfterCurrentSchema.safeParse(raw)
       if (!parsed.success) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '无效的歌曲数据' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '' })
         return
       }
-       const requestedTrack: Track = { ...parsed.data.track, requestedBy: ctx.user.nickname }
-       const track = await canonicalizeTrackForRoom(ctx.roomId, requestedTrack)
-       if (!track) {
-         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '自定义媒体不存在或已失效' })
-         return
-       }
+      const requestedTrack: Track = { ...parsed.data.track, requestedBy: ctx.user.nickname }
+      const track = await canonicalizeTrackForRoom(ctx.roomId, requestedTrack)
+      if (!track) {
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.CUSTOM_MEDIA_NOT_FOUND, message: '' })
+        return
+      }
 
       const added = queueService.insertAfterCurrent(ctx.roomId, track)
       if (!added) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.QUEUE_FULL, message: '播放队列已满' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.QUEUE_FULL, message: '' })
         return
       }
       io.to(ctx.roomId).emit(EVENTS.QUEUE_UPDATED, { queue: ctx.room.queue })
 
       // System message
-      const msg = chatService.createSystemMessage(ctx.roomId, `${ctx.user.nickname} 置顶了一首「${track.title}」`)
+      const msg = chatService.createSystemMessage(ctx.roomId, 'trackPinned', {
+        nickname: ctx.user.nickname,
+        track: track.title,
+      })
       io.to(ctx.roomId).emit(EVENTS.CHAT_MESSAGE, msg)
 
       // If nothing was playing, auto-play this track.
@@ -97,29 +103,31 @@ export function registerQueueController(io: TypedServer, socket: TypedSocket) {
       if (!(await checkSocketRateLimit(ctx.socket))) return
       const parsed = queueAddBatchSchema.safeParse(raw)
       if (!parsed.success) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '无效的歌曲数据' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '' })
         return
       }
       const { tracks: rawTracks, playlistName } = parsed.data
-       const tracks = (await Promise.all(
-         rawTracks.map((t) => canonicalizeTrackForRoom(ctx.roomId, { ...t, requestedBy: ctx.user.nickname })),
-       )).filter((track): track is Track => track !== null)
-       if (tracks.length === 0) {
-         socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '自定义媒体不存在或已失效' })
-         return
-       }
+      const tracks = (
+        await Promise.all(
+          rawTracks.map((t) => canonicalizeTrackForRoom(ctx.roomId, { ...t, requestedBy: ctx.user.nickname })),
+        )
+      ).filter((track): track is Track => track !== null)
+      if (tracks.length === 0) {
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.CUSTOM_MEDIA_NOT_FOUND, message: '' })
+        return
+      }
 
       const addedCount = queueService.addBatchTracks(ctx.roomId, tracks)
       if (addedCount === 0) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.QUEUE_FULL, message: '播放队列已满' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.QUEUE_FULL, message: '' })
         return
       }
       io.to(ctx.roomId).emit(EVENTS.QUEUE_UPDATED, { queue: ctx.room.queue })
 
-      const label = playlistName ? `歌单「${playlistName}」` : '歌单'
       const msg = chatService.createSystemMessage(
         ctx.roomId,
-        `${ctx.user.nickname} 从${label}导入了 ${addedCount} 首歌`,
+        playlistName ? 'playlistImported' : 'playlistImportedGeneric',
+        { nickname: ctx.user.nickname, ...(playlistName ? { playlist: playlistName } : {}), count: addedCount },
       )
       io.to(ctx.roomId).emit(EVENTS.CHAT_MESSAGE, msg)
 
@@ -137,27 +145,11 @@ export function registerQueueController(io: TypedServer, socket: TypedSocket) {
     withPermission('remove', 'Queue', async (ctx, raw) => {
       const parsed = queueRemoveSchema.safeParse(raw)
       if (!parsed.success) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '无效的移除请求' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '' })
         return
       }
       const { trackId } = parsed.data
-      const isCurrentTrack = ctx.room.currentTrack?.id === trackId
-
-      queueService.removeTrack(ctx.roomId, trackId)
-
-      // If the removed track was currently playing, skip to next or stop.
-      // skipDebounce: removing current track must always advance, regardless
-      // of how recently the last NEXT was triggered.
-      if (isCurrentTrack) {
-        await playerService.playNextTrackInRoom(io, ctx.roomId, ctx.room.playMode, { skipDebounce: true })
-        const room = ctx.room
-        io.to(ctx.roomId).emit(EVENTS.QUEUE_UPDATED, { queue: room.queue })
-      } else {
-        io.to(ctx.roomId).emit(EVENTS.QUEUE_UPDATED, { queue: ctx.room.queue })
-        if (ctx.room.queue.length === 0 && !ctx.room.currentTrack) {
-          await playerService.stopPlaybackSafe(io, ctx.roomId)
-        }
-      }
+      await playerService.removeTrackInRoom(io, ctx.roomId, trackId)
 
       logger.info(`Track removed`, { roomId: ctx.roomId })
     }),
@@ -168,7 +160,7 @@ export function registerQueueController(io: TypedServer, socket: TypedSocket) {
     withPermission('reorder', 'Queue', (ctx, raw) => {
       const parsed = queueReorderSchema.safeParse(raw)
       if (!parsed.success) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '无效的排序数据' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_DATA, message: '' })
         return
       }
       const { trackIds } = parsed.data

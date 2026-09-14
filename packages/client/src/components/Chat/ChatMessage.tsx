@@ -3,6 +3,16 @@ import dayjs from 'dayjs'
 import { motion } from 'motion/react'
 import type { ChatMessage as ChatMessageType } from '@music-together/shared'
 import { cn } from '@/lib/utils'
+import { useI18n, type I18nKey } from '@/lib/i18n'
+
+const SYSTEM_MESSAGE_KEYS: Record<NonNullable<ChatMessageType['systemKey']>, I18nKey> = {
+  userJoined: 'systemUserJoined',
+  userLeft: 'systemUserLeft',
+  trackAdded: 'systemTrackAdded',
+  trackPinned: 'systemTrackPinned',
+  playlistImported: 'systemPlaylistImported',
+  playlistImportedGeneric: 'systemPlaylistImportedGeneric',
+}
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -10,14 +20,18 @@ interface ChatMessageProps {
 }
 
 export const ChatMessage = memo(function ChatMessage({ message, isOwnMessage }: ChatMessageProps) {
+  const t = useI18n((s) => s.t)
   if (message.type === 'system') {
+    const content = message.systemKey
+      ? t(SYSTEM_MESSAGE_KEYS[message.systemKey], message.systemParams)
+      : message.content
     return (
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="py-1.5 text-center text-xs text-muted-foreground/50"
       >
-        {message.content}
+        {content}
       </motion.div>
     )
   }

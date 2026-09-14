@@ -52,17 +52,17 @@ function validRoomId(roomId: string): boolean {
 
 function roomMember(req: Request, res: Response, roomId: string) {
   if (!validRoomId(roomId)) {
-    res.status(400).json({ code: 'INVALID_ROOM', error: 'Invalid room ID' })
+    res.status(400).json({ code: 'INVALID_ROOM', error: '' })
     return null
   }
   if (!roomRepo.get(roomId)) {
-    res.status(404).json({ code: 'ROOM_NOT_FOUND', error: 'Room not found' })
+    res.status(404).json({ code: 'ROOM_NOT_FOUND', error: '' })
     return null
   }
   if (!isRoomMediaMember(roomId, req.identityUserId)) {
     res
       .status(req.identityUserId ? 403 : 401)
-      .json({ code: req.identityUserId ? 'NO_PERMISSION' : 'AUTH_REQUIRED', error: 'Room access required' })
+      .json({ code: req.identityUserId ? 'NO_PERMISSION' : 'AUTH_REQUIRED', error: '' })
     return null
   }
   return req.identityUserId!
@@ -72,7 +72,7 @@ function roomOwner(req: Request, res: Response, roomId: string): string | null {
   const userId = roomMember(req, res, roomId)
   if (!userId) return null
   if (!isRoomMediaOwner(roomId, userId)) {
-    res.status(403).json({ code: 'NOT_OWNER', error: 'Only the room owner can manage media credentials' })
+    res.status(403).json({ code: 'NOT_OWNER', error: '' })
     return null
   }
   return userId
@@ -80,10 +80,10 @@ function roomOwner(req: Request, res: Response, roomId: string): string | null {
 
 function sendMediaError(res: Response, error: unknown): void {
   if (error instanceof MediaProcessingError) {
-    res.status(error.status).json({ code: error.code, error: error.message })
+    res.status(error.status).json({ code: error.code, error: '' })
     return
   }
-  res.status(500).json({ code: 'MEDIA_PROCESSING_FAILED', error: 'Media processing failed' })
+  res.status(500).json({ code: 'MEDIA_PROCESSING_FAILED', error: '' })
 }
 
 interface MultipartFile {
@@ -231,7 +231,7 @@ router.post('/rooms/:roomId/import', async (req, res) => {
   if (!userId) return
   const parsed = importSchema.safeParse(req.body)
   if (!parsed.success) {
-    res.status(400).json({ code: 'INVALID_MEDIA_URL', error: parsed.error.issues[0]?.message ?? 'Invalid media URL' })
+    res.status(400).json({ code: 'INVALID_MEDIA_URL', error: '' })
     return
   }
   try {
@@ -252,7 +252,7 @@ router.post('/rooms/:roomId/cookies/:platform', async (req, res) => {
   const userId = roomOwner(req, res, roomId)
   if (!userId) return
   if (platform !== 'youtube' && platform !== 'bilibili') {
-    res.status(400).json({ code: 'INVALID_MEDIA_PLATFORM', error: 'Unsupported video platform' })
+    res.status(400).json({ code: 'INVALID_MEDIA_PLATFORM', error: '' })
     return
   }
   try {
@@ -285,7 +285,7 @@ router.delete('/rooms/:roomId/cookies/:platform', (req, res) => {
   const userId = roomOwner(req, res, roomId)
   if (!userId) return
   if (platform !== 'youtube' && platform !== 'bilibili') {
-    res.status(400).json({ code: 'INVALID_MEDIA_PLATFORM', error: 'Unsupported video platform' })
+    res.status(400).json({ code: 'INVALID_MEDIA_PLATFORM', error: '' })
     return
   }
   removeMediaCookie(roomId, platform)
@@ -297,20 +297,20 @@ function authorizedRecord(req: Request, res: Response) {
   const token = typeof req.query.token === 'string' ? req.query.token : undefined
   const roomId = typeof req.query.roomId === 'string' ? req.query.roomId : undefined
   if (!roomId || !validRoomId(roomId)) {
-    res.status(400).json({ code: 'INVALID_MEDIA_ACCESS', error: 'Missing room access' })
+    res.status(400).json({ code: 'INVALID_MEDIA_ACCESS', error: '' })
     return null
   }
   if (!req.identityUserId) {
-    res.status(401).json({ code: 'AUTH_REQUIRED', error: 'Room access required' })
+    res.status(401).json({ code: 'AUTH_REQUIRED', error: '' })
     return null
   }
   if (!isRoomMediaMember(roomId, req.identityUserId)) {
-    res.status(403).json({ code: 'NO_PERMISSION', error: 'Room access required' })
+    res.status(403).json({ code: 'NO_PERMISSION', error: '' })
     return null
   }
   const record = getAuthorizedMediaRecord(mediaId, roomId, token)
   if (!record) {
-    res.status(404).json({ code: 'MEDIA_NOT_FOUND', error: 'Media is not available' })
+    res.status(404).json({ code: 'MEDIA_NOT_FOUND', error: '' })
     return null
   }
   mediaRepo.touchAccess(mediaId)
@@ -349,7 +349,7 @@ router.get('/:mediaId/stream', async (req, res) => {
     res.setHeader('Content-Length', String(end - start + 1))
     createReadStream(filePath, { start, end }).pipe(res)
   } catch {
-    if (!res.headersSent) res.status(404).json({ code: 'MEDIA_FILE_MISSING', error: 'Media file is missing' })
+    if (!res.headersSent) res.status(404).json({ code: 'MEDIA_FILE_MISSING', error: '' })
     else res.end()
   }
 })
@@ -357,8 +357,7 @@ router.get('/:mediaId/stream', async (req, res) => {
 router.get('/:mediaId/cover', async (req, res) => {
   const record = authorizedRecord(req, res)
   if (!record || !record.coverPath) {
-    if (record && !res.headersSent)
-      res.status(404).json({ code: 'MEDIA_COVER_MISSING', error: 'Media cover is missing' })
+    if (record && !res.headersSent) res.status(404).json({ code: 'MEDIA_COVER_MISSING', error: '' })
     return
   }
   try {
@@ -366,7 +365,7 @@ router.get('/:mediaId/cover', async (req, res) => {
     res.setHeader('Cache-Control', 'private, max-age=3600')
     createReadStream(getMediaCoverPath(record)).pipe(res)
   } catch {
-    if (!res.headersSent) res.status(404).json({ code: 'MEDIA_COVER_MISSING', error: 'Media cover is missing' })
+    if (!res.headersSent) res.status(404).json({ code: 'MEDIA_COVER_MISSING', error: '' })
   }
 })
 
@@ -384,17 +383,17 @@ router.delete('/rooms/:roomId/:mediaId', async (req, res) => {
   if (!userId) return
   const record = mediaRepo.get(mediaId)
   if (!record || record.roomId !== roomId) {
-    res.status(404).json({ code: 'MEDIA_NOT_FOUND', error: 'Media is not available' })
+    res.status(404).json({ code: 'MEDIA_NOT_FOUND', error: '' })
     return
   }
   if (!isRoomMediaOwner(roomId, userId) && record.createdByUserId !== userId) {
-    res.status(403).json({ code: 'NO_PERMISSION', error: 'You cannot delete this media' })
+    res.status(403).json({ code: 'MEDIA_DELETE_FORBIDDEN', error: '' })
     return
   }
   if (record.status === 'ready') {
     for (const room of roomRepo.getAll().values()) {
       if (room.currentTrack?.mediaId === record.id || room.queue.some((track) => track.mediaId === record.id)) {
-        res.status(409).json({ code: 'MEDIA_IN_USE', error: 'Media is still in the queue or playing' })
+        res.status(409).json({ code: 'MEDIA_IN_USE', error: '' })
         return
       }
     }

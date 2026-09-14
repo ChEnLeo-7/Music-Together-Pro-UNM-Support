@@ -32,7 +32,10 @@ export function useRoomState() {
   const t = useI18n((s) => s.t)
   const { socket } = useSocketContext()
   const navigateRef = useRef(navigate)
-  navigateRef.current = navigate
+
+  useEffect(() => {
+    navigateRef.current = navigate
+  }, [navigate])
 
   // Guard against React Strict Mode double-mount sending cookies twice.
   // Persists across cleanup/re-setup so the second mount is a no-op.
@@ -88,6 +91,7 @@ export function useRoomState() {
       permanent?: boolean
       chatHistoryForNewUsers?: boolean
       pauseAtQueueEnd?: boolean
+      removePlayedTracks?: boolean
     }) => {
       useRoomStore.getState().updateRoom(settings)
     }
@@ -147,7 +151,7 @@ export function useRoomState() {
       }
       const reasonText = data.reasonType ? (reasonMap[data.reasonType] ?? null) : null
       toast.error(
-        t('sourceFallbackFailed', { track: data.trackTitle, reason: reasonText ? `（${reasonText}）` : '' }),
+        t('sourceFallbackFailed', { track: data.trackTitle, reason: reasonText ? ` (${reasonText})` : '' }),
         { id },
       )
     }

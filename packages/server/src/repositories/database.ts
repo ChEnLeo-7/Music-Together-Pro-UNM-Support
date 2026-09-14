@@ -23,15 +23,18 @@ export const db: BetterSqliteDatabase = new Database(dbPath)
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 runMigrations(db)
-const adminCount = db.prepare<[], { count: number }>("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get()?.count ?? 0
+const adminCount =
+  db.prepare<[], { count: number }>("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get()?.count ?? 0
 if (adminCount === 0) {
   const now = Date.now()
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO users (
       id, kind, username, nickname, avatar_url, password_hash, role, status,
       must_change_password, must_change_username, created_at, updated_at, last_seen_at
     ) VALUES (?, 'account', 'admin', 'admin', NULL, ?, 'admin', 'active', 1, 1, ?, ?, ?)
-  `).run(randomUUID(), bcrypt.hashSync('admin', 12), now, now, now)
+  `,
+  ).run(randomUUID(), bcrypt.hashSync('admin', 12), now, now, now)
   logger.warn('Created bootstrap administrator admin/admin; credentials must be changed at first login')
 }
 

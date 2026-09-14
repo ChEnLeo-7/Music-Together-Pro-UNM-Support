@@ -301,6 +301,7 @@ const STATUS_MESSAGES: Record<string, { status: number; message: string }> = {
 export async function checkQrStatus(qrsig: string): Promise<{
   status: number
   message: string
+  code?: string
   cookie?: string
 }> {
   try {
@@ -377,11 +378,11 @@ export async function checkQrStatus(qrsig: string): Promise<{
     const match = text.match(/ptuiCB\('(\d+)','([^']*)','([^']*)','([^']*)','([^']*)'(?:,'([^']*)')?/)
     if (!match) {
       logger.warn('QQ QR: unexpected ptqrlogin response format', { text: text.slice(0, 300) })
-      return { status: 800, message: '检查状态失败（响应格式异常）' }
+      return { status: 800, code: 'QR_CHECK_FAILED', message: '' }
     }
 
     const [, code, , checkSigUrl, , msg, nickname] = match
-    const mapped = STATUS_MESSAGES[code] ?? { status: 800, message: `未知状态 (${code})` }
+    const mapped = STATUS_MESSAGES[code] ?? { status: 800, message: '', code: 'QR_CHECK_FAILED' }
 
     logger.info(
       `QQ QR poll: code=${code}, checkSigUrl=${checkSigUrl?.slice(0, 80) || '(empty)'}, nickname=${nickname || '(none)'}`,
@@ -461,7 +462,7 @@ export async function checkQrStatus(qrsig: string): Promise<{
     return mapped
   } catch (err) {
     logger.error('QQ QR check failed', err)
-    return { status: 800, message: '检查状态失败' }
+    return { status: 800, code: 'QR_CHECK_FAILED', message: '' }
   }
 }
 

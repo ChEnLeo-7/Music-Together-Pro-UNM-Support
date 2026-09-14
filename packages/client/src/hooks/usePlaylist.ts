@@ -124,7 +124,12 @@ export function usePlaylist() {
    * Resets all track state immediately to prevent stale data from flashing.
    */
   const fetchPlaylistTracks = useCallback(
-    async (source: MusicSource, playlistId: string, trackCount?: number, type: 'playlist' | 'album' = 'playlist'): Promise<Track[]> => {
+    async (
+      source: MusicSource,
+      playlistId: string,
+      trackCount?: number,
+      type: 'playlist' | 'album' = 'playlist',
+    ): Promise<Track[]> => {
       // Reset state immediately — prevents flashing old data when switching playlists
       setPlaylistTracks([])
       setPlaylistTotal(0)

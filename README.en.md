@@ -75,6 +75,7 @@
 18. **Native Android Background Playback**: Provides an Android app with Media3 foreground playback, lock-screen and background audio, system media controls, stable play/pause state synchronization, and an interactive seek bar. The app can connect to a self-hosted HTTP or HTTPS server at startup.
 19. **Pause at Playlist End**: Room settings can pause sequential or loop-all playback after the final track instead of automatically returning to the first track.
 20. **Reliable Background-Tab Advancement**: The server advances the queue from authoritative playback time when a track ends, while web clients immediately resynchronize after returning from the background instead of requiring the host tab to remain visible.
+21. **Automatic Queue Cleanup**: The room owner can remove each track from the playlist after it finishes; playback stops when the playlist becomes empty.
 
 ## Important Note
 

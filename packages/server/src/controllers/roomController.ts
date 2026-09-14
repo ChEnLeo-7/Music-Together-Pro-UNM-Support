@@ -42,7 +42,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       if (!parsed.success) {
         socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.INVALID_INPUT,
-          message: parsed.error.issues[0]?.message ?? '杈撳叆鏍煎紡閿欒',
+          message: '',
         })
         return
       }
@@ -69,7 +69,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       roomService.broadcastRoomList(io)
     } catch (err) {
       logger.error('ROOM_CREATE handler error', err, { socketId: socket.id })
-      socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INTERNAL, message: '服务器内部错误' })
+      socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INTERNAL, message: '' })
     }
   })
 
@@ -80,7 +80,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       if (!parsed.success) {
         socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.INVALID_INPUT,
-          message: parsed.error.issues[0]?.message ?? '杈撳叆鏍煎紡閿欒',
+          message: '',
         })
         return
       }
@@ -99,7 +99,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       if (!validation.valid) {
         socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE[validation.errorCode as keyof typeof ERROR_CODE] ?? ERROR_CODE.JOIN_FAILED,
-          message: validation.errorMessage ?? '鍔犲叆鎴块棿澶辫触',
+          message: '',
         })
         return
       }
@@ -118,7 +118,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         playbackCapable,
       )
       if (!result) {
-        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.JOIN_FAILED, message: '鍔犲叆鎴块棿澶辫触' })
+        socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.JOIN_FAILED, message: '' })
         return
       }
 
@@ -163,7 +163,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       if (!validation.isRejoin) {
         socket.to(roomId).emit(EVENTS.ROOM_USER_JOINED, user)
         // System message for user joined (server-authoritative)
-        const joinMsg = chatService.createSystemMessage(roomId, `${user.nickname} 加入了房间`)
+        const joinMsg = chatService.createSystemMessage(roomId, 'userJoined', { nickname: user.nickname })
         io.to(roomId).emit(EVENTS.CHAT_MESSAGE, joinMsg)
       }
 
@@ -171,7 +171,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       roomService.broadcastRoomList(io)
     } catch (err) {
       logger.error('ROOM_JOIN handler error', err, { socketId: socket.id })
-      socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INTERNAL, message: '服务器内部错误' })
+      socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INTERNAL, message: '' })
     }
   })
 
@@ -192,14 +192,14 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       if (!canDissolve) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.NO_PERMISSION,
-          message: '只有房主或服务器管理员可以解散房间',
+          message: '',
         })
         return
       }
 
       const destroyed = destroyRoom(ctx.roomId, io)
       if (!destroyed) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.ROOM_NOT_FOUND, message: '房间不存在' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.ROOM_NOT_FOUND, message: '' })
         return
       }
 
@@ -225,7 +225,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       if (!parsed.success) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.INVALID_INPUT,
-          message: parsed.error.issues[0]?.message ?? '杈撳叆鏍煎紡閿欒',
+          message: '',
         })
         return
       }
@@ -237,11 +237,12 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         parsed.data.password !== undefined ||
         parsed.data.hidden !== undefined ||
         parsed.data.permanent !== undefined ||
-        parsed.data.chatHistoryForNewUsers !== undefined
+        parsed.data.chatHistoryForNewUsers !== undefined ||
+        parsed.data.removePlayedTracks !== undefined
       if (!isOwner && !isServerAdmin && ownerOnlyRequested) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.NO_PERMISSION,
-          message: '只有房主或服务器管理员可以修改此房间设置',
+          message: '',
         })
         return
       }
@@ -254,6 +255,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
               audioQuality: parsed.data.audioQuality,
               sourcePriority: parsed.data.sourcePriority,
               pauseAtQueueEnd: parsed.data.pauseAtQueueEnd,
+              removePlayedTracks: parsed.data.removePlayedTracks,
             },
       )
 
@@ -270,6 +272,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
         permanent: updatedRoom.permanent,
         chatHistoryForNewUsers: updatedRoom.chatHistoryForNewUsers,
         pauseAtQueueEnd: updatedRoom.pauseAtQueueEnd,
+        removePlayedTracks: updatedRoom.removePlayedTracks,
       }
       ctx.io.to(ctx.roomId).emit(EVENTS.ROOM_SETTINGS, baseSettings)
       emitRoomStateByPermission(io, ctx.roomId, updatedRoom)
@@ -289,7 +292,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       if (!parsed.success) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.INVALID_INPUT,
-          message: parsed.error.issues[0]?.message ?? '杈撳叆鏍煎紡閿欒',
+          message: '',
         })
         return
       }
@@ -299,7 +302,7 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
       if (!result.success) {
         ctx.socket.emit(EVENTS.ROOM_ERROR, {
           code: ERROR_CODE.SET_ROLE_FAILED,
-          message: '鏃犳硶璁剧疆璇ョ敤鎴风殑瑙掕壊',
+          message: '',
         })
         return
       }
@@ -319,13 +322,13 @@ export function registerRoomController(io: TypedServer, socket: TypedSocket) {
     withOwnerOnly((ctx, raw) => {
       const userId = typeof raw === 'object' && raw !== null && 'userId' in raw ? String(raw.userId) : ''
       if (!userId) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '杈撳叆鏍煎紡閿欒' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
         return
       }
 
       const success = roomService.hideMemberRecord(ctx.roomId, userId)
       if (!success) {
-        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '无法删除该成员记录' })
+        ctx.socket.emit(EVENTS.ROOM_ERROR, { code: ERROR_CODE.INVALID_INPUT, message: '' })
         return
       }
 
@@ -386,7 +389,7 @@ function handleLeave(io: TypedServer, socket: TypedSocket, reason?: string, revo
 
   // System message for user left (server-authoritative)
   if (room && room.users.some((u) => u.online !== false)) {
-    const leaveMsg = chatService.createSystemMessage(roomId, `${user.nickname} 离开了房间`)
+    const leaveMsg = chatService.createSystemMessage(roomId, 'userLeft', { nickname: user.nickname })
     io.to(roomId).emit(EVENTS.CHAT_MESSAGE, leaveMsg)
   }
 

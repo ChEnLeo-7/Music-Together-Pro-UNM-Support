@@ -1,40 +1,48 @@
-import type { AudioQuality, MusicSource, MyPlatformAuth, PlatformAuthStatus, SourcePriority, StreamSource } from '@music-together/shared'
+import type {
+  AudioQuality,
+  MusicSource,
+  MyPlatformAuth,
+  PlatformAuthStatus,
+  SourcePriority,
+  StreamSource,
+} from '@music-together/shared'
+import type { I18nKey } from '@/lib/i18n'
 
 export interface AudioQualityOption {
   value: AudioQuality
-  label: string
+  labelKey: I18nKey
   platform?: StreamSource
-  description?: string
+  descriptionKey?: I18nKey
 }
 
 export const BASE_AUDIO_QUALITY_OPTIONS: AudioQualityOption[] = [
-  { value: 128, label: '标准 128kbps' },
-  { value: 192, label: '较高 192kbps' },
-  { value: 320, label: '高品质 320kbps' },
+  { value: 128, labelKey: 'qualityStandard' },
+  { value: 192, labelKey: 'qualityHigh' },
+  { value: 320, labelKey: 'qualityHq' },
 ]
 
-const LOSSLESS_LABEL = '无损品质 512kbps+'
+const LOSSLESS_LABEL = 'qualityLossless' as const
 
 const UNM_OPTIONS: AudioQualityOption[] = [
-  { value: 999, label: LOSSLESS_LABEL, platform: 'unm', description: '由 UNM 服务器提供，实际码率取决于匹配到的音源' },
+  { value: 999, labelKey: LOSSLESS_LABEL, platform: 'unm', descriptionKey: 'qualityUnmDescription' },
 ]
 
 const PLATFORM_OPTIONS: Record<MusicSource, AudioQualityOption[]> = {
   netease: [
-    { value: 999, label: LOSSLESS_LABEL, platform: 'netease' },
-    { value: 'netease_dolby', label: '杜比全景声', platform: 'netease' },
-    { value: 'netease_hires', label: 'Hi-Res', platform: 'netease' },
-    { value: 'netease_jyeffect', label: '高清臻音', platform: 'netease' },
-    { value: 'netease_spatial', label: '沉浸环绕声', platform: 'netease' },
-    { value: 'netease_master', label: '超清母带', platform: 'netease' },
+    { value: 999, labelKey: LOSSLESS_LABEL, platform: 'netease' },
+    { value: 'netease_dolby', labelKey: 'qualityDolbyAtmos', platform: 'netease' },
+    { value: 'netease_hires', labelKey: 'qualityHiRes', platform: 'netease' },
+    { value: 'netease_jyeffect', labelKey: 'qualityJyeffect', platform: 'netease' },
+    { value: 'netease_spatial', labelKey: 'qualitySpatial', platform: 'netease' },
+    { value: 'netease_master', labelKey: 'qualityMaster', platform: 'netease' },
   ],
   tencent: [
-    { value: 'tencent_flac', label: LOSSLESS_LABEL, platform: 'tencent' },
-    { value: 'tencent_master', label: '臻品母带', platform: 'tencent' },
+    { value: 'tencent_flac', labelKey: LOSSLESS_LABEL, platform: 'tencent' },
+    { value: 'tencent_master', labelKey: 'qualityTencentMaster', platform: 'tencent' },
   ],
   kugou: [
-    { value: 'kugou_hires', label: 'Hi-Res 无损', platform: 'kugou' },
-    { value: 'kugou_master', label: '臻品母带', platform: 'kugou' },
+    { value: 'kugou_hires', labelKey: 'qualityKugouHiRes', platform: 'kugou' },
+    { value: 'kugou_master', labelKey: 'qualityTencentMaster', platform: 'kugou' },
   ],
 }
 
@@ -63,12 +71,12 @@ function filterBrowserPlayableOptions(options: AudioQualityOption[]): AudioQuali
   return options.filter((option) => option.value !== 'netease_dolby')
 }
 
-export function platformLabel(platform: StreamSource): string {
-  if (platform === 'netease') return '网易云'
+export function platformLabel(platform: StreamSource, t: (key: I18nKey) => string): string {
+  if (platform === 'netease') return t('neteaseShort')
   if (platform === 'tencent') return 'QQ'
-  if (platform === 'kugou') return '酷狗'
-  if (platform === 'custom') return '自定义'
-  return 'UNM'
+  if (platform === 'kugou') return t('kugouShort')
+  if (platform === 'custom') return t('customSource')
+  return t('unmSource')
 }
 
 export function sourceToPriority(source: StreamSource): SourcePriority {
@@ -125,6 +133,11 @@ export function getAudioQualityOptionsForSource(
   return filterBrowserPlayableOptions(filterAvailable(options))
 }
 
-export function getAudioQualityLabel(quality: AudioQuality, myStatus: MyPlatformAuth[]): string {
-  return getAudioQualityOptions(myStatus, true).find((option) => option.value === quality)?.label ?? String(quality)
+export function getAudioQualityLabel(
+  quality: AudioQuality,
+  myStatus: MyPlatformAuth[],
+  t: (key: I18nKey) => string,
+): string {
+  const option = getAudioQualityOptions(myStatus, true).find((item) => item.value === quality)
+  return option ? t(option.labelKey) : String(quality)
 }

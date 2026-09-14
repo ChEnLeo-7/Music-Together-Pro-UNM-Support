@@ -9,6 +9,7 @@ import { MessageSquare, Volume2, VolumeX } from 'lucide-react'
 import { motion } from 'motion/react'
 import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { ARTIST_LAYOUT_TRANSITION, TITLE_LAYOUT_TRANSITION } from './constants'
+import { useI18n } from '@/lib/i18n'
 
 /** Must match PlayerControls.DESIGN_WIDTH so zoom factors are identical */
 const DESIGN_WIDTH = 300
@@ -27,6 +28,7 @@ function VolumeControl({
   toggleMute: () => void
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const t = useI18n((s) => s.t)
 
   return (
     <Tooltip delayDuration={300} open={popoverOpen ? false : undefined}>
@@ -37,21 +39,19 @@ function VolumeControl({
               variant="ghost"
               size="icon"
               className="h-9 w-9 text-white/70 hover:bg-white/10 active:scale-90 transition-transform"
-              aria-label={volume === 0 ? '取消静音' : '调节音量'}
+              aria-label={volume === 0 ? t('mute') : t('adjustVolume')}
             >
               {volume === 0 ? <VolumeX className="size-5" /> : <Volume2 className="size-5" />}
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent>音量</TooltipContent>
+        <TooltipContent>{t('volume')}</TooltipContent>
         <PopoverContent side="top" align="center" className="flex w-44 items-center gap-2 rounded-xl px-3 py-2">
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-white/70" onClick={toggleMute}>
             {volume === 0 ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
           </Button>
           <Slider min={0} max={100} value={[volume * 100]} onValueChange={([v]) => setVolume(v / 100)} />
-          <span className="w-8 shrink-0 text-right text-xs tabular-nums text-white/50">
-            {Math.round(volume * 100)}
-          </span>
+          <span className="w-8 shrink-0 text-right text-xs tabular-nums text-white/50">{Math.round(volume * 100)}</span>
         </PopoverContent>
       </Popover>
     </Tooltip>
@@ -64,13 +64,18 @@ interface SongInfoBarProps {
   sharedIdentity?: boolean
 }
 
-export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCount, sharedIdentity = false }: SongInfoBarProps) {
+export const SongInfoBar = memo(function SongInfoBar({
+  onOpenChat,
+  chatUnreadCount,
+  sharedIdentity = false,
+}: SongInfoBarProps) {
   const currentTrack = useRoomStore((s) => s.room?.currentTrack ?? null)
   const volume = usePlayerStore((s) => s.volume)
   const setVolume = usePlayerStore((s) => s.setVolume)
   const prevVolumeRef = useRef(0.8)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
+  const t = useI18n((s) => s.t)
 
   const toggleMute = useCallback(() => {
     if (volume === 0) {
@@ -106,7 +111,7 @@ export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCou
             transition={TITLE_LAYOUT_TRANSITION}
             className="text-xl font-bold leading-tight text-white/90"
           >
-            <MarqueeText>{currentTrack?.title ?? '暂无歌曲'}</MarqueeText>
+            <MarqueeText>{currentTrack?.title ?? t('noCurrentSong')}</MarqueeText>
           </motion.div>
           <motion.div
             layout={sharedIdentity ? 'position' : false}
@@ -114,7 +119,7 @@ export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCou
             transition={ARTIST_LAYOUT_TRANSITION}
             className="text-sm text-white/50"
           >
-            <MarqueeText>{currentTrack ? currentTrack.artist.join(' / ') : '点击搜索添加歌曲到队列'}</MarqueeText>
+            <MarqueeText>{currentTrack ? currentTrack.artist.join(' / ') : t('searchToAddTrack')}</MarqueeText>
           </motion.div>
         </div>
 
@@ -129,7 +134,7 @@ export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCou
                   size="icon"
                   className="relative h-9 w-9 text-white/70 hover:bg-white/10"
                   onClick={onOpenChat}
-                  aria-label="聊天"
+                  aria-label={t('chat')}
                 >
                   <MessageSquare className="size-5" />
                   {chatUnreadCount > 0 && (
@@ -140,7 +145,7 @@ export const SongInfoBar = memo(function SongInfoBar({ onOpenChat, chatUnreadCou
                 </Button>
               </motion.div>
             </TooltipTrigger>
-            <TooltipContent>聊天</TooltipContent>
+            <TooltipContent>{t('chat')}</TooltipContent>
           </Tooltip>
         </div>
       </div>

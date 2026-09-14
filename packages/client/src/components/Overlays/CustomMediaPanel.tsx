@@ -2,7 +2,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useI18n } from '@/lib/i18n'
+import { getLocalizedError, LocalizedError, useI18n } from '@/lib/i18n'
+import { RequestError } from '@/lib/request'
 import { isServerAssetUrl, resolveServerAssetUrl, SERVER_URL } from '@/lib/config'
 import { useRoomStore } from '@/stores/roomStore'
 import type { Track } from '@music-together/shared'
@@ -49,8 +50,8 @@ function formatBytes(bytes: number): string {
 }
 
 async function responseError(response: Response): Promise<Error> {
-  const body = (await response.json().catch(() => null)) as { error?: string } | null
-  return new Error(body?.error || `Request failed: ${response.status}`)
+  const body = (await response.json().catch(() => null)) as { code?: string; error?: string } | null
+  return new RequestError(body?.error || `Request failed: ${response.status}`, body?.code, response.status)
 }
 
 function uploadMultipart(
@@ -65,19 +66,21 @@ function uploadMultipart(
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100))
     }
-    request.onerror = () => reject(new Error('Network request failed'))
-    request.onabort = () => reject(new Error('Upload cancelled'))
+    request.onerror = () => reject(new RequestError('Network request failed', 'MEDIA_PROCESSING_FAILED'))
+    request.onabort = () => reject(new RequestError('Upload cancelled', 'UPLOAD_ABORTED'))
     request.onload = () => {
-      let body: { track?: Track; error?: string } | null = null
+      let body: { track?: Track; code?: string; error?: string } | null = null
       try {
-        body = request.responseText ? (JSON.parse(request.responseText) as { track?: Track; error?: string }) : null
+        body = request.responseText
+          ? (JSON.parse(request.responseText) as { track?: Track; code?: string; error?: string })
+          : null
       } catch {
         body = null
       }
       if (request.status >= 200 && request.status < 300) {
         resolve(body ?? {})
       } else {
-        reject(new Error(body?.error || `Request failed: ${request.status}`))
+        reject(new RequestError(body?.error || `Request failed: ${request.status}`, body?.code, request.status))
       }
     }
     request.send(formData)
@@ -168,11 +171,11 @@ export function CustomMediaPanel({ onAddTrack, onInsertAfterCurrent }: CustomMed
         formData,
         setProgress,
       )
-      if (!result.track) throw new Error(t('customMediaNoTrack'))
+      if (!result.track) throw new LocalizedError('customMediaNoTrack')
       setImportedTrack(result.track)
       toast.success(t('customMediaReady'))
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('customMediaFailed'))
+      toast.error(getLocalizedError(error, t))
     } finally {
       setBusy(false)
     }
@@ -198,11 +201,11 @@ export function CustomMediaPanel({ onAddTrack, onInsertAfterCurrent }: CustomMed
         })
         if (!response.ok) throw await responseError(response)
         const result = (await response.json()) as { track?: Track }
-        if (!result.track) throw new Error(t('customMediaNoTrack'))
+        if (!result.track) throw new LocalizedError('customMediaNoTrack')
         setImportedTrack(result.track)
         toast.success(t('customMediaReady'))
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : t('customMediaFailed'))
+        toast.error(getLocalizedError(error, t))
       } finally {
         setBusy(false)
       }
@@ -238,7 +241,7 @@ export function CustomMediaPanel({ onAddTrack, onInsertAfterCurrent }: CustomMed
         setCookieDrafts((current) => ({ ...current, [platform]: '' }))
         toast.success(t('customMediaCookieSaved'))
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : t('customMediaFailed'))
+        toast.error(getLocalizedError(error, t))
       } finally {
         setCookieBusy(null)
       }
@@ -267,7 +270,7 @@ export function CustomMediaPanel({ onAddTrack, onInsertAfterCurrent }: CustomMed
         setCookieStatus((await responseStatus.json()) as CookieStatus)
         toast.success(t('customMediaCookieRemoved'))
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : t('customMediaFailed'))
+        toast.error(getLocalizedError(error, t))
       } finally {
         setCookieBusy(null)
       }

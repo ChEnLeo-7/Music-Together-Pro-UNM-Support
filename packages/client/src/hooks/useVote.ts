@@ -5,24 +5,31 @@ import { useSocketContext } from '@/providers/SocketProvider'
 import { useSocketEvent } from './useSocketEvent'
 import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
+import type { I18nKey } from '@/lib/i18n'
 
 const ACTION_KEYS = {
-  pause: 'votePause', resume: 'voteResume', next: 'voteNext', prev: 'votePrev',
-  'set-mode': 'voteSetMode', 'play-track': 'votePlay', 'remove-track': 'voteRemove',
+  pause: 'votePause',
+  resume: 'voteResume',
+  next: 'voteNext',
+  prev: 'votePrev',
+  'set-mode': 'voteSetMode',
+  'play-track': 'votePlay',
+  'remove-track': 'voteRemove',
 } as const
 
-const PLAY_MODE_LABELS: Record<PlayMode, string> = {
-  sequential: '顺序播放',
-  'loop-all': '列表循环',
-  'loop-one': '单曲循环',
-  shuffle: '随机播放',
+const PLAY_MODE_LABEL_KEYS: Record<PlayMode, I18nKey> = {
+  sequential: 'modeSequential',
+  'loop-all': 'modeLoopAll',
+  'loop-one': 'modeLoopOne',
+  shuffle: 'modeShuffle',
 }
 
 /** Get a human-readable label for a vote action, including payload context */
 export function getVoteActionLabel(action: VoteAction, payload?: Record<string, unknown>): string {
   const t = useI18n.getState().t
   if (action === 'set-mode' && payload?.mode) {
-    const modeLabel = PLAY_MODE_LABELS[payload.mode as PlayMode] ?? payload.mode
+    const modeKey = PLAY_MODE_LABEL_KEYS[payload.mode as PlayMode]
+    const modeLabel = modeKey ? t(modeKey) : payload.mode
     return `${t('voteSetMode')}: ${modeLabel}`
   }
   if (action === 'play-track' && payload?.trackTitle) {
@@ -48,16 +55,20 @@ export function useVote() {
 
   useSocketEvent(
     EVENTS.VOTE_RESULT,
-    useCallback((data: { passed: boolean; action: VoteAction; reason?: string }) => {
-      setActiveVote(null)
-       const label = getVoteActionLabel(data.action)
-      if (data.passed) {
-         toast.success(t('votePassed', { action: label }))
-      } else {
-        const reasonText = data.reason === 'host_veto' ? t('voteHostVeto') : data.reason === 'timeout' ? t('voteTimeout') : ''
-         toast.error(t('voteRejected', { action: label, reason: reasonText }))
-      }
-     }, [t]),
+    useCallback(
+      (data: { passed: boolean; action: VoteAction; reason?: string }) => {
+        setActiveVote(null)
+        const label = getVoteActionLabel(data.action)
+        if (data.passed) {
+          toast.success(t('votePassed', { action: label }))
+        } else {
+          const reasonText =
+            data.reason === 'host_veto' ? t('voteHostVeto') : data.reason === 'timeout' ? t('voteTimeout') : ''
+          toast.error(t('voteRejected', { action: label, reason: reasonText }))
+        }
+      },
+      [t],
+    ),
   )
 
   // Clear active vote on disconnect
@@ -72,9 +83,9 @@ export function useVote() {
   const startVote = useCallback(
     (action: VoteAction, payload?: Record<string, unknown>) => {
       socket.emit(EVENTS.VOTE_START, { action, payload })
-       toast.info(t('voteStarted', { action: getVoteActionLabel(action, payload) }))
+      toast.info(t('voteStarted', { action: getVoteActionLabel(action, payload) }))
     },
-     [socket, t],
+    [socket, t],
   )
 
   const castVote = useCallback(

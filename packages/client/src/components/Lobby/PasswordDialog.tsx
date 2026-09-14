@@ -10,6 +10,7 @@ import {
 import { Loader2, Lock } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useState } from 'react'
+import { useI18n } from '@/lib/i18n'
 
 interface PasswordDialogProps {
   open: boolean
@@ -22,6 +23,7 @@ interface PasswordDialogProps {
 
 export function PasswordDialog({ open, onOpenChange, roomName, onSubmit, error, isLoading }: PasswordDialogProps) {
   const [password, setPassword] = useState('')
+  const t = useI18n((s) => s.t)
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) setPassword('')
@@ -40,18 +42,18 @@ export function PasswordDialog({ open, onOpenChange, roomName, onSubmit, error, 
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle className="flex items-center gap-2 text-lg">
             <Lock className="h-5 w-5 text-muted-foreground" />
-            需要密码
+            {t('passwordProtection')}
           </ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
         <ResponsiveDialogBody className="space-y-4">
-          <p className="text-sm text-muted-foreground">房间「{roomName}」已设置密码保护</p>
+          <p className="text-sm text-muted-foreground">{t('roomPasswordSetDescription', { room: roomName })}</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <motion.div animate={error ? { x: [-8, 8, -6, 6, -3, 3, 0] } : {}} transition={{ duration: 0.5 }}>
               <Input
                 type="password"
-                placeholder="输入房间密码..."
+                placeholder={t('roomPasswordPlaceholder')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoFocus
@@ -70,7 +72,7 @@ export function PasswordDialog({ open, onOpenChange, roomName, onSubmit, error, 
 
             <Button type="submit" className="w-full" disabled={isLoading || !password.length}>
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              加入房间
+              {t('joinRoom')}
             </Button>
           </form>
         </ResponsiveDialogBody>

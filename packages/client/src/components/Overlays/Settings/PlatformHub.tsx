@@ -14,7 +14,7 @@ import { useI18n } from '@/lib/i18n'
 import { getLocalizedError } from '@/lib/i18n'
 import {
   PLATFORM_COLORS,
-  PLATFORM_SHORT_LABELS,
+  PLATFORM_SHORT_LABEL_KEYS,
   PLATFORM_TEXT,
   getMyPlatformStatus,
   getPlatformStatus,
@@ -147,7 +147,7 @@ export function PlatformHub() {
       result[platform] = storage.hasAuthCookie(platform)
     }
     return result
-  }, [auth.statusLoaded, auth.myStatus])
+  }, [auth.statusLoaded])
 
   const handleQrLogin = useCallback(() => {
     auth.requestQrCode(activePlatform)
@@ -325,7 +325,7 @@ export function PlatformHub() {
                   {qualityOptions.map((option) => (
                     <SelectItem key={qualityOptionKey(option)} value={qualityOptionKey(option)}>
                       <span className="inline-flex items-center gap-2">
-                        <span>{option.label}</span>
+                        <span>{t(option.labelKey)}</span>
                         {option.platform && (
                           <span
                             className={
@@ -336,7 +336,7 @@ export function PlatformHub() {
                                   : `text-[10px] ${PLATFORM_TEXT[option.platform]}`
                             }
                           >
-                            {platformLabel(option.platform)}
+                            {platformLabel(option.platform, t)}
                           </span>
                         )}
                       </span>
@@ -362,7 +362,7 @@ export function PlatformHub() {
                 value={platform}
                 className={`${PLATFORM_COLORS[platform]} min-w-0 px-2 text-xs sm:text-sm`}
               >
-                {PLATFORM_SHORT_LABELS[platform]}
+                {t(PLATFORM_SHORT_LABEL_KEYS[platform])}
               </TabsTrigger>
             ))}
           </TabsList>

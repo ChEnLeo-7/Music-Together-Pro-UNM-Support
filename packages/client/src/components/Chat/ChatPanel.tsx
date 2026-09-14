@@ -8,6 +8,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useRoomStore } from '@/stores/roomStore'
 import { useChat } from '@/hooks/useChat'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n'
 
 /** Threshold (px) to consider the user "at the bottom" of the scroll container */
 const SCROLL_BOTTOM_THRESHOLD = 80
@@ -25,6 +26,7 @@ export function ChatPanel({ className }: ChatPanelProps = {}) {
   const messages = useChatStore((s) => s.messages)
   const currentUser = useRoomStore((s) => s.currentUser)
   const { sendMessage } = useChat()
+  const t = useI18n((s) => s.t)
 
   // Track whether the user has scrolled to the bottom
   const handleScroll = useCallback(() => {
@@ -41,7 +43,8 @@ export function ChatPanel({ className }: ChatPanelProps = {}) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     } else {
       // User has scrolled up — show new message hint
-      setShowNewMsgHint(true)
+      const frame = requestAnimationFrame(() => setShowNewMsgHint(true))
+      return () => cancelAnimationFrame(frame)
     }
   }, [messages])
 
@@ -66,7 +69,7 @@ export function ChatPanel({ className }: ChatPanelProps = {}) {
       {/* Header */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-4 py-3">
         <MessageSquare className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">聊天</span>
+        <span className="text-sm font-medium">{t('chat')}</span>
       </div>
 
       {/* Messages */}
@@ -76,11 +79,11 @@ export function ChatPanel({ className }: ChatPanelProps = {}) {
           onScroll={handleScroll}
           className="absolute inset-0 overflow-y-auto px-3"
           aria-live="polite"
-          aria-label="聊天消息"
+          aria-label={t('chatMessages')}
         >
           <div className="py-3">
             {messages.length === 0 ? (
-              <p className="text-center text-sm text-muted-foreground/30 py-8">还没有消息，开始聊天吧~</p>
+              <p className="text-center text-sm text-muted-foreground/30 py-8">{t('noMessages')}</p>
             ) : (
               messages.map((msg) => (
                 <ChatMessage key={msg.id} message={msg} isOwnMessage={msg.userId === currentUser?.id} />
@@ -99,7 +102,7 @@ export function ChatPanel({ className }: ChatPanelProps = {}) {
             onClick={scrollToBottom}
           >
             <ArrowDown className="h-3.5 w-3.5" />
-            新消息
+            {t('newMessages')}
           </Button>
         )}
       </div>
@@ -107,7 +110,7 @@ export function ChatPanel({ className }: ChatPanelProps = {}) {
       {/* Input */}
       <div className="flex shrink-0 gap-2 border-t border-border/50 px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <Input
-          placeholder="输入消息..."
+          placeholder={t('messagePlaceholder')}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -117,15 +120,21 @@ export function ChatPanel({ className }: ChatPanelProps = {}) {
             handleSend()
           }}
           className="flex-1"
-          aria-label="输入聊天消息"
+          aria-label={t('messagePlaceholder')}
         />
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button size="icon" variant="secondary" onClick={handleSend} disabled={!input.trim()} aria-label="发送消息">
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={handleSend}
+              disabled={!input.trim()}
+              aria-label={t('sendMessage')}
+            >
               <Send className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>发送</TooltipContent>
+          <TooltipContent>{t('send')}</TooltipContent>
         </Tooltip>
       </div>
     </div>

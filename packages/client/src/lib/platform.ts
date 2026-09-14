@@ -1,19 +1,20 @@
 import type { MusicSource, MyPlatformAuth, PlatformAuthStatus, TrackSource } from '@music-together/shared'
+import type { I18nKey } from '@/lib/i18n'
 
 export const CUSTOM_SOURCE = 'custom' as const
 
 /** Full platform display names (used in dialogs, titles, descriptions) */
-export const PLATFORM_LABELS: Record<MusicSource, string> = {
-  netease: '网易云音乐',
-  tencent: 'QQ 音乐',
-  kugou: '酷狗音乐',
+export const PLATFORM_LABEL_KEYS: Record<MusicSource, I18nKey> = {
+  netease: 'netease',
+  tencent: 'tencent',
+  kugou: 'kugou',
 }
 
 /** Short platform labels (used in compact UI like tabs) */
-export const PLATFORM_SHORT_LABELS: Record<MusicSource, string> = {
-  netease: '网易云',
-  tencent: 'QQ 音乐',
-  kugou: '酷狗',
+export const PLATFORM_SHORT_LABEL_KEYS: Record<MusicSource, I18nKey> = {
+  netease: 'neteaseShort',
+  tencent: 'tencentShort',
+  kugou: 'kugouShort',
 }
 
 /** Tab highlight colors per platform */
@@ -37,9 +38,9 @@ export const PLATFORM_TEXT: Record<MusicSource, string> = {
   kugou: 'text-blue-500',
 }
 
-export const TRACK_SOURCE_SHORT_LABELS: Record<TrackSource, string> = {
-  ...PLATFORM_SHORT_LABELS,
-  custom: '自定义',
+export const TRACK_SOURCE_SHORT_LABEL_KEYS: Record<TrackSource, I18nKey> = {
+  ...PLATFORM_SHORT_LABEL_KEYS,
+  custom: 'customSource',
 }
 
 export const TRACK_SOURCE_ACTIVE: Record<TrackSource, string> = {
@@ -53,11 +54,23 @@ export const TRACK_SOURCE_TEXT: Record<TrackSource, string> = {
 }
 
 /** VIP level display labels (Netease vipType values) */
-export const VIP_LABELS: Record<number, string> = {
-  0: '',
-  1: 'VIP',
-  10: '黑胶VIP',
-  11: '黑胶VIP',
+export function getVipLabel(vipType: number, t: (key: I18nKey) => string): string {
+  if (vipType === 10 || vipType === 11) return t('vipVinyl')
+  if (vipType === 2) return t('vipDeluxe')
+  if (vipType === 3) return t('vipSuper')
+  return t('vip')
+}
+
+export function getPlatformLabel(platform: MusicSource, t: (key: I18nKey) => string): string {
+  return t(PLATFORM_LABEL_KEYS[platform])
+}
+
+export function getPlatformShortLabel(platform: MusicSource, t: (key: I18nKey) => string): string {
+  return t(PLATFORM_SHORT_LABEL_KEYS[platform])
+}
+
+export function getTrackSourceShortLabel(platform: TrackSource, t: (key: I18nKey) => string): string {
+  return t(TRACK_SOURCE_SHORT_LABEL_KEYS[platform])
 }
 
 /** Find a platform's auth status from the room-wide status list */

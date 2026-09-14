@@ -68,7 +68,9 @@ export function createSessionManager(
       revokeUserAdmissionGrants(userId)
       disconnectUserSockets(userId)
     },
-    revokeAllExcept(userId: string, sessionId: string): void { sessions.revokeAllExcept(userId, sessionId, now()) },
+    revokeAllExcept(userId: string, sessionId: string): void {
+      sessions.revokeAllExcept(userId, sessionId, now())
+    },
   }
 }
 

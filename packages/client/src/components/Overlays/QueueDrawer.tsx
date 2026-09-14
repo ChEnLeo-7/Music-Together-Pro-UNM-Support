@@ -11,12 +11,22 @@ import type { Track } from '@music-together/shared'
 import { EVENTS } from '@music-together/shared'
 import { useHasHover } from '@/hooks/useHasHover'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import {
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from 'react'
 import { AbilityContext } from '@/providers/AbilityProvider'
 import { ArrowUpToLine, ChevronDown, ChevronUp, ListX, Music, Play, Search, Trash2, User, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useI18n } from '@/lib/i18n'
-import { TRACK_SOURCE_SHORT_LABELS } from '@/lib/platform'
+import { getTrackSourceShortLabel } from '@/lib/platform'
 
 const EMPTY_QUEUE: Track[] = []
 const DESKTOP_ROW_HEIGHT = 64
@@ -161,7 +171,7 @@ const QueueItem = memo(function QueueItem({
                 SOURCE_STYLE[track.source].className,
               )}
             >
-              {TRACK_SOURCE_SHORT_LABELS[track.source]}
+              {getTrackSourceShortLabel(track.source, t)}
             </span>
           )}
         </div>
@@ -185,7 +195,8 @@ const QueueItem = memo(function QueueItem({
           className={cn(
             'absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/50 bg-popover px-1 py-0.5 shadow-md backdrop-blur-md',
             'opacity-0 pointer-events-none transition-opacity',
-            !isMobile && 'group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
+            !isMobile &&
+              'group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
             actionsVisible && 'opacity-100 pointer-events-auto',
             !isTouch && dismissedHover && 'opacity-0 pointer-events-none',
           )}
@@ -203,16 +214,21 @@ const QueueItem = memo(function QueueItem({
               {renderActionButton(t('moveDown'), <ChevronDown className="h-3 w-3" />, () => onMoveDown(index), {
                 disabled: index === queueLength - 1,
               })}
-               {renderActionButton(t('pinBelowCurrent'), <ArrowUpToLine className="h-3 w-3" />, (event) =>
+              {renderActionButton(t('pinBelowCurrent'), <ArrowUpToLine className="h-3 w-3" />, (event) =>
                 onInsertAfterCurrent(track, event),
               )}
             </>
           )}
 
           {(canRemove || canVote) &&
-            renderActionButton(canRemove ? t('remove') : t('voteRemove'), <Trash2 className="h-3 w-3" />, () => onRemove(track), {
-              destructive: true,
-            })}
+            renderActionButton(
+              canRemove ? t('remove') : t('voteRemove'),
+              <Trash2 className="h-3 w-3" />,
+              () => onRemove(track),
+              {
+                destructive: true,
+              },
+            )}
         </div>
       </div>
     </div>
@@ -237,6 +253,7 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null)
   const [dismissedHoverTrackId, setDismissedHoverTrackId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const scrollElementRef = useRef<HTMLDivElement | null>(null)
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
   const scrollMetricsRef = useRef({ top: 0, height: 0, velocity: 0, time: 0 })
@@ -274,7 +291,9 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
       const next = { top: element.scrollTop, height: element.clientHeight, velocity }
       scrollMetricsRef.current = { ...next, time: now }
       setDesktopScrollMetrics((prev) =>
-        prev.top === next.top && prev.height === next.height && Math.abs(prev.velocity - next.velocity) < 0.05 ? prev : next,
+        prev.top === next.top && prev.height === next.height && Math.abs(prev.velocity - next.velocity) < 0.05
+          ? prev
+          : next,
       )
     },
     [scrollElement],
@@ -295,9 +314,12 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
 
   useEffect(() => {
     if (!open || !scrollElement) return
-    scrollElement.scrollTop = 0
-    setDesktopScrollMetrics({ top: 0, height: scrollElement.clientHeight, velocity: 0 })
+    scrollElementRef.current?.scrollTo({ top: 0 })
+    const frame = requestAnimationFrame(() => {
+      setDesktopScrollMetrics({ top: 0, height: scrollElement.clientHeight, velocity: 0 })
+    })
     scrollMetricsRef.current = { top: 0, height: scrollElement.clientHeight, velocity: 0, time: 0 }
+    return () => cancelAnimationFrame(frame)
   }, [open, queue.length, scrollElement, normalizedQuery])
 
   useEffect(() => {
@@ -334,76 +356,91 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
     }
     onClearQueue()
     setConfirmClear(false)
-     toast.success(t('queueCleared'))
-  }, [confirmClear, onClearQueue])
+    toast.success(t('queueCleared'))
+  }, [confirmClear, onClearQueue, t])
 
-  const handleMoveUp = useCallback((index: number) => {
-    if (index <= 0) return
-    const ids = queue.map((t) => t.id)
-    ;[ids[index - 1], ids[index]] = [ids[index], ids[index - 1]]
-    onReorderQueue(ids)
-  }, [onReorderQueue, queue])
+  const handleMoveUp = useCallback(
+    (index: number) => {
+      if (index <= 0) return
+      const ids = queue.map((t) => t.id)
+      ;[ids[index - 1], ids[index]] = [ids[index], ids[index - 1]]
+      onReorderQueue(ids)
+    },
+    [onReorderQueue, queue],
+  )
 
-  const handleMoveDown = useCallback((index: number) => {
-    if (index >= queue.length - 1) return
-    const ids = queue.map((t) => t.id)
-    ;[ids[index], ids[index + 1]] = [ids[index + 1], ids[index]]
-    onReorderQueue(ids)
-  }, [onReorderQueue, queue])
+  const handleMoveDown = useCallback(
+    (index: number) => {
+      if (index >= queue.length - 1) return
+      const ids = queue.map((t) => t.id)
+      ;[ids[index], ids[index + 1]] = [ids[index + 1], ids[index]]
+      onReorderQueue(ids)
+    },
+    [onReorderQueue, queue],
+  )
 
-  const handlePlayTrack = useCallback((track: Track) => {
-    if (canPlay) {
-      socket.emit(EVENTS.PLAYER_PLAY, { track })
-    } else if (canVote) {
-      socket.emit(EVENTS.VOTE_START, {
-        action: 'play-track',
-        payload: { trackId: track.id, trackTitle: track.title },
-      })
-       toast.info(t('votePlayTrack', { track: track.title }))
-    }
-  }, [canPlay, canVote, socket])
+  const handlePlayTrack = useCallback(
+    (track: Track) => {
+      if (canPlay) {
+        socket.emit(EVENTS.PLAYER_PLAY, { track })
+      } else if (canVote) {
+        socket.emit(EVENTS.VOTE_START, {
+          action: 'play-track',
+          payload: { trackId: track.id, trackTitle: track.title },
+        })
+        toast.info(t('votePlayTrack', { track: track.title }))
+      }
+    },
+    [canPlay, canVote, socket, t],
+  )
 
-  const handleRemoveTrack = useCallback((track: Track) => {
-    if (canRemove) {
-      onRemoveFromQueue(track.id)
-       toast.success(t('removedTrack', { track: track.title }))
-    } else if (canVote) {
-      socket.emit(EVENTS.VOTE_START, {
-        action: 'remove-track',
-        payload: { trackId: track.id, trackTitle: track.title },
-      })
-       toast.info(t('voteRemoveTrack', { track: track.title }))
-    }
-  }, [canRemove, canVote, onRemoveFromQueue, socket])
+  const handleRemoveTrack = useCallback(
+    (track: Track) => {
+      if (canRemove) {
+        onRemoveFromQueue(track.id)
+        toast.success(t('removedTrack', { track: track.title }))
+      } else if (canVote) {
+        socket.emit(EVENTS.VOTE_START, {
+          action: 'remove-track',
+          payload: { trackId: track.id, trackTitle: track.title },
+        })
+        toast.info(t('voteRemoveTrack', { track: track.title }))
+      }
+    },
+    [canRemove, canVote, onRemoveFromQueue, socket, t],
+  )
 
-  const handleInsertAfterCurrent = useCallback((track: Track, e?: MouseEvent<HTMLButtonElement>) => {
-    if (e) {
-      e.stopPropagation()
-      e.currentTarget.blur()
-    }
-    if (isTouch && activeTrackId === track.id) setActiveTrackId(null)
-    if (!isTouch) setDismissedHoverTrackId(track.id)
+  const handleInsertAfterCurrent = useCallback(
+    (track: Track, e?: MouseEvent<HTMLButtonElement>) => {
+      if (e) {
+        e.stopPropagation()
+        e.currentTarget.blur()
+      }
+      if (isTouch && activeTrackId === track.id) setActiveTrackId(null)
+      if (!isTouch) setDismissedHoverTrackId(track.id)
 
-    const current = currentTrack
-    const currentIndex = current?.id ? queue.findIndex((t) => t.id === current.id) : -1
-    if (current && track.id === current.id) return
+      const current = currentTrack
+      const currentIndex = current?.id ? queue.findIndex((t) => t.id === current.id) : -1
+      if (current && track.id === current.id) return
 
-    const ids = queue.map((t) => t.id)
-    const from = ids.indexOf(track.id)
-    if (from < 0) return
+      const ids = queue.map((t) => t.id)
+      const from = ids.indexOf(track.id)
+      if (from < 0) return
 
-    ids.splice(from, 1)
+      ids.splice(from, 1)
 
-    if (currentIndex >= 0) {
-      const adjustedCurrentIndex = from < currentIndex ? currentIndex - 1 : currentIndex
-      ids.splice(adjustedCurrentIndex + 1, 0, track.id)
-    } else {
-      ids.unshift(track.id)
-    }
+      if (currentIndex >= 0) {
+        const adjustedCurrentIndex = from < currentIndex ? currentIndex - 1 : currentIndex
+        ids.splice(adjustedCurrentIndex + 1, 0, track.id)
+      } else {
+        ids.unshift(track.id)
+      }
 
-    onReorderQueue(ids)
-     toast.success(t('pinnedTrack', { track: track.title }))
-  }, [activeTrackId, currentTrack, isTouch, onReorderQueue, queue])
+      onReorderQueue(ids)
+      toast.success(t('pinnedTrack', { track: track.title }))
+    },
+    [activeTrackId, currentTrack, isTouch, onReorderQueue, queue, t],
+  )
 
   const handleActivateTrack = useCallback((trackId: string) => {
     setActiveTrackId((prev) => (prev === trackId ? null : trackId))
@@ -440,7 +477,7 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
           <div className="flex items-center justify-between">
             <DrawerTitle className="flex items-center gap-2 text-base">
               <Music className="h-4 w-4" />
-               {t('queue')} ({queue.length})
+              {t('queue')} ({queue.length})
             </DrawerTitle>
             <div className="flex items-center gap-1">
               {canRemove && queue.length > 0 && (
@@ -451,15 +488,21 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
                       size="icon"
                       className={cn('h-7 w-7', confirmClear && 'text-destructive hover:text-destructive')}
                       onClick={handleClear}
-                       aria-label={t('clearQueue')}
+                      aria-label={t('clearQueue')}
                     >
                       <ListX className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                   <TooltipContent>{confirmClear ? t('confirmClearQueue') : t('clearQueue')}</TooltipContent>
+                  <TooltipContent>{confirmClear ? t('confirmClearQueue') : t('clearQueue')}</TooltipContent>
                 </Tooltip>
               )}
-               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpenChange(false)} aria-label={t('closeQueue')}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => onOpenChange(false)}
+                aria-label={t('closeQueue')}
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -471,9 +514,9 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
                 <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                   placeholder={t('queueSearchPlaceholder')}
+                  placeholder={t('queueSearchPlaceholder')}
                   className="h-8 rounded-lg pl-8 pr-8 text-sm"
-                   aria-label={t('queueSearch')}
+                  aria-label={t('queueSearch')}
                 />
                 {query && (
                   <Button
@@ -482,7 +525,7 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
                     size="icon"
                     className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground"
                     onClick={() => setQuery('')}
-                     aria-label={t('clearSearch')}
+                    aria-label={t('clearSearch')}
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>
@@ -498,15 +541,18 @@ export function QueueDrawer({ open, onOpenChange, onRemoveFromQueue, onReorderQu
         </DrawerHeader>
 
         <div
-          ref={setScrollElement}
+          ref={(element) => {
+            scrollElementRef.current = element
+            setScrollElement(element)
+          }}
           onScroll={handleQueueScroll}
           className="min-h-0 flex-1 overscroll-contain overflow-x-hidden overflow-y-auto bg-background px-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
           style={{ WebkitOverflowScrolling: 'touch', contain: 'layout paint style' }}
         >
           {queue.length === 0 ? (
-             <div className="flex h-40 items-center justify-center text-muted-foreground">{t('queueEmpty')}</div>
+            <div className="flex h-40 items-center justify-center text-muted-foreground">{t('queueEmpty')}</div>
           ) : visibleItems.length === 0 ? (
-             <div className="flex h-40 items-center justify-center text-muted-foreground">{t('noMatchingSongs')}</div>
+            <div className="flex h-40 items-center justify-center text-muted-foreground">{t('noMatchingSongs')}</div>
           ) : (
             <div className="w-full">
               {topSpacerHeight > 0 && <div aria-hidden="true" style={{ height: `${topSpacerHeight}px` }} />}

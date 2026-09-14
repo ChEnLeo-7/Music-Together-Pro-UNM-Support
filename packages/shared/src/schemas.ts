@@ -51,6 +51,7 @@ export const roomSettingsSchema = z.object({
   permanent: z.boolean().optional(),
   chatHistoryForNewUsers: z.boolean().optional(),
   pauseAtQueueEnd: z.boolean().optional(),
+  removePlayedTracks: z.boolean().optional(),
 })
 
 export const setRoleSchema = z.object({
@@ -89,7 +90,7 @@ export const playerSyncSchema = z.object({
 
 export const playerNextSchema = z
   .object({
-    reason: z.literal('ended').optional(),
+    reason: z.enum(['ended', 'failed']).optional(),
     trackId: z.string().max(200).optional(),
     playbackRevision: z.number().int().nonnegative().optional(),
   })

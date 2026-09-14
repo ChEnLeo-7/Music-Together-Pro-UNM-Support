@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useI18n } from '@/lib/i18n'
+import { getLocalizedError, useI18n } from '@/lib/i18n'
 import { SERVER_URL } from '@/lib/config'
 import { storage } from '@/lib/storage'
 import { useSocketContext } from '@/providers/SocketProvider'
@@ -17,6 +17,7 @@ import { Check, Copy, Loader2, Lock, LockOpen, Pencil, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SettingRow } from './SettingRow'
+import { requestError } from '@/lib/request'
 
 interface RoomSettingsSectionProps {
   onUpdateSettings: (settings: {
@@ -27,6 +28,7 @@ interface RoomSettingsSectionProps {
     permanent?: boolean
     chatHistoryForNewUsers?: boolean
     pauseAtQueueEnd?: boolean
+    removePlayedTracks?: boolean
   }) => void
   onDissolveRoom?: () => void
 }
@@ -76,7 +78,7 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
         credentials: 'include',
         cache: 'no-store',
       })
-      if (!response.ok) throw new Error('room password request failed')
+      if (!response.ok) throw await requestError(response)
       const data = (await response.json()) as { password: string | null }
       if (requestId !== passwordRequestRef.current) return
       setRoomPassword(data.password)
@@ -86,11 +88,11 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
       if (requestId !== passwordRequestRef.current) return
       setRoomPassword(null)
       setPasswordInput('')
-      toast.error(t('roomPasswordLoadFailed'))
+      toast.error(getLocalizedError(error, t))
     } finally {
       if (requestId === passwordRequestRef.current) setPasswordLoading(false)
     }
-  }, [isOwner, roomId])
+  }, [isOwner, roomId, t])
 
   useEffect(() => {
     void loadRoomPassword()
@@ -380,6 +382,15 @@ export function RoomSettingsSection({ onUpdateSettings, onDissolveRoom }: RoomSe
               onCheckedChange={(checked) => onUpdateSettings({ pauseAtQueueEnd: checked })}
             />
           </SettingRow>
+
+          {canEditOwnerSettings && (
+            <SettingRow label={t('removePlayedTracks')} description={t('removePlayedTracksDesc')}>
+              <Switch
+                checked={room?.removePlayedTracks ?? false}
+                onCheckedChange={(checked) => onUpdateSettings({ removePlayedTracks: checked })}
+              />
+            </SettingRow>
+          )}
 
           {canEditOwnerSettings && (
             <>

@@ -58,6 +58,7 @@ const TRUSTED_THUMBNAIL_HOSTS = [
 ] as const
 const MAX_TEXT_LENGTH = 500
 const MAX_LYRICS_LENGTH = 200_000
+const YT_DLP_METADATA_MARKER = '__MUSIC_TOGETHER_METADATA__'
 
 export class MediaProcessingError extends Error {
   constructor(
@@ -305,6 +306,39 @@ export function getYtDlpRuntimeArgs(hostname: string): string[] {
   return isYoutubeHost(hostname) ? ['--js-runtimes', 'node', '--remote-components', 'ejs:github'] : []
 }
 
+export function parseYtDlpMetadata(stdout: string): {
+  title?: string
+  artist?: string
+  uploader?: string
+  album?: string
+  thumbnail?: string
+} {
+  const line = stdout
+    .split(/\r?\n/)
+    .reverse()
+    .find((item) => item.startsWith(YT_DLP_METADATA_MARKER))
+  if (!line) return {}
+
+  const parseField = (value: string | undefined): string | undefined => {
+    if (!value || value === 'NA') return undefined
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return typeof parsed === 'string' ? parsed : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  const [title, artist, uploader, album, thumbnail] = line.slice(YT_DLP_METADATA_MARKER.length).split('\t')
+  return {
+    title: parseField(title),
+    artist: parseField(artist),
+    uploader: parseField(uploader),
+    album: parseField(album),
+    thumbnail: parseField(thumbnail),
+  }
+}
+
 async function runYtDlp(
   url: string,
   destination: string,
@@ -336,7 +370,8 @@ async function runYtDlp(
     '0',
     '--output',
     outputTemplate,
-    '--print-json',
+    '--print',
+    `${YT_DLP_METADATA_MARKER}%(title)j\t%(artist)j\t%(uploader)j\t%(album)j\t%(thumbnail)j`,
   ]
   // Current YouTube clients require both a JavaScript runtime and the EJS
   // challenge solver. Keep this limited to YouTube so Bilibili imports do not
@@ -380,21 +415,13 @@ async function runYtDlp(
         )
         return
       }
-      const metadataLine = stdout
-        .split(/\r?\n/)
-        .reverse()
-        .find((line) => line.trim().startsWith('{'))
-      try {
-        const metadata = metadataLine ? (JSON.parse(metadataLine) as Record<string, unknown>) : {}
-        resolve({
-          title: safeText(metadata.title),
-          artist: safeText(metadata.artist ?? metadata.uploader),
-          album: safeText(metadata.album),
-          thumbnail: safeText(metadata.thumbnail),
-        })
-      } catch {
-        resolve({})
-      }
+      const metadata = parseYtDlpMetadata(stdout)
+      resolve({
+        title: safeText(metadata.title),
+        artist: safeText(metadata.artist ?? metadata.uploader),
+        album: safeText(metadata.album),
+        thumbnail: safeText(metadata.thumbnail),
+      })
     })
   })
 }

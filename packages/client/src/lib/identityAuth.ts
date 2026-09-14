@@ -2,6 +2,7 @@ import { SERVER_URL } from '@/lib/config'
 import type { TypedSocket } from '@/lib/socket'
 import { storage } from '@/lib/storage'
 import { useAccountStore, type AccountMe } from '@/stores/accountStore'
+import { RequestError } from '@/lib/request'
 
 let authGeneration = 0
 let authMutationQueue = Promise.resolve()
@@ -24,15 +25,7 @@ function serializeAuthMutation<T>(operation: () => Promise<T>): Promise<T> {
   return result
 }
 
-export class AuthRequestError extends Error {
-  constructor(
-    message: string,
-    readonly code?: string,
-    readonly status?: number,
-  ) {
-    super(message)
-  }
-}
+export class AuthRequestError extends RequestError {}
 
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${SERVER_URL}${path}`, {
